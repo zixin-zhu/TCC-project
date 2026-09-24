@@ -197,6 +197,9 @@ class StationRuntimeState:
     track_inputs: Dict[str, Dict[TrackInputSource, TrackState]]
     state_version: int = 0
     running_direction: RunningDirection = RunningDirection.A_TO_B
+    # 改方事务、通信降级或权威方向投影未确认时置位。置位期间进路不得
+    # 建立、信号不得开放；方向值本身仍保留用于故障恢复和界面说明。
+    direction_operation_locked: bool = False
     active_route_ids: Set[str] = field(default_factory=set)
     failed_red_lamp_ids: Set[str] = field(default_factory=set)
 

@@ -49,6 +49,8 @@ def test_delayed_server_causes_client_retry_then_both_sync_and_close_cleanly() -
     timed_states_b: list[tuple[ConnectionState, float]] = []
     received_a: list[ProtocolMessage] = []
     received_b: list[ProtocolMessage] = []
+    sent_a: list[ProtocolMessage] = []
+    sent_b: list[ProtocolMessage] = []
     errors: list[str] = []
 
     runner_b = PeerConnectionRunner(
@@ -60,6 +62,7 @@ def test_delayed_server_causes_client_retry_then_both_sync_and_close_cleanly() -
             timed_states_b.append((state, time.monotonic())),
         ),
         on_message=received_b.append,
+        on_sent=sent_b.append,
         on_error=errors.append,
     )
     thread_b = threading.Thread(target=runner_b.run, name="test-client")
@@ -74,6 +77,7 @@ def test_delayed_server_causes_client_retry_then_both_sync_and_close_cleanly() -
         stop_event=stop_a,
         on_state=states_a.append,
         on_message=received_a.append,
+        on_sent=sent_a.append,
         on_error=errors.append,
     )
     thread_a = threading.Thread(target=runner_a.run, name="test-server")
@@ -89,6 +93,8 @@ def test_delayed_server_causes_client_retry_then_both_sync_and_close_cleanly() -
         lambda: any(item.message_type is MessageType.HEARTBEAT for item in received_a)
         and any(item.message_type is MessageType.HEARTBEAT for item in received_b)
     )
+    assert any(item.message_type is MessageType.STATE_SYNC for item in sent_a)
+    assert any(item.message_type is MessageType.STATE_SYNC for item in sent_b)
 
     # 主动关闭服务端，客户端必须保持运行并进入重连；新服务端上线后，
     # 双方重新握手且各自再次发送全量基线，而不是沿用旧会话增量。
@@ -109,6 +115,7 @@ def test_delayed_server_causes_client_retry_then_both_sync_and_close_cleanly() -
         stop_event=stop_a2,
         on_state=states_a.append,
         on_message=received_a.append,
+        on_sent=sent_a.append,
         on_error=errors.append,
     )
     thread_a2 = threading.Thread(target=runner_a2.run, name="test-server-restarted")

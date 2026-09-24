@@ -22,6 +22,8 @@ class RouteControlService:
         route = self._routes.get(route_id)
         if route is None:
             return OperationResult(False, f"未知进路 {route_id}")
+        if runtime.direction_operation_locked:
+            return OperationResult(False, "区间方向未确认，进路已安全锁闭")
         if route_id in runtime.active_route_ids:
             return OperationResult(True, "进路已建立")
         if route.direction is not runtime.running_direction:

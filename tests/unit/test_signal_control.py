@@ -84,3 +84,20 @@ def test_red_lamp_failure_produces_critical_protection_result() -> None:
     assert result.protected is True
     assert result.alarm_level == "CRITICAL"
     assert (result.relay_hj, result.relay_uj, result.relay_lj) == (False, False, False)
+
+
+def test_direction_safety_lock_forces_all_signals_to_red() -> None:
+    """方向事务或失联期间，即使码序允许也不得开放信号。"""
+    config = load_project_config(ROOT / "configs", "A")
+    runtime = StationRuntimeState.create(
+        "A", (section.id for section in config.topology.sections)
+    )
+    runtime.direction_operation_locked = True
+
+    results = SignalControlService(config.topology).recalculate(
+        runtime, [_coding("Q1", TrackCode.L5), _coding("Q4", TrackCode.L5)]
+    )
+
+    assert all(result.aspect is SignalAspect.RED for result in results)
+    assert all(result.protected for result in results)
+    assert all("方向安全锁闭" in result.reason for result in results)

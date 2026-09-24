@@ -107,6 +107,7 @@ class PeerConnectionRunner:
         stop_event: threading.Event | None = None,
         on_state: StateCallback | None = None,
         on_message: MessageCallback | None = None,
+        on_sent: MessageCallback | None = None,
         on_error: ErrorCallback | None = None,
     ) -> None:
         self.settings = settings
@@ -114,6 +115,7 @@ class PeerConnectionRunner:
         self._stop_event = stop_event or threading.Event()
         self._on_state = on_state or (lambda _state: None)
         self._on_message = on_message or (lambda _message: None)
+        self._on_sent = on_sent or (lambda _message: None)
         self._on_error = on_error or (lambda _error: None)
         self._outgoing: queue.Queue[tuple[MessageType, Any, int]] = queue.Queue(
             maxsize=256
@@ -212,7 +214,7 @@ class PeerConnectionRunner:
         try:
             hello = session.on_transport_connected(now_ms=self._now_ms())
             self._set_state(ConnectionState.HANDSHAKING)
-            connection.send_message(hello)
+            self._send(connection, hello)
             sent_full_sync = False
             last_heartbeat_ms = self._now_ms()
 
@@ -231,7 +233,8 @@ class PeerConnectionRunner:
                         self._on_error(f"拒绝消息 {message.message_id}：{decision.reason}")
                         continue
                     if decision.action is SessionAction.SEND_ACK:
-                        connection.send_message(
+                        self._send(
+                            connection,
                             session.make_message(MessageType.ACK, {}, now_ms=now_ms)
                         )
                     self._on_message(message)
@@ -240,7 +243,8 @@ class PeerConnectionRunner:
                     reached_healthy = True
                     payload = dict(self._state_provider())
                     version = payload.get("state_version", 0)
-                    connection.send_message(
+                    self._send(
+                        connection,
                         session.make_message(
                             MessageType.STATE_SYNC,
                             payload,
@@ -255,7 +259,8 @@ class PeerConnectionRunner:
                     session.connection_state in {ConnectionState.HEALTHY, ConnectionState.DEGRADED}
                     and now_ms - last_heartbeat_ms >= self.settings.heartbeat_interval_ms
                 ):
-                    connection.send_message(
+                    self._send(
+                        connection,
                         session.make_message(MessageType.HEARTBEAT, {}, now_ms=now_ms)
                     )
                     last_heartbeat_ms = now_ms
@@ -288,7 +293,8 @@ class PeerConnectionRunner:
                 message_type, payload, state_version = self._outgoing.get_nowait()
             except queue.Empty:
                 return
-            connection.send_message(
+            self._send(
+                connection,
                 session.make_message(
                     message_type,
                     payload,
@@ -296,6 +302,17 @@ class PeerConnectionRunner:
                     now_ms=self._now_ms(),
                 )
             )
+
+    def _send(
+        self, connection: FramedSocketConnection, message: ProtocolMessage
+    ) -> None:
+        """sendall 返回后报告本地发送事件，仅供日志和事务编排。
+
+        该事件不代表对端已经接收或处理，改方完成仍必须依赖应用层 ACK/
+        DIRECTION_CONFIRM 或重连后的权威全量同步。
+        """
+        connection.send_message(message)
+        self._on_sent(message)
 
     def _discard_outgoing(self) -> None:
         while True:
@@ -319,6 +336,7 @@ class NetworkWorker(QObject):
 
     state_changed = pyqtSignal(object)
     message_received = pyqtSignal(object)
+    message_sent = pyqtSignal(object)
     error_occurred = pyqtSignal(str)
     finished = pyqtSignal()
 
@@ -329,6 +347,7 @@ class NetworkWorker(QObject):
             state_provider=state_provider,
             on_state=self.state_changed.emit,
             on_message=self.message_received.emit,
+            on_sent=self.message_sent.emit,
             on_error=self.error_occurred.emit,
         )
         self.execution_thread_id: int | None = None

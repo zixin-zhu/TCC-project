@@ -60,3 +60,18 @@ def test_occupied_section_rejects_route_with_exact_reason() -> None:
     assert result.success is False
     assert result.reason == "区段 A_T2 状态为 OCCUPIED"
     assert runtime.state_version == before
+
+
+def test_direction_safety_lock_rejects_route_without_state_change() -> None:
+    """通信或方向投影未确认时，禁止任何新进路进入不一致区间。"""
+    config = load_project_config(ROOT / "configs", "A")
+    runtime = _runtime()
+    runtime.direction_operation_locked = True
+    before = runtime.state_version
+
+    result = RouteControlService(config.topology).establish("A_DEPART", runtime)
+
+    assert result.success is False
+    assert result.reason == "区间方向未确认，进路已安全锁闭"
+    assert runtime.active_route_ids == set()
+    assert runtime.state_version == before

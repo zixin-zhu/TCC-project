@@ -49,7 +49,11 @@ class SignalControlService:
         for signal in self.topology.signals:
             expected_direction = RunningDirection(signal.direction.value)
             coding = codes.get(signal.protects_section)
-            if expected_direction is not runtime.running_direction:
+            if runtime.direction_operation_locked:
+                aspect = SignalAspect.RED
+                reason = "区间方向安全锁闭，保持红灯"
+                protected = True
+            elif expected_direction is not runtime.running_direction:
                 aspect = SignalAspect.RED
                 reason = "非运行方向，保持红灯"
                 protected = True
