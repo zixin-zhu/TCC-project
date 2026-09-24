@@ -1,0 +1,10 @@
+{
+  "station_id": "B",
+  "station_name": "B站列控中心",
+  "network": {
+    "role": "CLIENT",
+    "host": "127.0.0.1",
+    "port": 9500,
+    "peer_station_id": "A"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "telegram_templates": [
+    "TG_A_FIXED",
+    "TG_A_DEFAULT",
+    "TG_B_FIXED",
+    "TG_B_DEFAULT"
+  ],
+  "leu_ports": [
+    {"id": "LEU_A_1"},
+    {"id": "LEU_B_1"}
+  ],
+  "groups": [
+    {
+      "id": "BG_A_01",
+      "direction": "A_TO_B",
+      "section_id": "A_T2",
+      "balises": [
+        {"id": "B_A_FIX", "kind": "FIXED", "order": 1, "position_m": 500, "fixed_telegram_id": "TG_A_FIXED"},
+        {"id": "B_A_CTL", "kind": "CONTROLLED", "order": 2, "position_m": 505, "leu_port_id": "LEU_A_1", "default_telegram_id": "TG_A_DEFAULT"}
+      ]
+    },
+    {
+      "id": "BG_B_01",
+      "direction": "B_TO_A",
+      "section_id": "B_T2",
+      "balises": [
+        {"id": "B_B_FIX", "kind": "FIXED", "order": 1, "position_m": 500, "fixed_telegram_id": "TG_B_FIXED"},
+        {"id": "B_B_CTL", "kind": "CONTROLLED", "order": 2, "position_m": 505, "leu_port_id": "LEU_B_1", "default_telegram_id": "TG_B_DEFAULT"}
+      ]
+    }
+  ]
+}

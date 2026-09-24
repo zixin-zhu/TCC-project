@@ -1,0 +1,29 @@
+{
+  "sections": [
+    {"id": "A_T1", "name": "A站股道1", "kind": "STATION", "length_m": 800},
+    {"id": "A_T2", "name": "A站接近区段", "kind": "STATION", "length_m": 600},
+    {"id": "Q1", "name": "第一闭塞分区", "kind": "BLOCK", "length_m": 1200},
+    {"id": "Q2", "name": "第二闭塞分区", "kind": "BLOCK", "length_m": 1200},
+    {"id": "Q3", "name": "第三闭塞分区", "kind": "BLOCK", "length_m": 1200},
+    {"id": "Q4", "name": "第四闭塞分区", "kind": "BLOCK", "length_m": 1200},
+    {"id": "B_T2", "name": "B站接近区段", "kind": "STATION", "length_m": 600},
+    {"id": "B_T1", "name": "B站股道1", "kind": "STATION", "length_m": 800}
+  ],
+  "signals": [
+    {"id": "SA", "protects_section": "Q1"},
+    {"id": "S1", "protects_section": "Q2"},
+    {"id": "S2", "protects_section": "Q3"},
+    {"id": "S3", "protects_section": "Q4"},
+    {"id": "SB", "protects_section": "Q4"}
+  ],
+  "routes": [
+    {"id": "A_DEPART", "type": "DEPARTURE", "direction": "A_TO_B", "sections": ["A_T1", "A_T2", "Q1"]},
+    {"id": "A_ARRIVE", "type": "ARRIVAL", "direction": "B_TO_A", "sections": ["Q1", "A_T2", "A_T1"]},
+    {"id": "B_DEPART", "type": "DEPARTURE", "direction": "B_TO_A", "sections": ["B_T1", "B_T2", "Q4"]},
+    {"id": "B_ARRIVE", "type": "ARRIVAL", "direction": "A_TO_B", "sections": ["Q4", "B_T2", "B_T1"]}
+  ],
+  "boundaries": [
+    {"id": "A_BOUNDARY", "local_section": "Q1", "peer_section": "Q4"},
+    {"id": "B_BOUNDARY", "local_section": "Q4", "peer_section": "Q1"}
+  ]
+}
