@@ -8,6 +8,7 @@ import pytest
 from app.core.enums import NetworkRole
 from app.core.exceptions import ConfigError
 from app.infrastructure.config_loader import load_project_config
+from app.network.network_worker import PeerNetworkSettings
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -96,6 +97,57 @@ def test_valid_configuration_loads_typed_objects(tmp_path: Path) -> None:
     assert config.station.network.role is NetworkRole.SERVER
     assert [section.id for section in config.topology.sections] == ["A_T1", "Q1"]
     assert config.balise_groups.groups[0].balises[1].leu_port_id == "LEU_A_1"
+    assert config.station.network.degraded_after_ms == 3500
+    assert config.station.network.disconnect_after_ms == 6000
+
+
+def test_repository_network_timeouts_are_explicit_and_ordered() -> None:
+    """正式配置应显式保存心跳与降级阈值，便于现场演示调整。"""
+    config = load_project_config(PROJECT_ROOT / "configs", "A")
+
+    assert config.station.network.heartbeat_interval_ms == 1000
+    assert config.station.network.reconnect_delays_ms == (1000, 2000, 5000)
+    assert (
+        config.station.network.heartbeat_interval_ms
+        < config.station.network.degraded_after_ms
+        < config.station.network.disconnect_after_ms
+    )
+    settings = PeerNetworkSettings.from_config(
+        station_id=config.station.station_id,
+        network=config.station.network,
+    )
+    assert settings.role is NetworkRole.SERVER
+    assert settings.reconnect_delays_ms == (1000, 2000, 5000)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("heartbeat_interval_ms", 0),
+        ("degraded_after_ms", 6000),
+        ("disconnect_after_ms", 3500),
+        ("reconnect_delays_ms", [1000, 0]),
+    ],
+)
+def test_invalid_network_timing_is_rejected(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    root = _valid_project(tmp_path)
+    station_path = root / "station_a.json"
+    station = json.loads(station_path.read_text(encoding="utf-8"))
+    station["network"].update(
+        {
+            "heartbeat_interval_ms": 1000,
+            "degraded_after_ms": 3500,
+            "disconnect_after_ms": 6000,
+            "reconnect_delays_ms": [1000, 2000, 5000],
+        }
+    )
+    station["network"][field] = value
+    _write_json(station_path, station)
+
+    with pytest.raises(ConfigError, match=r"station\.network"):
+        load_project_config(root, "A")
 
 
 @pytest.mark.parametrize("port", [0, 65536, "9500"])

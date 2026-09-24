@@ -25,6 +25,10 @@ class NetworkConfig:
     host: str
     port: int
     peer_station_id: str
+    heartbeat_interval_ms: int = 1000
+    degraded_after_ms: int = 3500
+    disconnect_after_ms: int = 6000
+    reconnect_delays_ms: Tuple[int, ...] = (1000, 2000, 5000)
 
 
 @dataclass(frozen=True)

@@ -89,6 +89,28 @@ def _load_station(root: Path, station_id: str) -> StationConfig:
     port = _required(network, "port", "station.network")
     if type(port) is not int or not 1 <= port <= 65535:
         raise ConfigError("station.network.port: 必须是 1~65535 的整数")
+    heartbeat_interval_ms = network.get("heartbeat_interval_ms", 1000)
+    degraded_after_ms = network.get("degraded_after_ms", 3500)
+    disconnect_after_ms = network.get("disconnect_after_ms", 6000)
+    reconnect_delays_ms = network.get("reconnect_delays_ms", [1000, 2000, 5000])
+    for key, value in (
+        ("heartbeat_interval_ms", heartbeat_interval_ms),
+        ("degraded_after_ms", degraded_after_ms),
+        ("disconnect_after_ms", disconnect_after_ms),
+    ):
+        if type(value) is not int or value <= 0:
+            raise ConfigError(f"station.network.{key}: 必须是正整数")
+    if not heartbeat_interval_ms < degraded_after_ms < disconnect_after_ms:
+        raise ConfigError(
+            "station.network: 必须满足 heartbeat_interval_ms < "
+            "degraded_after_ms < disconnect_after_ms"
+        )
+    if (
+        not isinstance(reconnect_delays_ms, list)
+        or not reconnect_delays_ms
+        or any(type(delay) is not int or delay <= 0 for delay in reconnect_delays_ms)
+    ):
+        raise ConfigError("station.network.reconnect_delays_ms: 必须是非空正整数数组")
     configured_station_id = str(_required(data, "station_id", "station"))
     if configured_station_id != station_id:
         raise ConfigError(
@@ -109,6 +131,10 @@ def _load_station(root: Path, station_id: str) -> StationConfig:
             peer_station_id=str(
                 _required(network, "peer_station_id", "station.network")
             ),
+            heartbeat_interval_ms=heartbeat_interval_ms,
+            degraded_after_ms=degraded_after_ms,
+            disconnect_after_ms=disconnect_after_ms,
+            reconnect_delays_ms=tuple(reconnect_delays_ms),
         ),
     )
 

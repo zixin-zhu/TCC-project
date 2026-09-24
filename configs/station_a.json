@@ -5,6 +5,10 @@
     "role": "SERVER",
     "host": "127.0.0.1",
     "port": 9500,
-    "peer_station_id": "B"
+    "peer_station_id": "B",
+    "heartbeat_interval_ms": 1000,
+    "degraded_after_ms": 3500,
+    "disconnect_after_ms": 6000,
+    "reconnect_delays_ms": [1000, 2000, 5000]
   }
 }
