@@ -2,8 +2,12 @@
   "telegram_templates": [
     "TG_A_FIXED",
     "TG_A_DEFAULT",
+    "TG_A_ROUTE",
+    "TG_A_TSR",
     "TG_B_FIXED",
-    "TG_B_DEFAULT"
+    "TG_B_DEFAULT",
+    "TG_B_ROUTE",
+    "TG_B_TSR"
   ],
   "leu_ports": [
     {"id": "LEU_A_1"},

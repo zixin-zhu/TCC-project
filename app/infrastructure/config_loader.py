@@ -356,3 +356,13 @@ def load_coding_rules(path: Path) -> CodingRules:
         ),
         peer_timeout_ms=timeout,
     )
+
+
+def load_telegram_catalog(path: Path) -> Mapping[str, Any]:
+    """加载逻辑报文包定义和模板；字段级语义由领域服务校验。"""
+    data = _read_json(Path(path), "telegram_catalog")
+    if not isinstance(data.get("packet_definitions"), dict):
+        raise ConfigError("telegram_catalog.packet_definitions: 必须是对象")
+    if not isinstance(data.get("templates"), dict):
+        raise ConfigError("telegram_catalog.templates: 必须是对象")
+    return data

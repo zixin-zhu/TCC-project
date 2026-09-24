@@ -1,0 +1,20 @@
+{
+  "disclaimer": "仅用于CTCS-2课程逻辑报文教学，不是现场可下装的1023位应答器报文",
+  "packet_definitions": {
+    "ETCS-5": {"required": {"link_group_id": {"type": "string"}, "link_distance_m": {"type": "number", "min": 0, "max": 32767}}},
+    "ETCS-21": {"required": {"gradient_per_mille": {"type": "number", "min": -40, "max": 40}, "length_m": {"type": "number", "min_exclusive": 0, "max": 32767}}},
+    "ETCS-27": {"required": {"speed_kmh": {"type": "number", "min_exclusive": 0, "max": 500}, "length_m": {"type": "number", "min_exclusive": 0, "max": 32767}}},
+    "CTCS-1": {"required": {"track_id": {"type": "string"}, "length_m": {"type": "number", "min_exclusive": 0, "max": 32767}}},
+    "CTCS-2": {"required": {"tsr_id": {"type": "string"}, "start_m": {"type": "number", "min": 0}, "end_m": {"type": "number", "min": 0}, "speed_kmh": {"type": "number", "min_exclusive": 0, "max": 500}}}
+  },
+  "templates": {
+    "TG_A_FIXED": {"packets": [{"packet_id": "ETCS-5", "fields": {"link_group_id": "BG_B_01", "link_distance_m": 4800}}, {"packet_id": "ETCS-21", "fields": {"gradient_per_mille": 0, "length_m": 4800}}, {"packet_id": "ETCS-27", "fields": {"speed_kmh": 120, "length_m": 4800}}, {"packet_id": "CTCS-1", "fields": {"track_id": "Q1-Q4", "length_m": 4800}}]},
+    "TG_A_DEFAULT": {"packets": [{"packet_id": "ETCS-5", "fields": {"link_group_id": "BG_B_01", "link_distance_m": 4800}}, {"packet_id": "CTCS-1", "fields": {"track_id": "Q1", "length_m": 1200}}]},
+    "TG_A_ROUTE": {"packets": [{"packet_id": "ETCS-5", "fields": {"link_group_id": "BG_B_01", "link_distance_m": 4800}}, {"packet_id": "ETCS-27", "fields": {"speed_kmh": 120, "length_m": 4800}}, {"packet_id": "CTCS-1", "fields": {"track_id": "Q1-Q4", "length_m": 4800}}]},
+    "TG_A_TSR": {"packets": [{"packet_id": "ETCS-5", "fields": {"link_group_id": "BG_B_01", "link_distance_m": 4800}}, {"packet_id": "CTCS-2", "fields": {"tsr_id": "TSR-DEMO", "start_m": 1000, "end_m": 3000, "speed_kmh": 80}}]},
+    "TG_B_FIXED": {"packets": [{"packet_id": "ETCS-5", "fields": {"link_group_id": "BG_A_01", "link_distance_m": 4800}}, {"packet_id": "ETCS-21", "fields": {"gradient_per_mille": 0, "length_m": 4800}}, {"packet_id": "ETCS-27", "fields": {"speed_kmh": 120, "length_m": 4800}}, {"packet_id": "CTCS-1", "fields": {"track_id": "Q4-Q1", "length_m": 4800}}]},
+    "TG_B_DEFAULT": {"packets": [{"packet_id": "ETCS-5", "fields": {"link_group_id": "BG_A_01", "link_distance_m": 4800}}, {"packet_id": "CTCS-1", "fields": {"track_id": "Q4", "length_m": 1200}}]},
+    "TG_B_ROUTE": {"packets": [{"packet_id": "ETCS-5", "fields": {"link_group_id": "BG_A_01", "link_distance_m": 4800}}, {"packet_id": "ETCS-27", "fields": {"speed_kmh": 120, "length_m": 4800}}, {"packet_id": "CTCS-1", "fields": {"track_id": "Q4-Q1", "length_m": 4800}}]},
+    "TG_B_TSR": {"packets": [{"packet_id": "ETCS-5", "fields": {"link_group_id": "BG_A_01", "link_distance_m": 4800}}, {"packet_id": "CTCS-2", "fields": {"tsr_id": "TSR-DEMO", "start_m": 1000, "end_m": 3000, "speed_kmh": 80}}]}
+  }
+}
