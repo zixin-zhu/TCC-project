@@ -48,6 +48,11 @@ class SignalAspect(str, Enum):
     RED_LAMP_FAILURE = "RED_LAMP_FAILURE"
 
 
+class SignalDirection(str, Enum):
+    A_TO_B = "A_TO_B"
+    B_TO_A = "B_TO_A"
+
+
 class BaliseKind(str, Enum):
     FIXED = "FIXED"
     CONTROLLED = "CONTROLLED"

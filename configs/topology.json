@@ -10,11 +10,11 @@
     {"id": "B_T1", "name": "B站股道1", "kind": "STATION", "length_m": 800}
   ],
   "signals": [
-    {"id": "SA", "protects_section": "Q1"},
-    {"id": "S1", "protects_section": "Q2"},
-    {"id": "S2", "protects_section": "Q3"},
-    {"id": "S3", "protects_section": "Q4"},
-    {"id": "SB", "protects_section": "Q4"}
+    {"id": "SA", "protects_section": "Q1", "direction": "A_TO_B"},
+    {"id": "S1", "protects_section": "Q2", "direction": "A_TO_B"},
+    {"id": "S2", "protects_section": "Q3", "direction": "A_TO_B"},
+    {"id": "S3", "protects_section": "Q4", "direction": "A_TO_B"},
+    {"id": "SB", "protects_section": "Q4", "direction": "B_TO_A"}
   ],
   "routes": [
     {"id": "A_DEPART", "type": "DEPARTURE", "direction": "A_TO_B", "sections": ["A_T1", "A_T2", "Q1"]},

@@ -1,0 +1,6 @@
+{
+  "description": "课程教学码序，用于演示前方空闲距离与低频码的联动，不代表具体线路工程数据",
+  "all_clear_codes": ["L5", "L3", "L2", "L"],
+  "restrictive_codes": ["U", "LU", "L", "L2", "L3"],
+  "peer_timeout_ms": 3500
+}

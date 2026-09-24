@@ -11,6 +11,8 @@ from app.core.enums import (
     RouteType,
     RunningDirection,
     SectionKind,
+    SignalDirection,
+    TrackCode,
 )
 from app.core.exceptions import ConfigError
 from app.core.models import (
@@ -18,6 +20,7 @@ from app.core.models import (
     BaliseGroupConfig,
     BaliseGroupsConfig,
     BoundaryConfig,
+    CodingRules,
     LeuPortConfig,
     NetworkConfig,
     ProjectConfig,
@@ -153,7 +156,17 @@ def _load_topology(root: Path) -> TopologyConfig:
             raise ConfigError(
                 f"topology.signals[{i}].protects_section: 未知区段 {protected!r}"
             )
-        signals.append(SignalConfig(str(item["id"]), str(protected)))
+        signals.append(
+            SignalConfig(
+                id=str(item["id"]),
+                protects_section=str(protected),
+                direction=_enum(
+                    SignalDirection,
+                    _required(item, "direction", f"topology.signals[{i}]"),
+                    f"topology.signals[{i}].direction",
+                ),
+            )
+        )
 
     raw_routes = _object_list(data.get("routes", []), "topology.routes")
     _unique(
@@ -318,3 +331,28 @@ def load_project_config(config_dir: Path, station_id: str) -> ProjectConfig:
     config = ProjectConfig(station, topology, balise_groups)
     validate_configuration(config)
     return config
+
+
+def load_coding_rules(path: Path) -> CodingRules:
+    """加载教学码序表，并拒绝无法产生确定结果的空规则。"""
+    data = _read_json(Path(path), "coding_rules")
+    raw_clear = data.get("all_clear_codes")
+    raw_restrictive = data.get("restrictive_codes")
+    if not isinstance(raw_clear, list) or not raw_clear:
+        raise ConfigError("coding_rules.all_clear_codes: 必须是非空数组")
+    if not isinstance(raw_restrictive, list) or not raw_restrictive:
+        raise ConfigError("coding_rules.restrictive_codes: 必须是非空数组")
+    timeout = data.get("peer_timeout_ms")
+    if type(timeout) is not int or timeout <= 0:
+        raise ConfigError("coding_rules.peer_timeout_ms: 必须是正整数")
+    return CodingRules(
+        all_clear_codes=tuple(
+            _enum(TrackCode, value, f"coding_rules.all_clear_codes[{i}]")
+            for i, value in enumerate(raw_clear)
+        ),
+        restrictive_codes=tuple(
+            _enum(TrackCode, value, f"coding_rules.restrictive_codes[{i}]")
+            for i, value in enumerate(raw_restrictive)
+        ),
+        peer_timeout_ms=timeout,
+    )

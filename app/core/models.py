@@ -1,7 +1,7 @@
 """阶段 1 的领域与配置数据模型。"""
 
-from dataclasses import dataclass
-from typing import Dict, Iterable, Mapping, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Dict, Iterable, Mapping, Optional, Set, Tuple
 
 from app.core.enums import (
     BaliseDirection,
@@ -10,6 +10,9 @@ from app.core.enums import (
     RouteType,
     RunningDirection,
     SectionKind,
+    SignalAspect,
+    SignalDirection,
+    TrackCode,
     TrackInputSource,
     TrackState,
 )
@@ -43,6 +46,7 @@ class TrackSectionConfig:
 class SignalConfig:
     id: str
     protects_section: str
+    direction: SignalDirection
 
 
 @dataclass(frozen=True)
@@ -107,6 +111,57 @@ class ProjectConfig:
 
 
 @dataclass(frozen=True)
+class CodingRules:
+    """配置化教学码序规则。"""
+
+    all_clear_codes: Tuple[TrackCode, ...]
+    restrictive_codes: Tuple[TrackCode, ...]
+    peer_timeout_ms: int
+
+
+@dataclass(frozen=True)
+class PeerSnapshot:
+    station_id: str
+    boundary_states: Mapping[str, TrackState]
+    state_version: int
+    received_at_ms: int
+
+    def is_fresh(self, now_ms: int, timeout_ms: int) -> bool:
+        return 0 <= now_ms - self.received_at_ms <= timeout_ms
+
+
+@dataclass(frozen=True)
+class OperationResult:
+    success: bool
+    reason: str
+
+
+@dataclass(frozen=True)
+class TrackCodingResult:
+    section_id: str
+    direction: RunningDirection
+    code: TrackCode
+    reason: str
+    looked_ahead_sections: Tuple[str, ...]
+    protected: bool
+    state_version: int
+
+
+@dataclass(frozen=True)
+class SignalControlResult:
+    signal_id: str
+    aspect: SignalAspect
+    relay_hj: bool
+    relay_uj: bool
+    relay_lj: bool
+    reason: str
+    protected_section: str
+    protected: bool
+    state_version: int
+    alarm_level: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class StateChange:
     """一次输入操作引起的有效状态变化。"""
 
@@ -137,6 +192,9 @@ class StationRuntimeState:
     station_id: str
     track_inputs: Dict[str, Dict[TrackInputSource, TrackState]]
     state_version: int = 0
+    running_direction: RunningDirection = RunningDirection.A_TO_B
+    active_route_ids: Set[str] = field(default_factory=set)
+    failed_red_lamp_ids: Set[str] = field(default_factory=set)
 
     @classmethod
     def create(

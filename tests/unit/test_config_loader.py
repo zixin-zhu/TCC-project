@@ -38,7 +38,9 @@ def _valid_project(tmp_path: Path) -> Path:
                 {"id": "A_T1", "name": "A站股道", "kind": "STATION", "length_m": 800},
                 {"id": "Q1", "name": "第一闭塞分区", "kind": "BLOCK", "length_m": 1200},
             ],
-            "signals": [{"id": "SA", "protects_section": "Q1"}],
+            "signals": [
+                {"id": "SA", "protects_section": "Q1", "direction": "A_TO_B"}
+            ],
             "routes": [
                 {
                     "id": "A_DEPART",
