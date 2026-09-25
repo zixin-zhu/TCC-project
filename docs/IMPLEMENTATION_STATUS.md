@@ -54,7 +54,7 @@
 |---|---|---|---|---|
 | 0 工作区/Git 恢复 | 已完成 | `80848c8` | 已推送 | Git 恢复；196 项通过；复审无 Critical/Important |
 | 1 单进程双运行时 | 已完成 | `172a00f` | 已推送 | 206 项通过；真实 TCP 双站健康；复审无 Critical/Important |
-| 2 单站 UI 组件化 | 已完成 | 待记录 | 待推送 | 212 项通过；A/B 截图目视通过；复审无 Critical/Important |
+| 2 单站 UI 组件化 | 已完成 | `fba656d` | 已推送 | 212 项通过；A/B 截图目视通过；复审无 Critical/Important |
 | 3 双站总览/线路图 | 进行中 | — | — | 下一步实现聚合模型、摘要卡与统一线路图 |
 | 4 双站操作/列车 | 未开始 | — | — | — |
 | 5 集成验收/交付 | 未开始 | — | — | — |
@@ -111,6 +111,7 @@
 - 生成并目视检查 A/B 单站离屏截图；截图只证明样式，业务行为由测试证明。
 - 阶段 UI 定向测试 `12 passed`，全量回归 `212 passed`；compileall、A/B 配置
   校验和 `git diff --check` 均通过；独立复审无 Critical/Important。
+- 功能提交 `fba656d` 已推送到 `origin/codex/dual-station-dashboard`。
 - 下一步：执行 `03-dashboard-corridor.md`，测试先行实现只读双站快照聚合、
   A/B 摘要卡、统一线路图和正式双站主窗口框架。
 
