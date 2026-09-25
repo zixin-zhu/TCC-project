@@ -344,6 +344,7 @@ class NetworkWorker(QObject):
     message_received = pyqtSignal(object)
     message_sent = pyqtSignal(object)
     error_occurred = pyqtSignal(str)
+    server_ready = pyqtSignal(str, int)
     finished = pyqtSignal()
 
     def __init__(
@@ -354,6 +355,13 @@ class NetworkWorker(QObject):
         on_server_ready: ServerReadyCallback | None = None,
     ) -> None:
         super().__init__()
+
+        def publish_server_ready(host: str, port: int) -> None:
+            """同时通知同进程编排器，并保留多进程启动器的文件回调。"""
+            self.server_ready.emit(host, port)
+            if on_server_ready is not None:
+                on_server_ready(host, port)
+
         self._runner = PeerConnectionRunner(
             settings,
             state_provider=state_provider,
@@ -361,7 +369,7 @@ class NetworkWorker(QObject):
             on_message=self.message_received.emit,
             on_sent=self.message_sent.emit,
             on_error=self.error_occurred.emit,
-            on_server_ready=on_server_ready,
+            on_server_ready=publish_server_ready,
         )
         self.execution_thread_id: int | None = None
 
@@ -370,6 +378,10 @@ class NetworkWorker(QObject):
         self.execution_thread_id = int(QThread.currentThreadId())
         try:
             self._runner.run()
+        except Exception as exc:
+            # 工作线程是异常边界：bind/listen 等启动错误不能只写入 Qt 的
+            # 标准错误后静默退出，编排器需要该信号阻止 B 站继续启动。
+            self.error_occurred.emit(f"网络线程启动失败：{exc}")
         finally:
             self.finished.emit()
 

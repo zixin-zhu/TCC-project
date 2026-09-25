@@ -43,3 +43,19 @@ def test_qt_diagnostic_reports_versions_and_plugin_path() -> None:
     assert "Qt plugins:" in completed.stdout
     assert "Platform plugins directory exists: True" in completed.stdout
     assert "macOS cocoa plugin exists: True" in completed.stdout
+
+
+def test_dual_validate_only_checks_both_station_configs() -> None:
+    """双站入口必须在创建 GUI 和数据库之前完成交叉配置校验。"""
+    completed = subprocess.run(
+        [sys.executable, "run_dual.py", "--validate-only"],
+        cwd=PROJECT_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "station=A role=SERVER" in completed.stdout
+    assert "station=B role=CLIENT" in completed.stdout
+    assert "shared_endpoint=127.0.0.1:9500" in completed.stdout

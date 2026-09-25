@@ -53,8 +53,8 @@
 | 阶段 | 状态 | 提交 | 推送 | 验收摘要 |
 |---|---|---|---|---|
 | 0 工作区/Git 恢复 | 已完成 | `80848c8` | 已推送 | Git 恢复；196 项通过；复审无 Critical/Important |
-| 1 单进程双运行时 | 进行中 | 未提交 | 未推送 | 待实现 A 就绪后启动 B 与反向关闭 |
-| 2 单站 UI 组件化 | 未开始 | — | — | — |
+| 1 单进程双运行时 | 已完成 | 待记录 | 待推送 | 206 项通过；真实 TCP 双站健康；复审无 Critical/Important |
+| 2 单站 UI 组件化 | 进行中 | — | — | 下一步提取可嵌入单站组件与集中主题 |
 | 3 双站总览/线路图 | 未开始 | — | — | — |
 | 4 双站操作/列车 | 未开始 | — | — | — |
 | 5 集成验收/交付 | 未开始 | — | — | — |
@@ -71,6 +71,26 @@
 - 独立复审提出的旧执行索引和提交清单问题已修复，最终无 Critical/Important。
 - 方案与恢复提交 `80848c8` 已推送到 `origin/codex/dual-station-dashboard`。
 - 下一步：执行 `01-dual-runtime-lifecycle.md`，测试先行实现单进程双运行时。
+
+### 阶段 1 执行账本
+
+- 新增 `DualStationApplication`，A 完成 `bind + listen` 并发出 Qt 就绪信号后
+  才启动 B；重复就绪信号不会重复启动 B。
+- A/B 配置在创建数据库前完成站点 ID、SERVER/CLIENT 角色、对站 ID 和共享
+  host/port 交叉校验；B 装配失败时主动关闭已创建的 A 控制器与仓储。
+- 新增推荐入口 `run_dual.py`；`--validate-only` 不创建 QApplication、数据库
+  或线程，正式模式在阶段 3 主窗口完成前只显示无虚假按钮的状态占位窗。
+- 启动线程的 bind/listen 等异常统一转成 `error_occurred`，A 启动失败会阻止 B。
+- 关闭首次严格执行 B→A；已成功站点不重复关闭，超时站点允许再次重试，
+  双方成功后保持幂等，避免窗口永久卡在关闭失败并遗留资源。
+- 新增真实集成验收：两套独立 SQLite、真实回环 TCP 握手、双方达到
+  `HEALTHY`、反向关闭后两条 Qt 网络线程均退出。
+- 阶段定向测试 `17 passed`；修复复审问题后的全量回归 `206 passed`；
+  compileall、`git diff --check`、A/B/dual 配置校验均通过。
+- 独立复审发现 1 个关闭失败缓存 Important，已用两项失败先行测试修复；
+  二次复审无 Critical/Important。
+- 下一步：执行 `02-station-ui-refactor.md`，先锁定现有九页 UI 和生命周期行为，
+  再提取 `StationDetailWidget` 与集中经典控制台主题。
 
 ## 已完成：阶段 1
 

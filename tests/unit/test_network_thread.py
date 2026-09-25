@@ -5,6 +5,7 @@ import time
 
 import pytest
 from PyQt5.QtCore import QCoreApplication, QThread
+from PyQt5.QtTest import QSignalSpy
 
 from app.core.enums import NetworkRole
 from app.core.exceptions import ProtocolError
@@ -75,3 +76,54 @@ def test_network_worker_runs_outside_main_thread_and_stops() -> None:
     assert worker.execution_thread_id != main_thread_id
     assert controller.stop(timeout_ms=1500)
     assert not controller.thread.isRunning()
+
+
+def test_server_worker_emits_ready_only_after_listener_is_bound(qtbot) -> None:  # type: ignore[no-untyped-def]
+    """若就绪信号提前发出，双站编排器可能在 A 尚未监听时启动 B。"""
+    settings = PeerNetworkSettings(
+        role=NetworkRole.SERVER,
+        host="127.0.0.1",
+        port=_unused_port(),
+        station_id="A",
+        peer_station_id="B",
+        socket_timeout_ms=30,
+    )
+    worker = NetworkWorker(
+        settings,
+        state_provider=lambda: {"boundary_states": {}, "state_version": 0},
+    )
+    controller = NetworkThreadController(worker)
+
+    with qtbot.waitSignal(worker.server_ready, timeout=1000) as blocker:
+        controller.start()
+
+    assert blocker.args == ["127.0.0.1", settings.port]
+    assert controller.stop(timeout_ms=1500)
+
+
+def test_network_worker_converts_runner_startup_error_to_signal(
+    qtbot, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """端口占用等启动异常必须转成信号，不能让工作线程静默退出。"""
+    settings = PeerNetworkSettings(
+        role=NetworkRole.SERVER,
+        host="127.0.0.1",
+        port=9501,
+        station_id="A",
+        peer_station_id="B",
+    )
+    worker = NetworkWorker(settings, state_provider=lambda: {})
+    error_spy = QSignalSpy(worker.error_occurred)
+    finished_spy = QSignalSpy(worker.finished)
+
+    def fail_to_start() -> None:
+        raise OSError("address already in use")
+
+    monkeypatch.setattr(worker._runner, "run", fail_to_start)
+
+    worker.run()
+
+    assert len(error_spy) == 1
+    assert "网络线程启动失败" in error_spy[0][0]
+    assert "address already in use" in error_spy[0][0]
+    assert len(finished_spy) == 1
