@@ -17,6 +17,7 @@ from PyQt5.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
+    QHeaderView,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -64,7 +65,10 @@ def _readonly_table(headers: list[str]) -> QTableWidget:
     table.setHorizontalHeaderLabels(headers)
     table.setEditTriggers(QAbstractItemView.NoEditTriggers)
     table.verticalHeader().setVisible(False)
-    table.horizontalHeader().setStretchLastSection(True)
+    header = table.horizontalHeader()
+    # 安全状态表不能依赖用户悬停查看省略文本：关键列按内容展开，说明列占满余量。
+    header.setSectionResizeMode(QHeaderView.ResizeToContents)
+    header.setSectionResizeMode(len(headers) - 1, QHeaderView.Stretch)
     return table
 
 
@@ -491,6 +495,16 @@ class DirectionOperationsPage(_OperationPage):
         self.status_label = QLabel()
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
+        self.table = _readonly_table(
+            ["站点角色", "当前方向", "通信状态", "状态版本", "事务阶段", "方向作业"]
+        )
+        layout.addWidget(self.table, 1)
+        preconditions = QGroupBox("改方安全前置条件")
+        precondition_layout = QVBoxLayout(preconditions)
+        self.precondition_label = QLabel()
+        self.precondition_label.setWordWrap(True)
+        precondition_layout.addWidget(self.precondition_label)
+        layout.addWidget(preconditions)
         controls = QHBoxLayout()
         self.direction_selector = QComboBox()
         self.direction_selector.addItem("A站 → B站", RunningDirection.A_TO_B)
@@ -508,7 +522,6 @@ class DirectionOperationsPage(_OperationPage):
         controls.addStretch(1)
         layout.addLayout(controls)
         layout.addWidget(self.result_label)
-        layout.addStretch(1)
 
     def _request(self) -> None:
         result = self.station_a.request_direction_change(
@@ -547,6 +560,43 @@ class DirectionOperationsPage(_OperationPage):
             f"B站投影：{model.station_b.running_direction}　"
             f"方向一致：{'是' if model.direction_consistent else '否'}　"
             f"联合锁闭：{'是' if model.operation_locked else '否'}"
+        )
+        self.table.setRowCount(2)
+        for row, (snapshot, role, controller) in enumerate(
+            (
+                (model.station_a, "A站（权威）", self.station_a),
+                (model.station_b, "B站（投影）", self.station_b),
+            )
+        ):
+            values = (
+                role,
+                snapshot.running_direction,
+                snapshot.connection_state.value,
+                str(snapshot.state_version),
+                controller.direction_phase.value,
+                "锁闭" if snapshot.direction_operation_locked else "允许",
+            )
+            for column, value in enumerate(values):
+                self.table.setItem(row, column, QTableWidgetItem(value))
+        shared_clear = all(
+            item.station_a_state is TrackState.CLEAR
+            and item.station_b_state is TrackState.CLEAR
+            for item in model.sections
+            if item.section_id.startswith("Q")
+        )
+        no_routes = not (
+            model.station_a.active_route_ids or model.station_b.active_route_ids
+        )
+        self.precondition_label.setText(
+            "通信健康：{communication}　共享区段空闲：{shared}　"
+            "两站无已建立进路：{routes}　方向一致：{direction}。\n"
+            "仅 A 站能够发起改方；区段或进路条件不满足时请求会被明确拒绝，"
+            "通信、方向一致性或事务异常时保持联合安全锁闭。".format(
+                communication="是" if model.communication_healthy else "否",
+                shared="是" if shared_clear else "否",
+                routes="是" if no_routes else "否",
+                direction="是" if model.direction_consistent else "否",
+            )
         )
         self.request_button.setEnabled(not model.operation_locked)
         self.disconnect_drill_button.setEnabled(

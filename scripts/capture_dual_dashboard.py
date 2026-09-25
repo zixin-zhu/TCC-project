@@ -1,4 +1,8 @@
-"""离屏生成三种分辨率的正式双站控制台视觉验收截图。"""
+"""离屏生成三种分辨率、五类页面的双站控制台视觉验收截图。
+
+脚本会注入一致健康的合成快照，所以产物只证明布局与信息可见性；真实 TCP
+握手、重连和资源释放由 integration 测试单独证明。
+"""
 
 from __future__ import annotations
 
@@ -55,12 +59,33 @@ def main() -> int:
         _prepare_visual_state(runtime)
         window = DualStationMainWindow(runtime)
         window.show()
+        # 准备一列已派发但暂停的教学列车，让列车页的全部关键字段有可见样例。
+        runtime.station_a.controller.establish_route("A_DEPART")
+        train = window.train_coordinator.create_train()
+        window.train_coordinator.dispatch(train.train_id)
+        window.train_coordinator.start()
+        window.train_coordinator.tick(10.0)
+        window.train_coordinator.pause("合成截图暂停")
+        pages = (
+            (0, "overview"),
+            (1, "corridor"),
+            (8, "direction"),
+            (9, "network"),
+            (10, "train"),
+        )
         for width, height in ((1280, 800), (1440, 900), (1920, 1080)):
             window.resize(width, height)
-            application.processEvents()
-            output = args.output / f"dual_dashboard_{width}x{height}.png"
-            if not window.grab().save(str(output), "PNG"):
-                raise RuntimeError(f"截图保存失败：{output}")
+            for page_index, page_name in pages:
+                window.navigation.setCurrentRow(page_index)
+                window.global_status.set_lifecycle_text(
+                    "合成状态 · 仅用于 UI 视觉验收"
+                )
+                application.processEvents()
+                output = args.output / (
+                    f"synthetic_ui_{page_name}_{width}x{height}.png"
+                )
+                if not window.grab().save(str(output), "PNG"):
+                    raise RuntimeError(f"截图保存失败：{output}")
         window.close()
     return 0
 

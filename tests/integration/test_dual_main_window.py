@@ -93,6 +93,16 @@ def test_dual_window_refreshes_from_controller_callbacks_without_polling(qtbot) 
     assert window.station_a_detail.establish_route_button.isEnabled() is False
     assert window.station_b_detail.establish_route_button.isEnabled() is False
     assert window.station_a_detail.direction_button.isEnabled() is False
+    assert window.corridor_detail_table.rowCount() == len(
+        window.aggregator.snapshot.sections
+    )
+    q2_rows = [
+        row
+        for row in range(window.corridor_detail_table.rowCount())
+        if window.corridor_detail_table.item(row, 0).text() == "Q2"
+    ]
+    assert len(q2_rows) == 1
+    assert window.corridor_detail_table.item(q2_rows[0], 5).text() == "不一致"
 
     resolved = runtime.station_b.controller.set_track_state(
         "Q2", TrackInputSource.OPERATOR, TrackState.OCCUPIED

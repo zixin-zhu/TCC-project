@@ -23,6 +23,7 @@ python3.12 -m venv .venv
 配置与 Qt 环境诊断：
 
 ```bash
+.venv/bin/python run_dual.py --validate-only
 .venv/bin/python run.py --station A --validate-only
 .venv/bin/python run.py --station B --validate-only
 .venv/bin/python scripts/diagnose_qt.py
@@ -33,14 +34,26 @@ python3.12 -m venv .venv
 
 ## 启动
 
-分别启动单站：
+推荐入口是单进程双站同屏窗口：
+
+```bash
+.venv/bin/python run_dual.py
+```
+
+该进程内装配两套相互独立的控制器、SQLite 仓库和网络线程；A 仍作为
+Server 完成 `bind + listen`，B 仍作为 Client 通过真实 `127.0.0.1` TCP
+握手、同步和重连，并非用内存调用伪造站间通信。窗口提供 12 个页面：双站
+总览、联合站场图、A/B 站控制、轨道电路、信号机、应答器/LEU、临时限速、
+区间改方、通信状态、列车演示和日志告警。
+
+需要分站诊断时可分别启动单站：
 
 ```bash
 .venv/bin/python run.py --station A
 .venv/bin/python run.py --station B
 ```
 
-推荐使用双站启动器。它先启动 A（Server），等本次 A 的网络线程完成
+也可使用保留的多进程诊断启动器。它先启动 A（Server），等本次 A 的网络线程完成
 `bind + listen` 并发布一次性就绪凭据后再启动 B（Client），退出时统一回收
 子进程：
 
@@ -56,7 +69,7 @@ python3.12 -m venv .venv
 ```bash
 .venv/bin/python -m pytest -q
 PYTHONPYCACHEPREFIX=/tmp/tcc-pycache \
-  .venv/bin/python -m compileall -q app scripts run.py main.py run_new_ui.py
+  .venv/bin/python -m compileall -q app scripts run.py run_dual.py main.py run_new_ui.py
 ```
 
 完整测试包含本机 `127.0.0.1` 随机端口上的双站握手、同步、断线重连和线程
@@ -64,9 +77,10 @@ PYTHONPYCACHEPREFIX=/tmp/tcc-pycache \
 
 ## 答辩演示
 
-窗口提供总览/进路、轨道编码、信号、应答器与 LEU、临时限速、区间改方、
-列车演示、网络、日志告警九页。推荐演示顺序及每一步的复位方法见
-[`docs/DELIVERY_SCENARIOS.md`](docs/DELIVERY_SCENARIOS.md)。
+推荐演示顺序及每一步的复位方法见
+[`docs/DELIVERY_SCENARIOS.md`](docs/DELIVERY_SCENARIOS.md)，最终自动化、故障和
+视觉证据见
+[`docs/acceptance/DUAL_STATION_FINAL_ACCEPTANCE.md`](docs/acceptance/DUAL_STATION_FINAL_ACCEPTANCE.md)。
 
 列车页是教学动画：必须先建立当前方向的发车进路，再创建并发送列车。列车
 占用只写 `TRAIN` 来源，复位或跨区出清不会清除人工占用、故障占用或分路不良。

@@ -122,6 +122,10 @@ def test_direction_request_is_always_sent_by_station_a(qtbot) -> None:  # type: 
     assert calls == [("A", RunningDirection.B_TO_A)]
     assert "目标=A站" in page.result_label.text()
     assert "测试拒绝" in page.result_label.text()
+    assert page.table.rowCount() == 2
+    assert page.table.item(0, 0).text() == "A站（权威）"
+    assert page.table.item(1, 0).text() == "B站（投影）"
+    assert "方向一致" in page.precondition_label.text()
 
 
 def test_direction_disconnect_drill_requests_a_before_faulting_b(qtbot) -> None:  # type: ignore[no-untyped-def]

@@ -45,11 +45,11 @@ DELIVERY_SCENARIOS = (
     ),
     DemoScenario(
         "red-lamp-failure", "红灯灯丝故障", "信号机控制", "A站",
-        ("A/B 通信健康", "选择的信号机存在于配置"),
-        ("applySignalFailureButton",),
-        ("目标选择 A站和 SA", "勾选红灯灯丝故障并应用"),
+        ("A/B 通信健康", "先使 SA 防护的 Q1 输出 HU，令 SA 应显示红灯"),
+        ("applyTrackStateButton", "applySignalFailureButton"),
+        ("在轨道页把共享 Q1 设为故障占用", "目标选择 A站和 SA", "勾选红灯灯丝故障并应用"),
         ("灯色显示 RED_LAMP_FAILURE", "产生严重告警且 HJ/UJ/LJ 均落下"),
-        ("取消勾选并再次应用灯丝状态",),
+        ("取消勾选并再次应用灯丝状态", "回到轨道页将共享 Q1 改为空闲"),
     ),
     DemoScenario(
         "temporary-speed", "临时限速", "临时限速", "A站",

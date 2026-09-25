@@ -9,6 +9,7 @@ from PyQt5.QtGui import QCloseEvent
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QListWidget,
     QMainWindow,
@@ -238,7 +239,21 @@ class DualStationMainWindow(QMainWindow):
             config_a.topology, config_a.balise_groups
         )
         self.corridor_full.section_clicked.connect(self._navigate_section)
+        self.corridor_full.setMaximumHeight(470)
         corridor_layout.addWidget(self.corridor_full)
+        detail_heading = QLabel("区段双站一致性明细")
+        detail_heading.setObjectName("pageHeading")
+        corridor_layout.addWidget(detail_heading)
+        self.corridor_detail_table = QTableWidget(0, 7)
+        self.corridor_detail_table.setHorizontalHeaderLabels(
+            ["区段", "归属", "A站状态/码序", "B站状态/码序", "界面显示", "一致性", "判定依据"]
+        )
+        self.corridor_detail_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.corridor_detail_table.verticalHeader().setVisible(False)
+        corridor_header = self.corridor_detail_table.horizontalHeader()
+        corridor_header.setSectionResizeMode(QHeaderView.ResizeToContents)
+        corridor_header.setSectionResizeMode(6, QHeaderView.Stretch)
+        corridor_layout.addWidget(self.corridor_detail_table, 1)
         self.pages.addWidget(corridor_page)
 
         self.station_a_detail = StationDetailWidget(
@@ -325,6 +340,7 @@ class DualStationMainWindow(QMainWindow):
         self.station_b_card.set_snapshot(model.station_b)
         self.corridor.set_snapshot(model)
         self.corridor_full.set_snapshot(model)
+        self._fill_corridor_details(model)
         for page in (
             self.track_operations_page,
             self.signal_operations_page,
@@ -337,6 +353,33 @@ class DualStationMainWindow(QMainWindow):
         ):
             page.set_snapshot(model)
         self._fill_recent(model)
+
+    def _fill_corridor_details(self, model: DualStationSnapshot) -> None:
+        """展示每个物理区段的双站视角，便于定位不一致和码序来源。"""
+        self.corridor_detail_table.setRowCount(len(model.sections))
+        for row, section in enumerate(model.sections):
+            section_id = section.section_id
+            if section_id.startswith("A_"):
+                owner = "A站"
+            elif section_id.startswith("B_"):
+                owner = "B站"
+            else:
+                owner = "共享"
+            code_a = model.station_a.codes[section_id].code.value
+            code_b = model.station_b.codes[section_id].code.value
+            values = (
+                section_id,
+                owner,
+                f"{section.station_a_state.value} / {code_a}",
+                f"{section.station_b_state.value} / {code_b}",
+                section.display_state.value if section.display_state is not None else "安全未知",
+                "一致" if section.consistent else "不一致",
+                section.reason,
+            )
+            for column, value in enumerate(values):
+                self.corridor_detail_table.setItem(
+                    row, column, QTableWidgetItem(value)
+                )
 
     def _fill_recent(self, model: DualStationSnapshot) -> None:
         rows: list[tuple[str, str, str]] = []
