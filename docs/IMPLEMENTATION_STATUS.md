@@ -53,7 +53,7 @@
 | 阶段 | 状态 | 提交 | 推送 | 验收摘要 |
 |---|---|---|---|---|
 | 0 工作区/Git 恢复 | 已完成 | `80848c8` | 已推送 | Git 恢复；196 项通过；复审无 Critical/Important |
-| 1 单进程双运行时 | 已完成 | 待记录 | 待推送 | 206 项通过；真实 TCP 双站健康；复审无 Critical/Important |
+| 1 单进程双运行时 | 已完成 | `172a00f` | 已推送 | 206 项通过；真实 TCP 双站健康；复审无 Critical/Important |
 | 2 单站 UI 组件化 | 进行中 | — | — | 下一步提取可嵌入单站组件与集中主题 |
 | 3 双站总览/线路图 | 未开始 | — | — | — |
 | 4 双站操作/列车 | 未开始 | — | — | — |
@@ -89,6 +89,7 @@
   compileall、`git diff --check`、A/B/dual 配置校验均通过。
 - 独立复审发现 1 个关闭失败缓存 Important，已用两项失败先行测试修复；
   二次复审无 Critical/Important。
+- 功能提交 `172a00f` 已推送到 `origin/codex/dual-station-dashboard`。
 - 下一步：执行 `02-station-ui-refactor.md`，先锁定现有九页 UI 和生命周期行为，
   再提取 `StationDetailWidget` 与集中经典控制台主题。
 
