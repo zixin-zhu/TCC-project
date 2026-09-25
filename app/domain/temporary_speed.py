@@ -30,6 +30,11 @@ class TemporarySpeedService:
         self._line_end = line_end_m
         self._items: Dict[str, TemporarySpeedRestriction] = {}
 
+    @property
+    def items(self) -> Tuple[TemporarySpeedRestriction, ...]:
+        """返回不可变快照，避免 UI 直接修改内部字典。"""
+        return tuple(sorted(self._items.values(), key=lambda item: item.tsr_id))
+
     def validate(
         self,
         start_m: float,

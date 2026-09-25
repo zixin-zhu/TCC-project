@@ -93,6 +93,8 @@ class DirectionChangeCoordinator:
         *,
         send_message: Callable[[DirectionWireMessage], None] | None = None,
         write_log: Callable[[str], None] | None = None,
+        before_send: Callable[[], None] | None = None,
+        before_apply: Callable[[RunningDirection], None] | None = None,
     ) -> None:
         if machine.station_id != runtime.station_id:
             raise ValueError("状态机站点与统一运行态站点不一致")
@@ -105,6 +107,8 @@ class DirectionChangeCoordinator:
         self._service = DirectionChangeService(runtime)
         self._send_message = send_message or (lambda _message: None)
         self._write_log = write_log or (lambda _text: None)
+        self._before_send = before_send or (lambda: None)
+        self._before_apply = before_apply or (lambda _direction: None)
 
     def build_guard(
         self,
@@ -180,12 +184,33 @@ class DirectionChangeCoordinator:
         return self._execute(self.machine.confirm_peer_applied(record, guard))
 
     def _execute(self, outcome: DirectionOutcome) -> CoordinatedDirectionResult:
+        apply_directions = tuple(
+            action.direction
+            for action in outcome.actions
+            if action.action_type is DirectionActionType.APPLY
+            and action.direction is not None
+        )
+        try:
+            for direction in apply_directions:
+                self._before_apply(direction)
+        except Exception:
+            # 状态机在生成 Outcome 时已推进内部阶段。持久化前置条件失败时，
+            # 必须把方向恢复为尚未 APPLY 的运行态真值，再进入故障锁闭；
+            # 从而保证内存和磁盘都不会出现一个未发布的新权威方向。
+            self.machine.current_direction = self.runtime.running_direction
+            fault = self.machine.disconnect()
+            fault_execution = self._service.apply(fault)
+            for text in fault_execution.logs:
+                self._write_log(text)
+            raise
         execution = self._service.apply(outcome)
         for text in execution.logs:
             self._write_log(text)
         # DirectionChangeService 已经应用全部 APPLY/LOCK/UNLOCK；此处才允许
         # 把报文交给网络适配层，从编排顺序上消除未保护发送窗口。
         try:
+            if execution.messages:
+                self._before_send()
             for message in execution.messages:
                 self._send_message(message)
         except Exception:

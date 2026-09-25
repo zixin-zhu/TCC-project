@@ -36,13 +36,28 @@ class DirectionProtocolAdapter:
         session: PeerProtocolSession,
         now_ms: int,
     ) -> ProtocolMessage:
-        _validate_uuid(message.transaction_id)
-        _validate_roles(message)
         if (
             session.local_station_id != message.source_station_id
             or session.peer_station_id != message.target_station_id
         ):
             raise ProtocolError("改方消息方向与协议会话站点不一致")
+        message_type, payload, sender_version = (
+            DirectionProtocolAdapter.to_network_command(message)
+        )
+        return session.make_message(
+            message_type,
+            payload,
+            state_version=sender_version,
+            now_ms=now_ms,
+        )
+
+    @staticmethod
+    def to_network_command(
+        message: DirectionWireMessage,
+    ) -> tuple[MessageType, Mapping[str, object], int]:
+        """供 NetworkWorker.submit 使用，不在主线程伪造 sequence/消息 ID。"""
+        _validate_uuid(message.transaction_id)
+        _validate_roles(message)
         payload = {
             "kind": message.kind.value,
             "transaction_id": message.transaction_id,
@@ -62,12 +77,7 @@ class DirectionProtocolAdapter:
         sender_version = _sender_state_version(message)
         if sender_version is None:
             raise ProtocolError("响应方消息缺少 responder_state_version")
-        return session.make_message(
-            _TO_PROTOCOL[message.kind],
-            payload,
-            state_version=sender_version,
-            now_ms=now_ms,
-        )
+        return _TO_PROTOCOL[message.kind], payload, sender_version
 
     @staticmethod
     def from_protocol_message(message: ProtocolMessage) -> DirectionWireMessage:
@@ -155,6 +165,26 @@ class DirectionProtocolAdapter:
             state_version=record.requester_state_version,
             now_ms=now_ms,
         )
+
+    @staticmethod
+    def recovery_network_command(
+        record: DirectionRecoveryRecord,
+    ) -> tuple[MessageType, Mapping[str, object], int]:
+        """构造 DIRECTION_CONFIRM 的 worker 提交参数。"""
+        _validate_uuid(record.transaction_id)
+        if not record.requester_applied:
+            raise ProtocolError("申请方尚未 APPLY，不能生成改方确认")
+        payload = {
+            "transaction_id": record.transaction_id,
+            "requester_station_id": record.requester_station_id,
+            "responder_station_id": record.responder_station_id,
+            "original_direction": record.original_direction.value,
+            "target_direction": record.target_direction.value,
+            "requester_state_version": record.requester_state_version,
+            "responder_state_version": record.responder_state_version,
+            "requester_applied": True,
+        }
+        return MessageType.DIRECTION_CONFIRM, payload, record.requester_state_version
 
     @staticmethod
     def from_recovery_protocol_message(

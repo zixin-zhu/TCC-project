@@ -1,22 +1,7 @@
-import sys
+"""旧双站同窗入口已废弃，保留文件用于引导到正式单站入口。"""
 
-from PyQt5.QtWidgets import QApplication
-
-from ui.main_window import MainWindow
+from run import main
 
 
 if __name__ == "__main__":
-
-    app = QApplication(
-        sys.argv
-    )
-
-    # 单窗口双TCC：TCC_A与TCC_B同窗共存，
-    # 两者通过本机TCP互联
-    window = MainWindow()
-
-    window.show()
-
-    sys.exit(
-        app.exec_()
-    )
+    raise SystemExit(main(["--station", "A"]))
