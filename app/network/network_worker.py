@@ -94,6 +94,7 @@ StateProvider = Callable[[], Mapping[str, Any]]
 StateCallback = Callable[[ConnectionState], None]
 MessageCallback = Callable[[ProtocolMessage], None]
 ErrorCallback = Callable[[str], None]
+ServerReadyCallback = Callable[[str, int], None]
 
 
 class PeerConnectionRunner:
@@ -109,6 +110,7 @@ class PeerConnectionRunner:
         on_message: MessageCallback | None = None,
         on_sent: MessageCallback | None = None,
         on_error: ErrorCallback | None = None,
+        on_server_ready: ServerReadyCallback | None = None,
     ) -> None:
         self.settings = settings
         self._state_provider = state_provider
@@ -117,6 +119,7 @@ class PeerConnectionRunner:
         self._on_message = on_message or (lambda _message: None)
         self._on_sent = on_sent or (lambda _message: None)
         self._on_error = on_error or (lambda _error: None)
+        self._on_server_ready = on_server_ready or (lambda _host, _port: None)
         self._outgoing: queue.Queue[tuple[MessageType, Any, int]] = queue.Queue(
             maxsize=256
         )
@@ -149,6 +152,9 @@ class PeerConnectionRunner:
             listener.bind((self.settings.host, self.settings.port))
             listener.listen(1)
             listener.settimeout(self.settings.socket_timeout_ms / 1000)
+            # 只有本进程真正完成 bind/listen 后才发布就绪凭据。启动器据此
+            # 区分“本次 A 已监听”和“端口被其他程序占用”两种情况。
+            self._on_server_ready(self.settings.host, self.settings.port)
             self._set_state(ConnectionState.CONNECTING)
             while not self._stop_event.is_set():
                 try:
@@ -340,7 +346,13 @@ class NetworkWorker(QObject):
     error_occurred = pyqtSignal(str)
     finished = pyqtSignal()
 
-    def __init__(self, settings: PeerNetworkSettings, *, state_provider: StateProvider) -> None:
+    def __init__(
+        self,
+        settings: PeerNetworkSettings,
+        *,
+        state_provider: StateProvider,
+        on_server_ready: ServerReadyCallback | None = None,
+    ) -> None:
         super().__init__()
         self._runner = PeerConnectionRunner(
             settings,
@@ -349,6 +361,7 @@ class NetworkWorker(QObject):
             on_message=self.message_received.emit,
             on_sent=self.message_sent.emit,
             on_error=self.error_occurred.emit,
+            on_server_ready=on_server_ready,
         )
         self.execution_thread_id: int | None = None
 

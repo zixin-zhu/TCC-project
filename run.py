@@ -1,6 +1,8 @@
 """TCC 教学仿真系统统一入口。"""
 
 import argparse
+import json
+import os
 import sys
 from pathlib import Path
 from typing import Optional, Sequence
@@ -33,6 +35,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="只校验配置，不创建窗口或启动网络",
     )
+    parser.add_argument(
+        "--server-ready-file",
+        type=Path,
+        help=argparse.SUPPRESS,
+    )
     return parser
 
 
@@ -64,11 +71,29 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     from app.ui.main_window import TccMainWindow
 
     app = QApplication.instance() or QApplication([sys.argv[0]])
+    def publish_server_ready(host: str, port: int) -> None:
+        """原子发布本次 A 进程的监听凭据，仅供双站启动器使用。"""
+        if args.server_ready_file is None:
+            return
+        ready_file = args.server_ready_file
+        ready_file.parent.mkdir(parents=True, exist_ok=True)
+        temporary = ready_file.with_name(f".{ready_file.name}.{os.getpid()}.tmp")
+        temporary.write_text(
+            json.dumps(
+                {"pid": os.getpid(), "station_id": "A", "host": host, "port": port},
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        temporary.replace(ready_file)
+
     try:
         runtime = ApplicationRuntime.build(
             station_id=config.station.station_id,
             config_dir=args.config,
             data_dir=args.data_dir,
+            server_ready_callback=publish_server_ready,
         )
     except (OSError, RuntimeError, ValueError) as exc:
         # 权威方向库无法读取时必须阻止启动，不能用默认方向覆盖历史真值。

@@ -3,6 +3,7 @@
 import json
 from typing import Protocol
 
+from PyQt5.QtCore import QTimer
 from PyQt5.QtGui import QCloseEvent
 from PyQt5.QtWidgets import (
     QCheckBox,
@@ -26,6 +27,7 @@ from PyQt5.QtWidgets import (
 from app.core.enums import RunningDirection, TrackInputSource, TrackState
 from app.core.models import OperationResult
 from app.services.tcc_controller import TccController, TccSnapshot
+from app.services.train_demo_service import TrainDemoService
 from app.ui.topology_widget import TopologyWidget
 
 
@@ -45,6 +47,10 @@ class TccMainWindow(QMainWindow):
         super().__init__()
         self.controller = controller
         self.network_thread = network_thread
+        self.train_demo = TrainDemoService(controller)
+        self.train_timer = QTimer(self)
+        self.train_timer.setInterval(500)
+        self.train_timer.timeout.connect(self._train_tick)
         self._closed = False
         self.setWindowTitle("高铁车站列控中心 TCC 功能仿真系统")
         self.resize(1280, 820)
@@ -83,6 +89,7 @@ class TccMainWindow(QMainWindow):
         self._build_telegram_page()
         self._build_tsr_page()
         self._build_direction_page()
+        self._build_train_page()
         self._build_network_page()
         self._build_log_page()
         self.operation_result = QLabel("就绪")
@@ -104,8 +111,13 @@ class TccMainWindow(QMainWindow):
         route_group = QGroupBox("进路操作")
         route_controls = QHBoxLayout(route_group)
         self.route_selector = QComboBox()
+        station_prefix = f"{self.controller.config.station.station_id}_"
         self.route_selector.addItems(
-            [route.id for route in self.controller.config.topology.routes]
+            [
+                route.id
+                for route in self.controller.config.topology.routes
+                if route.id.startswith(station_prefix)
+            ]
         )
         self.establish_route_button = QPushButton("建立进路")
         self.cancel_route_button = QPushButton("取消进路")
@@ -242,6 +254,40 @@ class TccMainWindow(QMainWindow):
         layout.addWidget(self.network_metrics)
         layout.addStretch(1)
 
+    def _build_train_page(self) -> None:
+        _, layout = self._new_page("列车演示")
+        controls = QHBoxLayout()
+        self.create_train_button = QPushButton("创建列车")
+        self.dispatch_train_button = QPushButton("发送选中列车")
+        self.start_train_button = QPushButton("开始运行")
+        self.pause_train_button = QPushButton("暂停")
+        self.reset_train_button = QPushButton("复位列车")
+        self.create_train_button.clicked.connect(self._create_train)
+        self.dispatch_train_button.clicked.connect(self._dispatch_train)
+        self.start_train_button.clicked.connect(self._start_trains)
+        self.pause_train_button.clicked.connect(self._pause_trains)
+        self.reset_train_button.clicked.connect(self._reset_trains)
+        for button in (
+            self.create_train_button,
+            self.dispatch_train_button,
+            self.start_train_button,
+            self.pause_train_button,
+            self.reset_train_button,
+        ):
+            controls.addWidget(button)
+        controls.addStretch(1)
+        layout.addLayout(controls)
+        self.train_table = QTableWidget(0, 6)
+        self.train_table.setHorizontalHeaderLabels(
+            ["列车", "方向", "区段", "位置(m)", "速度(km/h)", "状态"]
+        )
+        layout.addWidget(self.train_table)
+        note = QLabel(
+            "教学演示：列车占用仅通过 TRAIN 来源写入控制器，不替代车载 ATP/测速定位。"
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
     def _build_log_page(self) -> None:
         _, layout = self._new_page("日志告警")
         self.operation_table = QTableWidget(0, 5)
@@ -273,6 +319,7 @@ class TccMainWindow(QMainWindow):
         self._fill_tsr(snapshot)
         self._fill_operation_logs(snapshot)
         self._fill_alarms(snapshot)
+        self._fill_trains()
         self.direction_status.setText(
             f"当前方向：{snapshot.running_direction}；"
             f"作业状态：{'安全锁闭' if snapshot.direction_operation_locked else '允许'}"
@@ -373,6 +420,23 @@ class TccMainWindow(QMainWindow):
             for column, value in enumerate(values):
                 self.alarm_table.setItem(row, column, QTableWidgetItem(str(value)))
 
+    def _fill_trains(self) -> None:
+        trains = list(self.train_demo.trains.values())
+        self.train_table.setRowCount(len(trains))
+        for row, train in enumerate(trains):
+            values = (
+                train.train_id,
+                train.direction.value,
+                train.section_id or "—",
+                f"{train.position_m:.1f}",
+                f"{train.speed_kmh:.1f}",
+                train.status.value,
+            )
+            for column, value in enumerate(values):
+                self.train_table.setItem(
+                    row, column, QTableWidgetItem(str(value))
+                )
+
     def _show_result(self, result: OperationResult) -> None:
         status = "成功" if result.success else "拒绝"
         self.operation_result.setText(f"{status}：{result.reason}")
@@ -434,10 +498,46 @@ class TccMainWindow(QMainWindow):
             )
         )
 
+    def _create_train(self) -> None:
+        train = self.train_demo.create_train()
+        self.operation_result.setText(f"成功：已创建演示列车 {train.train_id}")
+        self._fill_trains()
+
+    def _dispatch_train(self) -> None:
+        row = self.train_table.currentRow()
+        if row < 0 and self.train_table.rowCount() > 0:
+            row = 0
+        if row < 0:
+            self.operation_result.setText("拒绝：请先创建列车")
+            return
+        train_id = self.train_table.item(row, 0).text()
+        self._show_result(self.train_demo.dispatch(train_id))
+        self._fill_trains()
+
+    def _train_tick(self) -> None:
+        self.train_demo.tick(self.train_timer.interval() / 1000.0)
+        self._fill_trains()
+
+    def _start_trains(self) -> None:
+        self.train_timer.start()
+
+    def _pause_trains(self) -> None:
+        self.train_timer.stop()
+
+    def _reset_trains(self) -> None:
+        self.train_timer.stop()
+        self.train_demo.reset()
+        self.operation_result.setText("成功：列车演示已复位")
+        self._fill_trains()
+
     def closeEvent(self, event: QCloseEvent) -> None:
         if not self._closed:
+            train_was_running = self.train_timer.isActive()
+            self.train_timer.stop()
             if self.network_thread is not None:
                 if not self.network_thread.stop(timeout_ms=3000):
+                    if train_was_running:
+                        self.train_timer.start()
                     self.operation_result.setText(
                         "关闭被拒绝：网络线程未在超时内停止"
                     )

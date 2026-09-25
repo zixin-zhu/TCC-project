@@ -31,7 +31,9 @@ class TopologyWidget(QWidget):
         width = max(1, self.width() - margin * 2)
         segment = width / max(1, len(sections))
         y = 125
-        painter.setFont(QFont("Microsoft YaHei", 9))
+        body_font = QFont()
+        body_font.setPointSize(9)
+        painter.setFont(body_font)
         for index, section in enumerate(sections):
             left = int(margin + index * segment)
             right = int(margin + (index + 1) * segment)
@@ -57,7 +59,10 @@ class TopologyWidget(QWidget):
                     painter.drawText(left, y + 28, code.code.value)
 
         painter.setPen(QColor("#2f6fad"))
-        painter.setFont(QFont("Microsoft YaHei", 11, QFont.Bold))
+        heading_font = QFont()
+        heading_font.setPointSize(11)
+        heading_font.setBold(True)
+        painter.setFont(heading_font)
         direction = self._snapshot.running_direction if self._snapshot else "--"
         lock_text = "（安全锁闭）" if self._snapshot and self._snapshot.direction_operation_locked else ""
         painter.drawText(margin, 55, f"运行方向：{direction} {lock_text}")

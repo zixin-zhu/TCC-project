@@ -6,7 +6,7 @@ import copy
 import threading
 import time
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from PyQt5.QtCore import QObject, QTimer, pyqtSlot
 
@@ -87,6 +87,7 @@ class ApplicationRuntime(QObject):
         data_dir: Path,
         worker=None,
         network_thread=None,
+        server_ready_callback: Callable[[str, int], None] | None = None,
     ) -> "ApplicationRuntime":  # type: ignore[no-untyped-def]
         config = load_project_config(config_dir, station_id)
         alarms = AlarmService()
@@ -145,6 +146,7 @@ class ApplicationRuntime(QObject):
                     network=config.station.network,
                 ),
                 state_provider=provider,
+                on_server_ready=server_ready_callback,
             )
             worker_holder["worker"] = worker
         if network_thread is None:

@@ -86,6 +86,7 @@ def test_window_has_all_required_pages_and_no_empty_buttons(qtbot) -> None:  # t
         "应答器/LEU",
         "临时限速",
         "区间改方",
+        "列车演示",
         "网络",
         "日志告警",
     ]
@@ -118,6 +119,19 @@ def test_route_controls_and_operation_log_are_functional(qtbot) -> None:  # type
     assert "A_DEPART" in controller.snapshot.active_route_ids
     assert window.operation_table.rowCount() >= 1
     assert window.operation_table.item(0, 1).text() == "建立进路 A_DEPART"
+
+
+def test_train_demo_uses_controller_track_source(qtbot) -> None:  # type: ignore[no-untyped-def]
+    controller = _controller()
+    assert controller.establish_route("A_DEPART").success
+    window = TccMainWindow(controller)
+    qtbot.addWidget(window)
+
+    qtbot.mouseClick(window.create_train_button, Qt.LeftButton)
+    qtbot.mouseClick(window.dispatch_train_button, Qt.LeftButton)
+
+    assert controller.snapshot.tracks["Q1"] is TrackState.OCCUPIED
+    assert window.train_table.item(0, 2).text() == "Q1"
 
 
 def test_close_stops_network_then_closes_persistence(qtbot) -> None:  # type: ignore[no-untyped-def]
