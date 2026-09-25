@@ -12,6 +12,7 @@ from PyQt5.QtCore import QObject, QTimer, pyqtSlot
 
 from app.core.enums import ConnectionState, RunningDirection
 from app.core.exceptions import ProtocolError
+from app.core.models import OperationResult
 from app.infrastructure.config_loader import (
     load_coding_rules,
     load_project_config,
@@ -168,6 +169,17 @@ class ApplicationRuntime(QObject):
         self._direction_timer.start()
         self.network_thread.start()
 
+    def set_network_fault(self, enabled: bool) -> OperationResult:
+        """切换可恢复的教学网络故障，不停止线程或关闭控制器。"""
+        setter = getattr(self.worker, "set_fault_injected", None)
+        if setter is None:
+            return OperationResult(False, "当前网络 worker 不支持故障注入")
+        setter(enabled)
+        return OperationResult(
+            True,
+            "教学网络故障已注入" if enabled else "教学网络故障已解除，正在自动重连",
+        )
+
     def stop(self, *, timeout_ms: int = 3000) -> bool:
         self._accept_async_events = False
         self._direction_timer.stop()
@@ -262,6 +274,16 @@ class ApplicationRuntime(QObject):
             self.controller.set_connection_state(ConnectionState.DEGRADED)
             return
         if self.peer_sync.snapshot is not None:
+            if (
+                message.message_type is MessageType.STATE_SYNC
+                and self.controller.snapshot.connection_state
+                is not ConnectionState.HEALTHY
+            ):
+                # worker 只会在协议握手完成后交付业务全量同步。Qt 的
+                # state_changed(HEALTHY) 与 message_received 是两个排队信号；
+                # 重连时后者可能先到。先恢复连接门禁，避免随后的方向恢复
+                # 因“仍是 DEGRADED”被永久留在 FAULT_LOCKED。
+                self.controller.set_connection_state(ConnectionState.HEALTHY)
             self.controller.update_peer_snapshot(self.peer_sync.snapshot)
             if message.message_type is not MessageType.STATE_SYNC:
                 return

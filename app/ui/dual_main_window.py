@@ -20,7 +20,17 @@ from PyQt5.QtWidgets import (
 )
 
 from app.services.tcc_controller import TccController
+from app.services.dual_train_coordinator import DualTrainCoordinator
 from app.ui.corridor_overview_widget import CorridorOverviewWidget
+from app.ui.dual_operations_pages import (
+    DirectionOperationsPage,
+    LeuComparisonPage,
+    NetworkStatusPage,
+    SignalOperationsPage,
+    TrackOperationsPage,
+    TrainOperationsPage,
+    TsrOperationsPage,
+)
 from app.ui.dual_snapshot import DualStationSnapshot, DualStationSnapshotAggregator
 from app.ui.global_status_bar import GlobalStatusBar
 from app.ui.station_detail_widget import StationDetailWidget
@@ -53,6 +63,8 @@ class DualRuntimePort(Protocol):
     station_b: StationRuntimePort
 
     def stop(self, *, timeout_ms: int = 3000) -> bool: ...
+
+    def set_station_network_fault(self, station_id: str, enabled: bool): ...  # type: ignore[no-untyped-def]
 
 
 class DualReadOnlyPage(QWidget):
@@ -145,6 +157,9 @@ class DualStationMainWindow(QMainWindow):
         self.controller_a = runtime.station_a.controller
         self.controller_b = runtime.station_b.controller
         self.aggregator = DualStationSnapshotAggregator(self)
+        self.train_coordinator = DualTrainCoordinator(
+            self.controller_a, self.controller_b, parent=self
+        )
         self._closed = False
         self.setWindowTitle("CTCS-2 车站列控中心（TCC）双站联合仿真系统")
         self.resize(1440, 900)
@@ -235,21 +250,43 @@ class DualStationMainWindow(QMainWindow):
         self.pages.addWidget(self._wrap(self.station_a_detail))
         self.pages.addWidget(self._wrap(self.station_b_detail))
 
-        page_specs = (
-            ("双站轨道电路状态与码序", "track"),
-            ("双站信号机灯色与继电器状态", "signal"),
-            ("双站应答器与 LEU 报文状态", "telegram"),
-            ("双站临时限速命令", "tsr"),
-            ("权威方向、投影与作业锁闭", "direction"),
-            ("站间通信状态与收发计数", "network"),
-            ("联合列车演示安全状态", "train"),
-            ("双站操作日志与活动告警", "log"),
+        self.track_operations_page = TrackOperationsPage(
+            self.controller_a, self.controller_b
         )
-        self.read_only_pages: list[DualReadOnlyPage] = []
-        for title, kind in page_specs:
-            page = DualReadOnlyPage(title, kind)
-            self.read_only_pages.append(page)
+        self.signal_operations_page = SignalOperationsPage(
+            self.controller_a, self.controller_b
+        )
+        self.leu_comparison_page = LeuComparisonPage()
+        self.tsr_operations_page = TsrOperationsPage(
+            self.controller_a, self.controller_b
+        )
+        self.direction_operations_page = DirectionOperationsPage(
+            self.controller_a,
+            self.controller_b,
+            getattr(self.runtime, "set_station_network_fault", None),
+        )
+        self.network_status_page = NetworkStatusPage(
+            self.controller_a,
+            self.controller_b,
+            getattr(self.runtime, "set_station_network_fault", None),
+        )
+        self.train_operations_page = TrainOperationsPage(
+            self.controller_a,
+            self.controller_b,
+            self.train_coordinator,
+        )
+        for page in (
+            self.track_operations_page,
+            self.signal_operations_page,
+            self.leu_comparison_page,
+            self.tsr_operations_page,
+            self.direction_operations_page,
+            self.network_status_page,
+            self.train_operations_page,
+        ):
             self.pages.addWidget(page)
+        self.log_page = DualReadOnlyPage("双站操作日志与活动告警", "log")
+        self.pages.addWidget(self.log_page)
 
     @staticmethod
     def _wrap(widget: QWidget) -> QWidget:
@@ -288,7 +325,16 @@ class DualStationMainWindow(QMainWindow):
         self.station_b_card.set_snapshot(model.station_b)
         self.corridor.set_snapshot(model)
         self.corridor_full.set_snapshot(model)
-        for page in self.read_only_pages:
+        for page in (
+            self.track_operations_page,
+            self.signal_operations_page,
+            self.leu_comparison_page,
+            self.tsr_operations_page,
+            self.direction_operations_page,
+            self.network_status_page,
+            self.train_operations_page,
+            self.log_page,
+        ):
             page.set_snapshot(model)
         self._fill_recent(model)
 
@@ -324,9 +370,11 @@ class DualStationMainWindow(QMainWindow):
             return
         self.station_a_detail.stop_activity()
         self.station_b_detail.stop_activity()
+        self.train_coordinator.shutdown()
         if not self.runtime.stop(timeout_ms=3000):
             self.global_status.set_lifecycle_text(
-                "关闭失败：运行时线程未停止", failed=True
+                "关闭失败：网络停止请求不可撤销，列车演示保持安全停止",
+                failed=True,
             )
             event.ignore()
             return

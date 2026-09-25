@@ -51,6 +51,24 @@ def test_outgoing_queue_is_bounded() -> None:
         runner.submit(MessageType.SIGNAL_STATUS, {"index": 256})
 
 
+def test_teaching_fault_switch_is_reversible_and_thread_safe() -> None:
+    runner = PeerConnectionRunner(
+        PeerNetworkSettings(
+            role=NetworkRole.CLIENT,
+            host="127.0.0.1",
+            port=9500,
+            station_id="B",
+            peer_station_id="A",
+        ),
+        state_provider=lambda: {"boundary_states": {}, "state_version": 0},
+    )
+
+    runner.set_fault_injected(True)
+    assert runner.fault_injected is True
+    runner.set_fault_injected(False)
+    assert runner.fault_injected is False
+
+
 def test_network_worker_runs_outside_main_thread_and_stops() -> None:
     app = QCoreApplication.instance() or QCoreApplication([])
     main_thread_id = int(QThread.currentThreadId())

@@ -16,6 +16,7 @@ from app.application import ApplicationRuntime
 from app.core.enums import NetworkRole
 from app.core.exceptions import ConfigError
 from app.core.models import ProjectConfig
+from app.core.models import OperationResult
 from app.infrastructure.config_loader import load_project_config
 
 
@@ -61,6 +62,8 @@ class StationRuntimePort(Protocol):
     def start(self) -> None: ...
 
     def stop(self, *, timeout_ms: int = 3000) -> bool: ...
+
+    def set_network_fault(self, enabled: bool) -> OperationResult: ...
 
 
 class DualStationApplication(QObject):
@@ -144,6 +147,15 @@ class DualStationApplication(QObject):
             else DualLifecycleState.STOP_FAILED
         )
         return stopped
+
+    def set_station_network_fault(
+        self, station_id: str, enabled: bool
+    ) -> OperationResult:
+        """供单窗口教学演练切换某一站的可恢复网络故障。"""
+        if station_id not in {"A", "B"}:
+            return OperationResult(False, f"未知站点 {station_id}")
+        station = self.station_a if station_id == "A" else self.station_b
+        return station.set_network_fault(enabled)
 
     def _set_state(self, state: DualLifecycleState) -> None:
         if state is self.state:

@@ -171,6 +171,41 @@ def test_incremental_boundary_update_does_not_require_direction_field(
     assert runtime.peer_sync.snapshot.state_version == 2
 
 
+def test_accepted_full_sync_recovers_before_direction_guard_even_if_state_signal_lags(
+    tmp_path: Path,
+) -> None:
+    """协议已接受全量同步时，不得因 HEALTHY 信号稍后到达而永久锁闭。"""
+    worker = FakeWorker()
+    runtime = ApplicationRuntime.build(
+        station_id="A",
+        config_dir=ROOT / "configs",
+        data_dir=tmp_path,
+        worker=worker,
+        network_thread=FakeThread(),
+    )
+    boundary_ids = [
+        item.id
+        for item in runtime.controller.config.topology.sections
+        if item.id.startswith("Q")
+    ]
+    runtime.controller.set_connection_state(ConnectionState.DEGRADED)
+
+    runtime._on_message(
+        _incoming(
+            MessageType.STATE_SYNC,
+            1,
+            {
+                "state_version": 1,
+                "boundary_states": {item: "CLEAR" for item in boundary_ids},
+                "running_direction": "A_TO_B",
+            },
+        )
+    )
+
+    assert runtime.controller.snapshot.connection_state is ConnectionState.HEALTHY
+    assert runtime.controller.snapshot.direction_operation_locked is False
+
+
 def test_generic_error_message_is_not_misparsed_as_direction_protocol(
     qtbot, tmp_path: Path
 ) -> None:  # type: ignore[no-untyped-def]

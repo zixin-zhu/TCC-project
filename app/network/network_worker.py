@@ -123,11 +123,24 @@ class PeerConnectionRunner:
         self._outgoing: queue.Queue[tuple[MessageType, Any, int]] = queue.Queue(
             maxsize=256
         )
+        self._fault_injected = threading.Event()
         self._last_reported_state: ConnectionState | None = None
 
     def request_stop(self) -> None:
         """线程安全：只设置标志，不从调用线程触碰 worker 的 socket。"""
         self._stop_event.set()
+
+    @property
+    def fault_injected(self) -> bool:
+        """返回教学故障开关；底层状态由线程安全 Event 保存。"""
+        return self._fault_injected.is_set()
+
+    def set_fault_injected(self, enabled: bool) -> None:
+        """模拟本端链路中断；恢复后连接循环会自动重新握手和全量同步。"""
+        if enabled:
+            self._fault_injected.set()
+        else:
+            self._fault_injected.clear()
 
     def submit(
         self, message_type: MessageType, payload: Any, *, state_version: int = 0
@@ -157,6 +170,8 @@ class PeerConnectionRunner:
             self._on_server_ready(self.settings.host, self.settings.port)
             self._set_state(ConnectionState.CONNECTING)
             while not self._stop_event.is_set():
+                if self._wait_while_faulted():
+                    break
                 try:
                     transport, _address = listener.accept()
                 except socket.timeout:
@@ -171,6 +186,8 @@ class PeerConnectionRunner:
 
     def _run_client(self, backoff: ReconnectBackoff) -> None:
         while not self._stop_event.is_set():
+            if self._wait_while_faulted():
+                break
             self._set_state(ConnectionState.CONNECTING)
             transport = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             transport.settimeout(self.settings.socket_timeout_ms / 1000)
@@ -224,7 +241,10 @@ class PeerConnectionRunner:
             sent_full_sync = False
             last_heartbeat_ms = self._now_ms()
 
-            while not self._stop_event.is_set():
+            while (
+                not self._stop_event.is_set()
+                and not self._fault_injected.is_set()
+            ):
                 self._flush_outgoing(connection, session)
                 for message in connection.receive_available():
                     now_ms = self._now_ms()
@@ -288,6 +308,13 @@ class PeerConnectionRunner:
             connection.close()
             self._set_state(ConnectionState.DISCONNECTED)
         return reached_healthy
+
+    def _wait_while_faulted(self) -> bool:
+        """故障期间不新建 socket；返回 True 表示整个线程正在停止。"""
+        while self._fault_injected.is_set() and not self._stop_event.is_set():
+            self._set_state(ConnectionState.DISCONNECTED)
+            self._stop_event.wait(self.settings.socket_timeout_ms / 1000)
+        return self._stop_event.is_set()
 
     def _flush_outgoing(
         self, connection: FramedSocketConnection, session: PeerProtocolSession
@@ -387,6 +414,13 @@ class NetworkWorker(QObject):
 
     def request_stop(self) -> None:
         self._runner.request_stop()
+
+    @property
+    def fault_injected(self) -> bool:
+        return self._runner.fault_injected
+
+    def set_fault_injected(self, enabled: bool) -> None:
+        self._runner.set_fault_injected(enabled)
 
     def submit(
         self, message_type: MessageType, payload: Any, *, state_version: int = 0

@@ -5,7 +5,8 @@ from types import SimpleNamespace
 
 from PyQt5.QtCore import Qt
 
-from app.core.enums import TrackInputSource, TrackState
+from app.core.enums import ConnectionState, TrackInputSource, TrackState
+from app.core.models import OperationResult
 from app.dual_application import DualStationApplication
 from app.ui.dual_main_window import DualStationMainWindow
 from tests.integration.test_dual_application_integration import (
@@ -44,6 +45,13 @@ class DualRuntimeStub:
             self.station_b.controller.close()
             self.station_a.controller.close()
         return self.stop_result
+
+    def set_station_network_fault(self, station_id: str, enabled: bool):  # type: ignore[no-untyped-def]
+        controller = self.station_a.controller if station_id == "A" else self.station_b.controller
+        controller.set_connection_state(
+            ConnectionState.DEGRADED if enabled else ConnectionState.HEALTHY
+        )
+        return OperationResult(True, "测试网络状态已切换")
 
 
 def test_dual_window_has_twelve_real_pages_and_card_navigation(qtbot) -> None:  # type: ignore[no-untyped-def]
@@ -115,6 +123,18 @@ def test_dual_window_rejects_close_when_runtime_stop_times_out(qtbot) -> None:  
     assert window.close() is False
     assert runtime.stop_count == 1
     assert "关闭失败" in window.global_status.lifecycle_label.text()
+
+
+def test_close_failure_keeps_train_timer_safely_stopped(qtbot) -> None:  # type: ignore[no-untyped-def]
+    runtime = DualRuntimeStub(stop_result=False)
+    window = DualStationMainWindow(runtime)
+    qtbot.addWidget(window)
+    window.train_coordinator.timer.start()
+
+    assert window.close() is False
+
+    assert not window.train_coordinator.timer.isActive()
+    assert "保持安全停止" in window.global_status.lifecycle_label.text()
 
 
 def test_real_runtime_drives_dashboard_to_healthy_and_closes_cleanly(

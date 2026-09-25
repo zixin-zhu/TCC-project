@@ -124,6 +124,8 @@ class StationDetailWidget(QWidget):
         )
         self.establish_route_button = QPushButton("建立进路")
         self.cancel_route_button = QPushButton("取消进路")
+        self.establish_route_button.setObjectName("establishRouteButton")
+        self.cancel_route_button.setObjectName("cancelRouteButton")
         self.establish_route_button.clicked.connect(self._establish_route)
         self.cancel_route_button.clicked.connect(self._cancel_route)
         route_controls.addWidget(self.route_selector)

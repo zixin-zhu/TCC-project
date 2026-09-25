@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Protocol
 
-from app.core.enums import ConnectionState, RunningDirection, TelegramMode, TrackInputSource, TrackState
+from app.core.enums import ConnectionState, DirectionPhase, RunningDirection, TelegramMode, TrackInputSource, TrackState
 from app.core.exceptions import ProtocolError, UnknownTrackSectionError
 from app.core.models import (
     CodingRules,
@@ -200,6 +200,11 @@ class TccController:
 
     def now_ms(self) -> int:
         return self._clock_ms()
+
+    @property
+    def direction_phase(self) -> DirectionPhase:
+        """向界面暴露只读改方阶段，不允许界面接触状态机内部对象。"""
+        return self._direction.machine.phase
 
     def update_network_metrics(self, *, received: int, sent: int) -> None:
         """由主线程网络桥接更新只读统计，不触发新的站间状态同步。"""
