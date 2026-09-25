@@ -55,7 +55,7 @@
 | 0 工作区/Git 恢复 | 已完成 | `80848c8` | 已推送 | Git 恢复；196 项通过；复审无 Critical/Important |
 | 1 单进程双运行时 | 已完成 | `172a00f` | 已推送 | 206 项通过；真实 TCP 双站健康；复审无 Critical/Important |
 | 2 单站 UI 组件化 | 已完成 | `fba656d` | 已推送 | 212 项通过；A/B 截图目视通过；复审无 Critical/Important |
-| 3 双站总览/线路图 | 已完成 | 待记录 | 待推送 | 229 项通过；真实双站窗口健康；复审无 Critical/Important |
+| 3 双站总览/线路图 | 已完成 | `d219a2b` | 已推送 | 229 项通过；真实双站窗口健康；复审无 Critical/Important |
 | 4 双站操作/列车 | 进行中 | — | — | 下一步实现共享输入、真实操作页与唯一联合列车 |
 | 5 集成验收/交付 | 未开始 | — | — | — |
 
@@ -139,6 +139,7 @@
   `HEALTHY` 后干净关闭；compileall、配置校验和 `git diff --check` 均通过。
 - 首轮复审发现版本回退与聚合锁闭未约束操作两个 Important，均以失败先行测试
   修复；二次复审无 Critical/Important。
+- 功能提交 `d219a2b` 已推送到 `origin/codex/dual-station-dashboard`。
 - 下一步：执行 `04-dual-operations-train.md`，先实现共享轨道输入适配器，再
   建立唯一联合列车协调器、真实双站操作页并迁移七个答辩场景。
 
