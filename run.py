@@ -99,7 +99,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         # 权威方向库无法读取时必须阻止启动，不能用默认方向覆盖历史真值。
         print(f"运行环境初始化失败：{exc}")
         return 3
-    window = TccMainWindow(runtime.controller, network_thread=runtime)
+    window = TccMainWindow(runtime.controller, lifecycle=runtime)
     window.show()
     runtime.start()
     return app.exec_()
