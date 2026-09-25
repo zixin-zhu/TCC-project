@@ -71,9 +71,9 @@ class FakeLifecycle:
         return self.stop_result
 
 
-def _controller() -> TccController:
+def _controller(station_id: str = "A") -> TccController:
     controller = TccController(
-        load_project_config(ROOT / "configs", "A"),
+        load_project_config(ROOT / "configs", station_id),
         load_coding_rules(ROOT / "configs" / "coding_rules.json"),
         load_telegram_catalog(ROOT / "configs" / "telegram_packets.json"),
         alarms=AlarmService(),
@@ -84,7 +84,12 @@ def _controller() -> TccController:
     )
     controller.set_connection_state(ConnectionState.HEALTHY)
     controller.update_peer_snapshot(
-        PeerSnapshot("B", {"Q1": TrackState.CLEAR}, 0, 10_000)
+        PeerSnapshot(
+            "B" if station_id == "A" else "A",
+            {"Q1": TrackState.CLEAR},
+            0,
+            10_000,
+        )
     )
     controller.restore_authoritative_direction(RunningDirection.A_TO_B)
     return controller

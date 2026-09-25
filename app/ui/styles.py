@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import QWidget
 
 
 CLASSIC_CONSOLE_QSS = """
-QMainWindow, QWidget#stationDetailRoot {
+QMainWindow, QWidget#stationDetailRoot, QWidget#dualMainRoot {
     background: #eef2f5;
     color: #1f2d38;
 }
@@ -39,6 +39,31 @@ QTabBar::tab {
 QTabBar::tab:selected {
     background: #1976d2;
     color: #ffffff;
+}
+QListWidget#sideNavigation {
+    background: #e5ebf0;
+    color: #1f2d38;
+    border: 1px solid #b8c7d3;
+    outline: 0;
+}
+QListWidget#sideNavigation::item {
+    min-height: 30px;
+    padding: 4px 8px;
+    border-bottom: 1px solid #d4dde4;
+}
+QListWidget#sideNavigation::item:selected {
+    background: #1976d2;
+    color: #ffffff;
+}
+QFrame#globalStatusBar {
+    background: #ffffff;
+    border: 1px solid #b8c7d3;
+}
+QLabel#pageHeading {
+    color: #07558f;
+    font-size: 13pt;
+    font-weight: 600;
+    padding: 6px;
 }
 QGroupBox {
     background: #ffffff;

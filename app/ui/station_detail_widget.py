@@ -45,6 +45,8 @@ class StationDetailWidget(QWidget):
         super().__init__(parent)
         self.controller = controller
         self.include_train_page = include_train_page
+        self._external_operation_locked = False
+        self._external_lock_reason = ""
         self.train_demo = TrainDemoService(controller)
         self.train_timer = QTimer(self)
         self.train_timer.setInterval(500)
@@ -336,14 +338,34 @@ class StationDetailWidget(QWidget):
             f"已接收业务消息：{snapshot.network_received}　"
             f"已发送业务消息：{snapshot.network_sent}"
         )
+        self._update_action_enabled(snapshot)
+
+    def set_external_operation_lock(self, locked: bool, reason: str = "") -> None:
+        """应用双站聚合安全门；不改变控制器内部业务状态。"""
+        changed = locked != self._external_operation_locked
+        self._external_operation_locked = locked
+        self._external_lock_reason = reason
+        self._update_action_enabled(self.controller.snapshot)
+        if changed and locked:
+            self.operation_result.setText(
+                f"全局安全锁闭：{reason or '双站条件未满足'}"
+            )
+
+    def _update_action_enabled(self, snapshot: TccSnapshot) -> None:
+        locally_available = not snapshot.direction_operation_locked
+        globally_available = not self._external_operation_locked
         self.establish_route_button.setEnabled(
-            not snapshot.direction_operation_locked
+            locally_available and globally_available
         )
         self.direction_button.setEnabled(
             snapshot.station_id == "A"
-            and not snapshot.direction_operation_locked
+            and locally_available
+            and globally_available
             and snapshot.connection_state.value == "HEALTHY"
         )
+        if self.include_train_page:
+            self.dispatch_train_button.setEnabled(globally_available)
+            self.start_train_button.setEnabled(globally_available)
 
     def _fill_operation_logs(self, snapshot: TccSnapshot) -> None:
         self.operation_table.setRowCount(len(snapshot.operation_logs))

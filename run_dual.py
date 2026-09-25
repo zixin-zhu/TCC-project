@@ -10,7 +10,6 @@ from typing import Optional, Sequence
 from app.core.exceptions import ConfigError
 from app.core.models import ProjectConfig
 from app.dual_application import (
-    DualLifecycleState,
     DualStationApplication,
     validate_dual_station_config,
 )
@@ -74,58 +73,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     from app.ui.qt_bootstrap import configure_qt_plugin_path
 
     configure_qt_plugin_path()
-    from PyQt5.QtGui import QCloseEvent
-    from PyQt5.QtWidgets import (
-        QApplication,
-        QLabel,
-        QMainWindow,
-        QMessageBox,
-        QVBoxLayout,
-        QWidget,
-    )
+    from PyQt5.QtWidgets import QApplication
 
-    class DualRuntimePlaceholderWindow(QMainWindow):
-        """阶段一占位窗；阶段三将替换为正式经典控制台界面。"""
-
-        def __init__(self, runtime: DualStationApplication) -> None:
-            super().__init__()
-            self.runtime = runtime
-            self.setWindowTitle("CTCS-2 车站列控中心（TCC）双站仿真系统")
-            self.resize(720, 320)
-            central = QWidget(self)
-            layout = QVBoxLayout(central)
-            self.status_label = QLabel("A/B 运行时已装配，正在启动 A 站监听……")
-            self.status_label.setObjectName("dualRuntimeStatus")
-            layout.addWidget(self.status_label)
-            layout.addStretch(1)
-            self.setCentralWidget(central)
-            runtime.lifecycle_changed.connect(self._show_lifecycle)
-            runtime.startup_failed.connect(self._show_failure)
-
-        def _show_lifecycle(self, state: DualLifecycleState) -> None:
-            descriptions = {
-                DualLifecycleState.STARTING_A: "A 站正在建立监听，B 站等待启动……",
-                DualLifecycleState.RUNNING: "A/B 运行时已启动，正在进行 TCP 握手……",
-                DualLifecycleState.FAILED: "双站启动失败",
-                DualLifecycleState.STOPPING: "正在按 B→A 顺序安全关闭……",
-                DualLifecycleState.STOPPED: "双站运行时已关闭",
-                DualLifecycleState.STOP_FAILED: "双站运行时关闭超时",
-            }
-            self.status_label.setText(descriptions.get(state, state.value))
-
-        def _show_failure(self, reason: str) -> None:
-            self.status_label.setText(reason)
-
-        def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
-            if self.runtime.stop():
-                event.accept()
-                return
-            event.ignore()
-            QMessageBox.critical(
-                self,
-                "无法退出",
-                "网络线程未在超时时间内结束，请检查运行日志后重试。",
-            )
+    from app.ui.dual_main_window import DualStationMainWindow
 
     app = QApplication.instance() or QApplication([sys.argv[0]])
     try:
@@ -135,7 +85,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"双站运行环境初始化失败：{exc}")
         return 3
-    window = DualRuntimePlaceholderWindow(runtime)
+    window = DualStationMainWindow(runtime)
     window.show()
     runtime.start()
     return app.exec_()

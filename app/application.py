@@ -69,6 +69,9 @@ class ApplicationRuntime(QObject):
         self.state_provider = state_provider
         self._received_count = 0
         self._sent_count = 0
+        # Qt queued signal 可能在线程 wait() 成功后才交付；关闭边界先关闭此门，
+        # 避免迟到的网络/定时器回调写入已经关闭的控制器和数据库。
+        self._accept_async_events = True
         self._direction_timer = QTimer(self)
         self._direction_timer.setInterval(250)
         self._direction_timer.timeout.connect(self._on_direction_timeout)
@@ -161,27 +164,34 @@ class ApplicationRuntime(QObject):
         return cls(controller, worker, network_thread, peer_sync, provider)
 
     def start(self) -> None:
+        self._accept_async_events = True
         self._direction_timer.start()
         self.network_thread.start()
 
     def stop(self, *, timeout_ms: int = 3000) -> bool:
+        self._accept_async_events = False
         self._direction_timer.stop()
         stopped = self.network_thread.stop(timeout_ms=timeout_ms)
         if stopped:
             self.controller.close()
         else:
             # 关闭被拒绝时应用仍在运行，超时保护不能悄悄停用。
+            self._accept_async_events = True
             self._direction_timer.start()
         return stopped
 
     @pyqtSlot(object)
     def _on_network_state(self, state: ConnectionState) -> None:
+        if not self._accept_async_events:
+            return
         if state is ConnectionState.DISCONNECTED:
             self.peer_sync.reset()
         self.controller.set_connection_state(state)
 
     @pyqtSlot(object)
     def _on_message(self, message: ProtocolMessage) -> None:
+        if not self._accept_async_events:
+            return
         self._received_count += 1
         self._publish_network_metrics()
         if message.message_type is MessageType.ERROR and (
@@ -266,6 +276,8 @@ class ApplicationRuntime(QObject):
 
     @pyqtSlot(object)
     def _on_message_sent(self, _message: object) -> None:
+        if not self._accept_async_events:
+            return
         self._sent_count += 1
         self._publish_network_metrics()
 
@@ -277,11 +289,15 @@ class ApplicationRuntime(QObject):
 
     @pyqtSlot()
     def _on_direction_timeout(self) -> None:
+        if not self._accept_async_events:
+            return
         self.controller.expire_direction_change()
         self.controller.reevaluate_time_dependent_safety()
 
     @pyqtSlot(str)
     def _on_network_error(self, message: str) -> None:
+        if not self._accept_async_events:
+            return
         self.controller.raise_external_alarm(
             "NETWORK_ERROR",
             AlarmLevel.WARNING,

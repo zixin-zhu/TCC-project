@@ -294,14 +294,42 @@ def test_invalid_full_sync_direction_never_enters_peer_snapshot(
     assert runtime.peer_sync.snapshot is None
 
 
-def test_stop_failure_keeps_controller_open(tmp_path: Path) -> None:
+def test_stop_failure_keeps_controller_open(qtbot, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    worker = FakeWorker()
     runtime = ApplicationRuntime.build(
         station_id="A",
         config_dir=ROOT / "configs",
         data_dir=tmp_path,
-        worker=FakeWorker(),
+        worker=worker,
         network_thread=FakeThread(stop_result=False),
     )
 
     assert runtime.stop() is False
     runtime.controller.update_network_metrics(received=1, sent=1)
+    worker.state_changed.emit(ConnectionState.DEGRADED)
+    qtbot.waitUntil(
+        lambda: runtime.controller.snapshot.connection_state
+        is ConnectionState.DEGRADED
+    )
+
+
+def test_successful_stop_ignores_already_queued_worker_callbacks(
+    qtbot, tmp_path: Path
+) -> None:  # type: ignore[no-untyped-def]
+    """线程退出前排队的 Qt 信号不得在 controller 关闭后继续写入。"""
+    worker = FakeWorker()
+    runtime = ApplicationRuntime.build(
+        station_id="A",
+        config_dir=ROOT / "configs",
+        data_dir=tmp_path,
+        worker=worker,
+        network_thread=FakeThread(),
+    )
+
+    assert runtime.stop() is True
+
+    # 直接调用等价于主线程随后交付已经排队的 signal/slot 元调用。
+    runtime._on_message_sent(object())
+    runtime._on_network_state(ConnectionState.DISCONNECTED)
+    runtime._on_network_error("late error")
+    runtime._on_direction_timeout()
