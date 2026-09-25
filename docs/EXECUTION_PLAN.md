@@ -1,18 +1,34 @@
 # TCC CTCS-2 分阶段执行索引
 
-> 规格入口：`/Users/zhu/Desktop/列控课设/TCC_Codex_Vibe_Coding_改造实施方案.md`。本文件用于任务恢复和版本切分；技术细节以对应阶段子方案为准。
+> 当前规格入口：`docs/dual-station-plans/00-dual-station-design-spec.md`；阶段入口：
+> `docs/dual-station-plans/README.md`。原 CTCS-2 阶段 1～7 已完成，保留在本文后半部作为历史索引。
 
 ## 全局执行约束
 
-- 分支：`codex/ctcs2-rebuild`；每个 Task 独立提交并推送。
+- 当前分支：`codex/dual-station-dashboard`；已完成基线分支
+  `codex/ctcs2-rebuild` 不再接收本轮实现提交。每个阶段独立提交并推送。
 - 严格执行 RED—GREEN—REFACTOR；阶段结束运行本阶段和全部已有回归。
 - 代码模块化、类型化；公共类、复杂业务规则、状态转换和安全降级必须有准确中文注释或 docstring，禁止逐行重复代码含义的无效注释。
-- 如需 IDE，仅使用 PyCharm；UI 沿用旧版配色、布局密度和绘制风格。
+- 如需 IDE，仅使用 PyCharm；UI 采用用户参考图方案一的浅色经典控制台风格。
 - 每个 Task 完成时更新 `docs/IMPLEMENTATION_STATUS.md`。
+
+## 当前执行顺序：双站同屏阶段 0～5
+
+1. `docs/dual-station-plans/00-workspace-git-recovery.md`
+2. `docs/dual-station-plans/01-dual-runtime-lifecycle.md`
+3. `docs/dual-station-plans/02-station-ui-refactor.md`
+4. `docs/dual-station-plans/03-dashboard-corridor.md`
+5. `docs/dual-station-plans/04-dual-operations-train.md`
+6. `docs/dual-station-plans/05-integration-delivery.md`
+
+恢复时读取 `docs/IMPLEMENTATION_STATUS.md`，从双站同屏阶段表中首个“进行中”或
+“未开始”阶段继续。阶段 N 未完成测试、复审、提交和推送前，禁止开始阶段 N+1。
+
+## 历史索引：已完成 CTCS-2 阶段 1～7
 
 ## Task 1：工程骨架、配置与统一领域模型
 
-读取：`/Users/zhu/Desktop/列控课设/docs/tcc-vibe-plans/01-foundation-domain.md`。
+读取：`/Users/zhu/Desktop/TCC-project/docs/tcc-vibe-plans/01-foundation-domain.md`。
 
 产出：`app/core`、配置加载/校验、A/B 和拓扑/应答器组配置、`run.py --validate-only`、Qt 诊断、pytest 基线。
 

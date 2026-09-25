@@ -5,11 +5,14 @@
 ## 仓库状态
 
 - 仓库：`git@github.com:zixin-zhu/TCC-project.git`
-- 开发分支：`codex/ctcs2-rebuild`
+- 当前开发分支：`codex/dual-station-dashboard`
+- 已完成基线分支：`codex/ctcs2-rebuild`（HEAD `5a8e06e`）
 - 基线提交：`d62e396`（Initial version）
-- 工作树：`/Users/zhu/Desktop/列控课设/.worktrees/ctcs2-rebuild`
+- 工作树：`/Users/zhu/Desktop/TCC-project/.worktrees/ctcs2-rebuild`
 - IDE 约束：如需 IDE，只使用 PyCharm。
-- UI 约束：沿用现有界面视觉风格，阶段 6 只重构结构和功能完整性。
+- UI 约束：双站同屏采用用户参考图“方案一：经典控制台风格”；浅灰白背景、
+  深蓝标题栏、蓝色选中导航、白色细边框面板和紧凑表格。按钮和设备必须来自
+  当前 CTCS-2 作业要求与软件真实功能，不得照抄示意图中的虚构对象或空功能。
 
 ## 固定工程约束
 
@@ -25,6 +28,11 @@
 - 初始仓库没有测试文件和依赖清单。
 - macOS 系统 Python 默认字节码缓存目录受沙箱限制；基线验证使用 `PYTHONPYCACHEPREFIX=/private/tmp/tcc-pycache`。
 - 原代码存在两套入口、信号双轨状态、提前改方、网络线程边界等已知问题，详见总控方案。
+- 2026-09-25 父目录由“列控课设”改名为 `TCC-project`，linked worktree 两侧
+  绝对路径已在双站同屏阶段 0 精确修复；原指针备份位于
+  `/private/tmp/tcc-worktree-pointer-backup/`。
+- 执行计划技能的隐藏账本目录受当前沙箱限制，因此执行裁定、阶段证据和下一步
+  统一记录在本文件；这是 Git 管理的长期防中断事实来源。
 
 ## 阶段状态
 
@@ -37,6 +45,29 @@
 | 5 区间改方 | 已完成 | `848d42d` | 已推送 | 单一权威方案；50 项阶段测试、144 项全量测试通过；最终复审无严重问题 |
 | 6 UI/持久化 | 已完成 | `9f14216` | 已推送 | 全量 183 项通过；最终复审无 Critical/Important |
 | 7 集成交付 | 已完成 | `1169ac4` | 已推送 | 196 项通过；双站实测通过；最终复审无 Critical/Important |
+
+## 双站同屏改造阶段状态
+
+设计基线与阶段方案入口：`docs/dual-station-plans/README.md`。
+
+| 阶段 | 状态 | 提交 | 推送 | 验收摘要 |
+|---|---|---|---|---|
+| 0 工作区/Git 恢复 | 进行中 | 未提交 | 未推送 | Git 指针已修复；新分支已建立；待基线测试与复审 |
+| 1 单进程双运行时 | 未开始 | — | — | — |
+| 2 单站 UI 组件化 | 未开始 | — | — | — |
+| 3 双站总览/线路图 | 未开始 | — | — | — |
+| 4 双站操作/列车 | 未开始 | — | — | — |
+| 5 集成验收/交付 | 未开始 | — | — | — |
+
+### 阶段 0 执行账本
+
+- 已确认旧 worktree 分支 `codex/ctcs2-rebuild`、HEAD `5a8e06e` 和索引完整。
+- 已备份并修复 worktree `.git` 与主仓库 `worktrees/.../gitdir` 两侧绝对路径。
+- 已创建专用分支 `codex/dual-station-dashboard`，未改写原分支与 `main`。
+- Ruling：隐藏 `.superpowers` 账本因沙箱拒绝写入，改用本文件记录执行事实；
+  若此裁定错误，影响仅是不能使用技能自带 task-start/task-done 辅助脚本，
+  不影响代码、Git 历史、测试和用户要求的断线恢复。
+- 下一步：完成路径残留检查、A/B 配置校验、196 项基线测试、独立复审、提交和推送。
 
 ## 已完成：阶段 1
 
@@ -154,13 +185,13 @@
 - 最终独立复审确认就绪凭据、配置传递、跨平台进程隔离和证据边界修复有效，
   未发现 Critical/Important；功能提交 `1169ac4` 已推送。
 
-下一步：七个实施阶段均已完成。答辩前可按 README 重建环境，并按
-`docs/DELIVERY_SCENARIOS.md` 依次演练七类场景；如需合并主分支，应另行评审后执行。
+原七个 CTCS-2 功能阶段均已完成；当前按 `docs/dual-station-plans/` 执行新的
+双站同屏六阶段改造。必须从上表首个“进行中/未开始”阶段继续，不重复已完成阶段。
 
 ## 恢复命令
 
 ```bash
-cd /Users/zhu/Desktop/列控课设/.worktrees/ctcs2-rebuild
+cd /Users/zhu/Desktop/TCC-project/.worktrees/ctcs2-rebuild
 git status --short
 git log --oneline --decorate -10
 sed -n '1,240p' docs/IMPLEMENTATION_STATUS.md
