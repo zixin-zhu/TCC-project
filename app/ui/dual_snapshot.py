@@ -33,6 +33,7 @@ class DualStationSnapshot:
     direction_consistent: bool
     communication_healthy: bool
     operation_locked: bool
+    lock_reason: str
     sections: tuple[SectionConsistency, ...]
     active_alarm_count: int
     critical_alarm_count: int
@@ -104,18 +105,26 @@ class DualStationSnapshotAggregator(QObject):
         )
         alarms = tuple(station_a.alarms) + tuple(station_b.alarms)
         active_alarms = tuple(item for item in alarms if item.active)
+        operation_locked = (
+            not communication_healthy
+            or not direction_consistent
+            or station_a.direction_operation_locked
+            or station_b.direction_operation_locked
+            or shared_inconsistent
+        )
         model = DualStationSnapshot(
             station_a=station_a,
             station_b=station_b,
             authoritative_direction=direction,
             direction_consistent=direction_consistent,
             communication_healthy=communication_healthy,
-            operation_locked=(
-                not communication_healthy
-                or not direction_consistent
-                or station_a.direction_operation_locked
-                or station_b.direction_operation_locked
-                or shared_inconsistent
+            operation_locked=operation_locked,
+            lock_reason=self._compute_lock_reason(
+                communication_healthy=communication_healthy,
+                direction_consistent=direction_consistent,
+                station_a_locked=station_a.direction_operation_locked,
+                station_b_locked=station_b.direction_operation_locked,
+                shared_inconsistent=shared_inconsistent,
             ),
             sections=sections,
             active_alarm_count=len(active_alarms),
@@ -127,6 +136,32 @@ class DualStationSnapshotAggregator(QObject):
             return
         self._snapshot = model
         self.snapshot_changed.emit(model)
+
+    @staticmethod
+    def _compute_lock_reason(
+        *,
+        communication_healthy: bool,
+        direction_consistent: bool,
+        station_a_locked: bool,
+        station_b_locked: bool,
+        shared_inconsistent: bool,
+    ) -> str:
+        """汇总导致安全锁闭的具体原因，供界面预警提示。
+
+        按「共享区段不一致 > 通信异常 > 方向不一致 > 车站锁闭」的优先级
+        逐步归因，并用顿号拼接。作业允许时返回空字符串。
+        """
+        reasons: list[str] = []
+        if shared_inconsistent:
+            reasons.append("共享区段状态不一致")
+        if not communication_healthy:
+            reasons.append("站间通信异常")
+        if not direction_consistent:
+            reasons.append("两站运行方向不一致")
+        if station_a_locked or station_b_locked:
+            reasons.append("车站安全锁闭")
+        # 用顿号连接便于界面直接展示；避免出现“原因：原因”的冗余前缀。
+        return "、".join(reasons)
 
     @staticmethod
     def _aggregate_sections(

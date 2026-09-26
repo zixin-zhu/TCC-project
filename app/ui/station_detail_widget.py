@@ -26,7 +26,7 @@ from app.core.enums import RunningDirection, TrackInputSource, TrackState
 from app.core.models import OperationResult
 from app.services.tcc_controller import TccController, TccSnapshot
 from app.services.train_demo_service import TrainDemoService
-from app.ui.styles import set_semantic_state
+from app.ui.styles import relay_text, set_semantic_state
 from app.ui.topology_widget import TopologyWidget
 
 
@@ -366,8 +366,13 @@ class StationDetailWidget(QWidget):
             and snapshot.connection_state.value == "HEALTHY"
         )
         if self.include_train_page:
+            # 外部安全锁闭时列车按钮必须一致禁用（含创建/暂停/复位），
+            # 与联合列车页的锁定行为保持一致，避免界面状态矛盾。
+            self.create_train_button.setEnabled(globally_available)
             self.dispatch_train_button.setEnabled(globally_available)
             self.start_train_button.setEnabled(globally_available)
+            self.pause_train_button.setEnabled(globally_available)
+            self.reset_train_button.setEnabled(globally_available)
 
     def _fill_operation_logs(self, snapshot: TccSnapshot) -> None:
         self.operation_table.setRowCount(len(snapshot.operation_logs))
@@ -407,9 +412,9 @@ class StationDetailWidget(QWidget):
             values = (
                 signal.signal_id,
                 signal.aspect.value,
-                signal.relay_hj,
-                signal.relay_uj,
-                f"{signal.relay_lj} / {signal.reason}",
+                relay_text(signal.relay_hj),
+                relay_text(signal.relay_uj),
+                f"{relay_text(signal.relay_lj)} / {signal.reason}",
             )
             for column, value in enumerate(values):
                 self.signal_table.setItem(

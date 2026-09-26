@@ -139,3 +139,12 @@ def set_semantic_state(widget: QWidget, property_name: str, value: str) -> None:
         return
     widget.setProperty(property_name, value)
     repolish(widget)
+
+
+def relay_text(relay: bool) -> str:
+    """把继电器吸起/落下布尔值统一成控制台风格的 1/0 显示。
+
+    全项目信号灯丝/继电器状态统一采用“1=吸起(点亮)、0=落下(熄灭)”，
+    避免同一数据在不同页面出现 True/False 与 1/0 混用。
+    """
+    return "1" if relay else "0"

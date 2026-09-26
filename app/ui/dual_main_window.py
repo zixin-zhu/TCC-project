@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QListWidget,
     QMainWindow,
+    QMessageBox,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -327,9 +328,9 @@ class DualStationMainWindow(QMainWindow):
 
     def refresh(self, model: DualStationSnapshot) -> None:
         self.global_status.set_snapshot(model)
-        lock_reason = (
-            "双站通信、方向或共享区段状态不满足联合行车条件"
-        )
+        # 用聚合器给出的具体锁闭原因（如“共享区段状态不一致、站间通信异常”）
+        # 替换笼统文案，让用户在页面操作结果栏直接看到被拒/锁闭的真实原因。
+        lock_reason = model.lock_reason or "双站条件未满足"
         self.station_a_detail.set_external_operation_lock(
             model.operation_locked, lock_reason
         )
@@ -415,11 +416,23 @@ class DualStationMainWindow(QMainWindow):
         self.station_b_detail.stop_activity()
         self.train_coordinator.shutdown()
         if not self.runtime.stop(timeout_ms=3000):
+            # 关闭失败必须让用户看到明确原因，而不是静默拒绝后让人误以为“卡死”。
             self.global_status.set_lifecycle_text(
                 "关闭失败：网络停止请求不可撤销，列车演示保持安全停止",
                 failed=True,
             )
+            self._notify_close_failed()
             event.ignore()
             return
         self._closed = True
         event.accept()
+
+    def _notify_close_failed(self) -> None:
+        """关闭失败时的可见提示（抽成独立方法便于测试时替换，避免模态阻塞）。"""
+        QMessageBox.warning(
+            self,
+            "无法关闭",
+            "站间网络停止未能确认（请求不可撤销）。\n"
+            "列车演示已保持安全停止。请稍后重试关闭；"
+            "若持续失败请检查站间网络连接。",
+        )

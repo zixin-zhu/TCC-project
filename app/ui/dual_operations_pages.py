@@ -36,6 +36,7 @@ from app.services.alarm_service import AlarmLevel
 from app.services.dual_train_coordinator import DualTrainCoordinator, DualTrainState
 from app.services.tcc_controller import TccController
 from app.ui.dual_snapshot import DualStationSnapshot
+from app.ui.styles import relay_text
 
 
 DUAL_OPERATION_BUTTON_OBJECTS = frozenset(
@@ -299,9 +300,9 @@ class SignalOperationsPage(_OperationPage):
                 f"{station_id}站",
                 signal.signal_id,
                 signal.aspect.value,
-                str(signal.relay_hj),
-                str(signal.relay_uj),
-                f"{signal.relay_lj} / {signal.reason}",
+                relay_text(signal.relay_hj),
+                relay_text(signal.relay_uj),
+                f"{relay_text(signal.relay_lj)} / {signal.reason}",
             )
             for column, value in enumerate(values):
                 self.table.setItem(row, column, QTableWidgetItem(value))
@@ -769,7 +770,11 @@ class TrainOperationsPage(_OperationPage):
                 self.train_table.setItem(row, column, QTableWidgetItem(value))
 
     def set_snapshot(self, model: DualStationSnapshot) -> None:
+        # 双站聚合锁闭时必须一致禁用全部列车操作按钮（含暂停/复位），
+        # 避免界面上出现「发送/开始不可用但暂停/复位仍可点」的不一致体验。
         available = not model.operation_locked
         self.create_button.setEnabled(available)
         self.dispatch_button.setEnabled(available)
         self.start_button.setEnabled(available)
+        self.pause_button.setEnabled(available)
+        self.reset_button.setEnabled(available)

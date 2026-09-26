@@ -57,6 +57,10 @@ class GlobalStatusBar(QFrame):
             if snapshot.operation_locked
             else "作业状态：作业允许"
         )
+        # 锁闭时把聚合器给出的具体原因作为悬浮提示，帮助用户定位「操作不了」根因。
+        self.lock_label.setToolTip(
+            snapshot.lock_reason if snapshot.operation_locked else ""
+        )
         set_semantic_state(
             self.lock_label,
             "severity",

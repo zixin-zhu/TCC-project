@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import QGridLayout, QGroupBox, QLabel, QPushButton
 
 from app.core.models import ProjectConfig
 from app.services.tcc_controller import TccSnapshot
-from app.ui.styles import set_semantic_state
+from app.ui.styles import relay_text, set_semantic_state
 
 
 class StationSummaryCard(QGroupBox):
@@ -96,8 +96,8 @@ class StationSummaryCard(QGroupBox):
         else:
             self.signal_label.setText(
                 f"主信号 {signal.signal_id}：{signal.aspect.value}　"
-                f"HJ/UJ/LJ={int(signal.relay_hj)}/{int(signal.relay_uj)}/"
-                f"{int(signal.relay_lj)}"
+                f"HJ/UJ/LJ={relay_text(signal.relay_hj)}/"
+                f"{relay_text(signal.relay_uj)}/{relay_text(signal.relay_lj)}"
             )
         telegram = snapshot.telegram
         self.leu_label.setText(

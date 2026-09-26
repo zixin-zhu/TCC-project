@@ -258,9 +258,12 @@ class CorridorOverviewWidget(QWidget):
         for group in self._balise_groups.groups:
             rect = self._section_rects.get(group.section_id)
             section = section_by_id.get(group.section_id)
-            if rect is None or section is None:
+            # 空安全：应答器组可能没有成员(配置异常或未录入)，此时无法求取
+            # 首枚应答器的位置，直接跳过该组，避免 balises[0] 越界崩溃。
+            if rect is None or section is None or not group.balises:
                 continue
-            ratio = min(1.0, max(0.0, group.balises[0].position_m / section.length_m))
+            first = group.balises[0]
+            ratio = min(1.0, max(0.0, first.position_m / section.length_m))
             x = round(rect.left() + rect.width() * ratio)
             y = rect.bottom() + 60
             painter.drawPolygon(
