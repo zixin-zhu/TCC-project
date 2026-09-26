@@ -143,3 +143,46 @@ def test_older_station_snapshot_cannot_replace_newer_safety_state() -> None:
     assert aggregator.snapshot.station_a.state_version == 2
     assert aggregator.snapshot.station_a.connection_state is ConnectionState.DEGRADED
     assert aggregator.snapshot.operation_locked is True
+
+
+def test_lock_reason_reports_shared_section_inconsistency() -> None:
+    """问题 3：共享区段不一致导致锁闭时，lock_reason 必须明确指出原因。"""
+    aggregator = DualStationSnapshotAggregator()
+    aggregator.update_a(_snapshot("A", q1=TrackState.CLEAR))
+    aggregator.update_b(_snapshot("B", q1=TrackState.OCCUPIED))
+
+    model = aggregator.snapshot
+    assert model is not None
+    assert model.operation_locked is True
+    assert "共享区段" in model.lock_reason
+
+
+def test_lock_reason_reports_communication_and_direction() -> None:
+    """问题 3：通信异常/方向不一致时，lock_reason 应分别列出。"""
+    aggregator = DualStationSnapshotAggregator()
+    aggregator.update_a(
+        _snapshot(
+            "A",
+            locked=True,
+            connection=ConnectionState.DEGRADED,
+        )
+    )
+    aggregator.update_b(_snapshot("B", direction=RunningDirection.B_TO_A))
+
+    model = aggregator.snapshot
+    assert model is not None
+    assert model.operation_locked is True
+    assert "通信" in model.lock_reason
+    assert "方向" in model.lock_reason
+
+
+def test_lock_reason_empty_when_unlocked() -> None:
+    """问题 3：作业允许时 lock_reason 为空字符串。"""
+    aggregator = DualStationSnapshotAggregator()
+    aggregator.update_a(_snapshot("A"))
+    aggregator.update_b(_snapshot("B"))
+
+    model = aggregator.snapshot
+    assert model is not None
+    assert model.operation_locked is False
+    assert model.lock_reason == ""

@@ -2,7 +2,7 @@
 
 from PyQt5.QtWidgets import QLabel
 
-from app.ui.styles import CLASSIC_CONSOLE_QSS, set_semantic_state
+from app.ui.styles import CLASSIC_CONSOLE_QSS, relay_text, set_semantic_state
 
 
 def test_classic_console_theme_contains_required_palette_and_state_selectors() -> None:
@@ -27,3 +27,12 @@ def test_set_semantic_state_updates_dynamic_property(qtbot) -> None:  # type: ig
     set_semantic_state(label, "connectionState", "HEALTHY")
 
     assert label.property("connectionState") == "HEALTHY"
+
+
+def test_relay_text_uniformly_renders_one_and_zero() -> None:
+    """问题 4：继电器状态必须统一为 1/0，避免 True/False 混用。"""
+    assert relay_text(True) == "1"
+    assert relay_text(False) == "0"
+    # 确保不会意外输出 Python 布尔字面量
+    assert relay_text(True) not in ("True", "true")
+    assert relay_text(False) not in ("False", "false")

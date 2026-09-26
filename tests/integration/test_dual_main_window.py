@@ -125,20 +125,30 @@ def test_dual_window_delegates_close_to_dual_runtime_once(qtbot) -> None:  # typ
     assert runtime.stop_count == 1
 
 
-def test_dual_window_rejects_close_when_runtime_stop_times_out(qtbot) -> None:  # type: ignore[no-untyped-def]
+def test_dual_window_rejects_close_when_runtime_stop_times_out(
+    qtbot, monkeypatch  # type: ignore[no-untyped-def]
+) -> None:
     runtime = DualRuntimeStub(stop_result=False)
     window = DualStationMainWindow(runtime)
     qtbot.addWidget(window)
+
+    # 关闭失败会弹模态提示框，会阻塞自动测试；这里用无操作替身抑制，
+    # 只验证「拒绝关闭 + 失败文案」这一核心安全行为（弹窗交互单独有单测覆盖）。
+    monkeypatch.setattr(window, "_notify_close_failed", lambda: None)
 
     assert window.close() is False
     assert runtime.stop_count == 1
     assert "关闭失败" in window.global_status.lifecycle_label.text()
 
 
-def test_close_failure_keeps_train_timer_safely_stopped(qtbot) -> None:  # type: ignore[no-untyped-def]
+def test_close_failure_keeps_train_timer_safely_stopped(
+    qtbot, monkeypatch  # type: ignore[no-untyped-def]
+) -> None:
     runtime = DualRuntimeStub(stop_result=False)
     window = DualStationMainWindow(runtime)
     qtbot.addWidget(window)
+    # 同上：抑制关闭失败时的模态弹窗，避免阻塞自动测试。
+    monkeypatch.setattr(window, "_notify_close_failed", lambda: None)
     window.train_coordinator.timer.start()
 
     assert window.close() is False
