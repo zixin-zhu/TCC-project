@@ -207,6 +207,27 @@
   执行 `git status --short`、`git log --oneline --decorate -5` 和最终验收文档中
   的全量测试命令，确认远端/本地一致后再继续。
 
+## UX 一致性修复（2026-09-26，六处）
+
+> 依据《软件使用说明书与bug排查报告》确定的问题清单，全部采用测试先行修复。
+
+| # | 问题 | 修复 | 回归测试 |
+|---|---|---|---|
+| 1 | `TrainOperationsPage.set_snapshot` 未随锁闭正交禁用 暂停/复位 按钮 | `pause_button`/`reset_button` 随锁一致禁用 | `test_ui_operation_gating.py` |
+| 2 | `StationDetailWidget._update_action_enabled` 部分动作未一致禁用 | create/dispatch/start/pause/reset 统一禁用逻辑 | 同上 |
+| 3 | 全局锁闭原因不明 | `DualStationSnapshot` 新增 `lock_reason` 字段，聚合器归因（共享区段不一致/通信异常/方向不一致/车站锁闭）并在状态条/主窗口展示 | `test_dual_snapshot.py`（+3） |
+| 4 | 信号继电器显示 1/0 与 True/False 混用 | `styles.relay_text()` 统一为 1/0，三处调用收敛 | `test_ui_styles.py`（+1） |
+| 5 | 关闭失败无提示无法退出 | `closeEvent` 抽取 `_notify_close_failed()`，弹 `QMessageBox.warning` 并 `event.ignore()` | 两个关闭超时集成测试（mock 弹窗） |
+| 6 | `_draw_balises` 空应答器组越界 | 空组安全跳过 | 相关绘制测试 |
+
+- 提交：测试先行 `ddcc687`（test），功能实现 `be49dbe`（fix）。
+- 全量回归：`272 passed in ~17.9s`（含 8 项新增）。GTK 沙箱下 pytest 需
+  `--basetemp=/tmp/tcc-pytest-bt`（先 `rm -rf`），GUI 测试需
+  `QT_QPA_PLATFORM=offscreen`。
+- 两笔提交均已推送到 `origin/codex/dual-station-dashboard`（远端 = `be49dbe`）。
+- 下一步：已可选——等待用户对该六项修复的验收；如需继续可处理 IMPLEMENTATION
+  未覆盖的其它非门禁类 UI 细节，或以本分支为基础做合并前最终复审。
+
 ## 已完成：阶段 1
 
 完成内容：
