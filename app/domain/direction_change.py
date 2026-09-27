@@ -116,6 +116,30 @@ class DirectionRecoveryRecord:
     requester_applied: bool
 
 
+@dataclass(frozen=True)
+class DirectionTransactionSnapshot:
+    """供控制台展示的只读事务快照，不暴露状态机可变对象。"""
+
+    station_id: str
+    peer_station_id: str
+    requester_station_id: str | None
+    responder_station_id: str | None
+    transaction_id: str | None
+    phase: DirectionPhase
+    original_direction: RunningDirection | None
+    target_direction: RunningDirection | None
+    requester_state_version: int | None
+    responder_state_version: int | None
+    deadline_ms: int | None
+    operation_locked: bool
+
+
+def direction_requester_station(direction: RunningDirection) -> str:
+    """按当前运行方向确定改方请求方；方向反向时事务角色同步反转。"""
+
+    return "A" if direction is RunningDirection.A_TO_B else "B"
+
+
 @dataclass
 class _Transaction:
     transaction_id: str
@@ -191,6 +215,49 @@ class DirectionChangeMachine:
     def has_active_transaction(self) -> bool:
         return self._transaction is not None
 
+    def transaction_snapshot(self) -> DirectionTransactionSnapshot:
+        """导出事务监视数据，界面只能读取，不能借此绕过安全状态机。"""
+
+        tx = self._transaction
+        recovery = self._last_recovery
+        if tx is not None:
+            return DirectionTransactionSnapshot(
+                station_id=self.station_id,
+                peer_station_id=self.peer_station_id,
+                requester_station_id=(
+                    self.station_id if tx.requester else tx.source_station_id
+                ),
+                responder_station_id=(
+                    self.peer_station_id if tx.requester else tx.target_station_id
+                ),
+                transaction_id=tx.transaction_id,
+                phase=self.phase,
+                original_direction=tx.original_direction,
+                target_direction=tx.target_direction,
+                requester_state_version=tx.requester_state_version,
+                responder_state_version=tx.responder_state_version,
+                deadline_ms=tx.deadline_ms,
+                operation_locked=self.operation_locked,
+            )
+        return DirectionTransactionSnapshot(
+            station_id=self.station_id,
+            peer_station_id=self.peer_station_id,
+            requester_station_id=(recovery.requester_station_id if recovery else None),
+            responder_station_id=(recovery.responder_station_id if recovery else None),
+            transaction_id=(recovery.transaction_id if recovery else None),
+            phase=self.phase,
+            original_direction=(recovery.original_direction if recovery else None),
+            target_direction=(recovery.target_direction if recovery else None),
+            requester_state_version=(
+                recovery.requester_state_version if recovery else None
+            ),
+            responder_state_version=(
+                recovery.responder_state_version if recovery else None
+            ),
+            deadline_ms=None,
+            operation_locked=self.operation_locked,
+        )
+
     def start_request(
         self,
         target_direction: RunningDirection,
@@ -199,10 +266,15 @@ class DirectionChangeMachine:
         now_ms: int,
         transaction_id: str | None = None,
     ) -> DirectionOutcome:
-        # 兼容旧版 A 权威模式；新控制器传入 None，按事务请求方对称办理。
+        # 兼容旧版 A 权威模式；新控制器传入 None，按当前方向动态确定请求方。
         if (
             self.authority_station_id is not None
             and self.station_id != self.authority_station_id
+        ):
+            return self._reject(DirectionRejectCode.NOT_AUTHORITY)
+        if (
+            self.authority_station_id is None
+            and self.station_id != direction_requester_station(self.current_direction)
         ):
             return self._reject(DirectionRejectCode.NOT_AUTHORITY)
         if self.operation_locked:
@@ -343,10 +415,10 @@ class DirectionChangeMachine:
         authoritative_direction: RunningDirection,
         guard: DirectionGuard,
     ) -> DirectionOutcome:
-        """完成重连全量同步，并在安全条件复核后解除方向作业锁闭。
+        """完成重连全量同步，并在双方安全条件复核后解除方向作业锁闭。
 
-        A 站只接受与本站权威真值一致的同步结果；B 站则把 A 站方向覆盖到
-        本地投影。调用方必须先由阶段 4 校验全量同步的站点、序号与版本。
+        全量同步只用于交换证据和恢复一致性，不能把对站快照直接当作本站
+        写入命令。生产控制器在调用前已校验通信、版本、区段和进路条件。
         """
         unsafe = self._guard_failure(guard)
         if unsafe is not None:
@@ -385,7 +457,7 @@ class DirectionChangeMachine:
                 DirectionAction(
                     DirectionActionType.APPLY,
                     direction=authoritative_direction,
-                    reason="按 A 站全量同步刷新方向投影",
+                    reason="按双方确认的全量同步刷新本站方向",
                 )
             )
         self._transaction = None
@@ -394,14 +466,14 @@ class DirectionChangeMachine:
         self.operation_locked = False
         actions.extend(
             (
-                DirectionAction(DirectionActionType.UNLOCK, reason="权威方向同步完成"),
+                DirectionAction(DirectionActionType.UNLOCK, reason="方向一致性复核完成"),
                 DirectionAction(DirectionActionType.LOG, reason="方向安全锁闭已解除"),
             )
         )
         return DirectionOutcome(
             True,
             self.phase,
-            "权威方向同步及安全复核完成",
+            "方向全量同步及安全复核完成",
             None,
             tuple(actions),
         )
@@ -440,7 +512,7 @@ class DirectionChangeMachine:
     def confirm_peer_applied(
         self, record: DirectionRecoveryRecord, guard: DirectionGuard
     ) -> DirectionOutcome:
-        """B 站用 A 站提交证据恢复投影，并在重新通过守卫后解除锁闭。"""
+        """用请求方提交的双方确认记录完成响应方复核并解除锁闭。"""
         unsafe = self._guard_failure(guard)
         if unsafe is not None:
             self.operation_locked = True
@@ -481,9 +553,9 @@ class DirectionChangeMachine:
                     DirectionAction(
                         DirectionActionType.APPLY,
                         direction=record.target_direction,
-                        reason="根据申请方持久化证据恢复改方",
+                        reason="根据双方确认的持久化证据恢复改方",
                     ),
-                    DirectionAction(DirectionActionType.UNLOCK, reason="权威投影恢复完成"),
+                    DirectionAction(DirectionActionType.UNLOCK, reason="本站方向复核完成"),
                     DirectionAction(DirectionActionType.LOG, reason="改方恢复完成"),
                 ),
             )
@@ -502,7 +574,7 @@ class DirectionChangeMachine:
             "已收到申请方完成 APPLY 的应用层证据，响应方提交完成",
             None,
             (
-                DirectionAction(DirectionActionType.UNLOCK, reason="权威投影已确认"),
+                DirectionAction(DirectionActionType.UNLOCK, reason="双方方向确认完成"),
                 DirectionAction(DirectionActionType.LOG, reason="改方事务完成"),
             ),
         )
@@ -510,9 +582,13 @@ class DirectionChangeMachine:
     def _handle_prepare(
         self, message: DirectionWireMessage, guard: DirectionGuard, now_ms: int
     ) -> DirectionOutcome:
+        expected_requester = direction_requester_station(message.original_direction)
         if (
-            self.authority_station_id is not None
-            and message.requester_station_id != self.authority_station_id
+            message.requester_station_id != expected_requester
+            or (
+                self.authority_station_id is not None
+                and message.requester_station_id != self.authority_station_id
+            )
         ):
             return self._reject_for_message(message, DirectionRejectCode.NOT_AUTHORITY)
         if self.operation_locked and self._transaction is None:
@@ -569,7 +645,7 @@ class DirectionChangeMachine:
             "安全条件满足，已预留；方向尚未切换",
             None,
             (
-                DirectionAction(DirectionActionType.LOCK, reason="已为权威改方预留"),
+                DirectionAction(DirectionActionType.LOCK, reason="已为双方改方事务预留"),
                 DirectionAction(DirectionActionType.SEND, message=approve),
             ),
         )
@@ -598,22 +674,17 @@ class DirectionChangeMachine:
         tx.deadline_ms = now_ms + self.timeout_ms
         tx.phase = DirectionPhase.COMMITTING
         self.phase = DirectionPhase.COMMITTING
-        # A 站是唯一方向权威。复核通过后先提交权威真值，再向 B 发布投影；
-        # 此后失败只能保持锁闭，不能把权威方向回滚成另一种真值。
-        self.current_direction = tx.target_direction
+        # APPROVE 只完成对站安全校验，不能单独改变本站方向。申请方必须
+        # 等待响应方在 COMMIT 后返回 ACK，再由 ACK 触发本站 APPLY，形成
+        # “双方都已确认后才形成共享方向”的两阶段提交。
         self.operation_locked = True
         commit = self._message(DirectionMessageKind.COMMIT)
         return DirectionOutcome(
             True,
             self.phase,
-            "对站已批准，A 站提交权威方向并发送 COMMIT 投影",
+            "对站已批准，发送 COMMIT，等待双方确认后切换方向",
             None,
             (
-                DirectionAction(
-                    DirectionActionType.APPLY,
-                    direction=tx.target_direction,
-                    reason="A 站提交唯一权威方向",
-                ),
                 DirectionAction(DirectionActionType.SEND, message=commit),
             ),
         )
@@ -639,7 +710,7 @@ class DirectionChangeMachine:
         outcome = DirectionOutcome(
             True,
             self.phase,
-            "COMMIT 复核通过，应用 A 站权威方向投影并等待最终确认",
+            "COMMIT 复核通过，本站应用目标方向并等待最终确认",
             None,
             (
                 DirectionAction(DirectionActionType.APPLY, direction=tx.target_direction),
@@ -654,15 +725,25 @@ class DirectionChangeMachine:
             return self._reject_for_message(message, DirectionRejectCode.OUT_OF_ORDER)
         if not self._wire_matches_transaction(message, tx):
             return self._abort_with_message(message, DirectionRejectCode.VERSION_MISMATCH)
+        # ACK 证明响应方已完成 COMMIT；此刻申请方才允许 APPLY。这样两站
+        # 的方向值不会因单边 APPROVE 而提前生效。
+        self.current_direction = tx.target_direction
         self.phase = DirectionPhase.COMPLETED
         self._last_recovery = self._recovery_record(tx, requester_applied=True)
         self.operation_locked = False
         outcome = DirectionOutcome(
             True,
             self.phase,
-            "收到 B 站投影 ACK，A 站解除方向作业锁闭",
+            "收到对站 ACK，双方已确认目标方向，本站完成 APPLY",
             None,
-            (DirectionAction(DirectionActionType.UNLOCK, reason="B 站权威投影已确认"),),
+            (
+                DirectionAction(
+                    DirectionActionType.APPLY,
+                    direction=tx.target_direction,
+                    reason="双方确认后切换本站方向",
+                ),
+                DirectionAction(DirectionActionType.UNLOCK, reason="双方方向确认完成"),
+            ),
         )
         self._transaction = None
         return outcome

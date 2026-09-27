@@ -389,3 +389,9 @@ A站 / A_T1 / A_T2 / Q1 / Q2 / Q3 / Q4 / B_T2 / B_T1 / B站
 - 单站兼容入口、全套自动测试和七类答辩场景全部通过。
 - 无 Critical/Important 复审问题，无线程、socket、数据库泄漏。
 - 防中断文档记录当前阶段、提交号、测试数量、已知限制和下一步。
+# 历史设计说明（部分语义已被 CTCS-2 规范修订）
+
+> 本文件中的“A 方向唯一权威、B 方向仅投影”已被
+> `docs/tcc-vibe-plans/08-ctcs2-spec-and-ui-train-optimization.md` 和
+> `docs/IMPLEMENTATION_STATUS.md` 的双站本地权威模型取代。实现与验收以最新规范
+> 和当前代码为准：A/B 各自维护本站状态，方向改方按当前方向动态请求方并双方确认。

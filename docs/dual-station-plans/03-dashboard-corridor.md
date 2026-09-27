@@ -105,3 +105,7 @@ git push origin codex/dual-station-dashboard
 ```text
 执行双站同屏阶段 3。读设计基线、本文件和阶段 2 组件。先实现纯只读 DualStationSnapshotAggregator 并覆盖快照顺序、锁闭、告警和不一致测试，再做摘要卡、全局状态条和 CorridorOverviewWidget。界面严格采用参考图方案一的浅色经典控制台，但设备、信号和按钮必须来自本项目配置与真实功能，禁止照抄示意对象。用左导航+QStackedWidget 组装唯一主窗口，验证三种分辨率、真实双站和全量回归，复审后提交推送。
 ```
+# 历史角色说明
+
+> 旧版“ A 是方向权威、B 只比较投影”仅保留作迁移背景。当前实现遵循 CTCS-2
+> 规范：A/B 都是本站局部状态的权威节点，方向和闭塞通过站间双方确认形成共享状态。

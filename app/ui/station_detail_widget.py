@@ -24,6 +24,7 @@ from PyQt5.QtWidgets import (
 
 from app.core.enums import RunningDirection, TrackInputSource, TrackState
 from app.core.models import OperationResult
+from app.domain.direction_change import direction_requester_station
 from app.services.tcc_controller import TccController, TccSnapshot
 from app.services.train_demo_service import TrainDemoService
 from app.ui.styles import configure_combo_box, relay_text, set_semantic_state
@@ -47,6 +48,7 @@ class StationDetailWidget(QWidget):
         self.include_train_page = include_train_page
         self._external_operation_locked = False
         self._external_lock_reason = ""
+        self._last_direction: RunningDirection | None = None
         self.train_demo = TrainDemoService(controller)
         self.train_timer = QTimer(self)
         self.train_timer.setInterval(500)
@@ -251,10 +253,33 @@ class StationDetailWidget(QWidget):
         self.direction_target.addItem("B站 → A站", RunningDirection.B_TO_A)
         configure_combo_box(self.direction_target, "direction")
         self.direction_button = QPushButton("申请区间改方")
+        self.direction_button.setObjectName("requestDirectionButton")
         self.direction_button.clicked.connect(self._request_direction)
         layout.addWidget(self.direction_status)
         layout.addWidget(self.direction_target)
         layout.addWidget(self.direction_button)
+        self.direction_request_group = QGroupBox("改方请求处理（双站确认）")
+        self.direction_request_group.setObjectName("directionRequestHandlerGroup")
+        handler_layout = QVBoxLayout(self.direction_request_group)
+        self.direction_role = QLabel()
+        self.direction_role.setWordWrap(True)
+        self.direction_transaction = QLabel()
+        self.direction_transaction.setWordWrap(True)
+        handler_layout.addWidget(self.direction_role)
+        handler_layout.addWidget(self.direction_transaction)
+        self.review_direction_button = QPushButton("复核当前对站请求")
+        self.review_direction_button.setObjectName(
+            f"reviewDirectionRequestButton{self.controller.config.station.station_id}"
+        )
+        self.review_direction_button.clicked.connect(self._review_direction_request)
+        handler_layout.addWidget(self.review_direction_button)
+        self.recover_direction_button = QPushButton("安全复核并解除锁闭")
+        self.recover_direction_button.setObjectName(
+            f"recoverDirectionButton{self.controller.config.station.station_id}"
+        )
+        self.recover_direction_button.clicked.connect(self._recover_direction)
+        handler_layout.addWidget(self.recover_direction_button)
+        layout.addWidget(self.direction_request_group)
         layout.addStretch(1)
 
     def _build_network_page(self) -> None:
@@ -336,6 +361,7 @@ class StationDetailWidget(QWidget):
             f"当前方向：{snapshot.running_direction}；"
             f"作业状态：{'安全锁闭' if snapshot.direction_operation_locked else '允许'}"
         )
+        self._refresh_direction_handler(snapshot)
         self.network_status.setText(f"站间通信：{snapshot.connection_state.value}")
         set_semantic_state(
             self.network_status,
@@ -366,11 +392,24 @@ class StationDetailWidget(QWidget):
         self.establish_route_button.setEnabled(
             locally_available and globally_available
         )
+        current_direction = RunningDirection(snapshot.running_direction)
+        requester_id = direction_requester_station(current_direction)
         self.direction_button.setEnabled(
-            snapshot.station_id == "A"
+            snapshot.station_id == requester_id
             and locally_available
             and globally_available
             and snapshot.connection_state.value == "HEALTHY"
+        )
+        # 安全复核按钮故意不受全局业务锁闭门禁影响；它只能重跑守卫，
+        # 守卫不满足时会拒绝，不能将锁闭状态直接改成允许。
+        self.recover_direction_button.setEnabled(
+            snapshot.direction_operation_locked or self._external_operation_locked
+        )
+        transaction = self.controller.direction_transaction_snapshot()
+        self.review_direction_button.setEnabled(
+            transaction.transaction_id is not None
+            and transaction.requester_station_id != snapshot.station_id
+            and transaction.phase.value in {"APPROVED", "COMMITTING"}
         )
         if self.include_train_page:
             # 外部安全锁闭时列车按钮必须一致禁用（含创建/暂停/复位），
@@ -540,6 +579,40 @@ class StationDetailWidget(QWidget):
             self.controller.request_direction_change(
                 self.direction_target.currentData()
             )
+        )
+
+    def _recover_direction(self) -> None:
+        """重试本站的双方方向复核，不能绕过控制器安全条件。"""
+        self._show_result(self.controller.recover_safety_lock())
+
+    def _review_direction_request(self) -> None:
+        """执行只读请求复核，实际批准仍由状态机的安全守卫完成。"""
+        self._show_result(self.controller.review_direction_request())
+
+    def _refresh_direction_handler(self, snapshot: TccSnapshot) -> None:
+        current_direction = RunningDirection(snapshot.running_direction)
+        if self._last_direction is not current_direction:
+            opposite = (
+                RunningDirection.B_TO_A
+                if current_direction is RunningDirection.A_TO_B
+                else RunningDirection.A_TO_B
+            )
+            self.direction_target.setCurrentIndex(
+                self.direction_target.findData(opposite)
+            )
+            self._last_direction = current_direction
+        requester_id = direction_requester_station(current_direction)
+        local_role = "请求方（可发起方向办理）" if snapshot.station_id == requester_id else "应答方（校验并确认请求）"
+        transaction = self.controller.direction_transaction_snapshot()
+        self.direction_role.setText(
+            f"本站角色：{local_role}；当前请求方：{requester_id}站；"
+            f"应答方：{'B' if requester_id == 'A' else 'A'}站。"
+        )
+        self.direction_transaction.setText(
+            f"事务号：{transaction.transaction_id or '无活动事务'}；"
+            f"阶段：{transaction.phase.value}；"
+            f"请求方版本：{transaction.requester_state_version if transaction.requester_state_version is not None else '—'}；"
+            f"应答方版本：{transaction.responder_state_version if transaction.responder_state_version is not None else '—'}。"
         )
 
     def _create_train(self) -> None:

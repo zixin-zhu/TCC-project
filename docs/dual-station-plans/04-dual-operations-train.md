@@ -107,3 +107,7 @@ git push origin codex/dual-station-dashboard
 ```text
 执行双站同屏阶段 4。读设计基线、本文件、TccController、TrainDemoService 和七场景文档。先测试 SharedTrackInputAdapter：站内只写所属站，共享 Q 区段把同一外部检测输入分别送入 A/B 控制器，部分失败保持保守占用并报警。再实现唯一 DualTrainCoordinator 和真实操作页；改方只能由 A 发起，所有 UI 写操作经过控制器。禁止空按钮、内部状态直写和复位清除人工/故障来源。完成七场景迁移、全量回归、人工故障演练和独立复审后提交推送。
 ```
+# 历史角色说明
+
+> 旧版“改方按钮只调用 A”已废止。当前按钮按当前运行方向起点动态选择请求方，
+> A/B 控制页均显示请求处理板块并参与本地安全校验；详细协议以阶段 5 最新说明为准。

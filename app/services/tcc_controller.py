@@ -22,6 +22,7 @@ from app.domain.direction_change import (
     DirectionChangeMachine,
     DirectionMessageKind,
     DirectionRecoveryRecord,
+    DirectionTransactionSnapshot,
     DirectionWireMessage,
 )
 from app.domain.leu import LeuContext, LeuService, TelegramSelectionResult
@@ -133,6 +134,9 @@ class TccController:
         self._closed = False
         self.connection_state = ConnectionState.DISCONNECTED
         self.peer_snapshot: PeerSnapshot | None = None
+        # 最近一次经全量同步验证的对站方向；安全锁闭恢复只能基于这份
+        # 双方已确认的证据，不能由 UI 直接填写一个方向强行解锁。
+        self._peer_direction: RunningDirection | None = None
         self._peer_snapshot_was_fresh = False
         self._deferred_state_sync = False
         restored_authority = (
@@ -229,6 +233,11 @@ class TccController:
     def direction_phase(self) -> DirectionPhase:
         """向界面暴露只读改方阶段，不允许界面接触状态机内部对象。"""
         return self._direction.machine.phase
+
+    def direction_transaction_snapshot(self) -> DirectionTransactionSnapshot:
+        """返回改方请求/应答事务的只读信息，供 A/B 控制页展示。"""
+
+        return self._direction.machine.transaction_snapshot()
 
     def update_network_metrics(
         self,
@@ -376,7 +385,7 @@ class TccController:
         if self.runtime.state_version != before_version:
             self._deferred_state_sync = True
         self._recalculate_and_publish(
-            operation=("确认权威方向投影", result, {"transaction_id": record.transaction_id}),
+            operation=("确认对站方向应用", result, {"transaction_id": record.transaction_id}),
             publish_peer_state=False,
         )
         return result
@@ -408,16 +417,48 @@ class TccController:
                     {"direction": authoritative_direction.value},
                 )
         self._recalculate_and_publish(
-            operation=("恢复权威方向同步", result, {"direction": authoritative_direction.value}),
+            operation=("恢复双方方向同步", result, {"direction": authoritative_direction.value}),
             publish_peer_state=False,
         )
         return result
+
+    def recover_safety_lock(self) -> OperationResult:
+        """在条件恢复后重试安全复核，禁止 UI 绕过守卫直接清除锁闭。"""
+
+        self._ensure_open()
+        if self._direction.machine.has_active_transaction:
+            result = OperationResult(False, "改方事务仍在处理中，不能人工解除安全锁闭")
+            self._save_operation("安全锁闭复核", result, {})
+            return result
+        if self._peer_direction is None:
+            result = OperationResult(False, "尚无双方确认的对站方向，不能解除安全锁闭")
+            self._save_operation("安全锁闭复核", result, {})
+            return result
+        return self.reconcile_peer_direction(self._peer_direction)
+
+    def review_direction_request(self) -> OperationResult:
+        """展示/复核本站收到的改方请求；不允许界面直接批准或写方向。"""
+
+        self._ensure_open()
+        transaction = self._direction.machine.transaction_snapshot()
+        if transaction.transaction_id is None:
+            return OperationResult(False, "当前没有待处理的对站改方请求")
+        if transaction.requester_station_id == self.config.station.station_id:
+            return OperationResult(False, "本站是本次事务请求方，没有入站请求可处理")
+        if transaction.phase is DirectionPhase.APPROVED:
+            return OperationResult(True, "已完成本站安全条件校验，等待请求方 COMMIT")
+        if transaction.phase is DirectionPhase.COMMITTING:
+            return OperationResult(True, "已应用对站 COMMIT，等待双方最终确认")
+        if transaction.phase is DirectionPhase.COMPLETED:
+            return OperationResult(True, "改方请求已完成双方确认")
+        return OperationResult(False, f"当前请求阶段为 {transaction.phase.value}，暂不可处理")
 
     def reconcile_peer_direction(
         self, peer_direction: RunningDirection
     ) -> OperationResult:
         """重连全量同步时复核方向；不把对端状态当作本站写入命令。"""
         self._ensure_open()
+        self._peer_direction = peer_direction
         coordinated = self._direction.reconcile_peer_direction(
             peer_direction, self._direction_guard()
         )
@@ -928,7 +969,7 @@ class TccController:
     def _persist_authority_before_direction_apply(
         self, target_direction: RunningDirection
     ) -> None:
-        """本站在内存 APPLY 和发送 COMMIT 前先落盘目标方向。"""
+        """本站在内存 APPLY 前先落盘目标方向，保证每个 TCC 都有本地真值。"""
         if (
             target_direction is not self._persisted_authoritative_direction
             and not self._save_authoritative_direction(

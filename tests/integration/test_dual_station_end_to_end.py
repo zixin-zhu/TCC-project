@@ -280,7 +280,8 @@ def test_seven_course_scenarios_run_through_real_dual_window_and_reset(
             ),
             timeout=4000,
         )
-        qtbot.mouseClick(window.network_status_page.restore_button, Qt.LeftButton)
+        # B→A 状态下反向改方由 B 请求、A 应答，演练中断的是 A 链路。
+        qtbot.mouseClick(window.network_status_page.restore_a_button, Qt.LeftButton)
         qtbot.waitUntil(
             lambda: (
                 window.aggregator.snapshot is not None

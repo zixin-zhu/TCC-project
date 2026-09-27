@@ -160,7 +160,7 @@ class CorridorOverviewWidget(QWidget):
             if snapshot.authoritative_direction.value == "A_TO_B"
             else "B站 → A站"
         )
-        painter.drawText(46, 35, f"权威运行方向：{direction}")
+        painter.drawText(46, 35, f"双方确认运行方向：{direction}")
         if snapshot.operation_locked:
             painter.fillRect(0, 48, self.width(), 25, QColor("#b42318"))
             painter.setPen(QColor("#ffffff"))

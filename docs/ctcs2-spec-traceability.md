@@ -8,6 +8,8 @@
 | SPEC-02 | CBI、CTC、LEU、轨道电路、相邻 TCC、监测接口 | `app/services/interface_status_service.py` | 接口状态和断链测试 |
 | SPEC-03 | 报文调用、轨道编码、信号点灯、进路和闭塞 | `app/domain/`、`app/services/tcc_controller.py` | 核心功能矩阵 |
 | SPEC-04 | 双向运行和安全改方 | `app/domain/direction_change.py` | 正反向事务测试 |
+| SPEC-04A | A/B 各自维护本站局部权威；请求方随当前运行方向动态切换 | `TccController`、`direction_requester_station()`、A/B 请求处理板块 | `test_wrong_station_cannot_request_for_current_direction`、双站 UI 测试 |
+| SPEC-04B | 方向/闭塞共享状态须双方复核确认后生效，失联保持安全锁闭 | PREPARE/APPROVE/COMMIT/ACK/DIRECTION_CONFIRM、`recover_safety_lock()` | 双向改方集成测试、真实 TCP 断链恢复测试 |
 | SPEC-05 | 正常占用、故障占用、分路不良和占用出清顺序 | `app/domain/track_circuit.py` | 故障恢复顺序测试 |
 | SPEC-06 | 站内/区间码序、方向切换和故障离线 | `app/domain/track_circuit.py` | 码序与离线测试 |
 | SPEC-07 | LEU 报文选择、20% 存储余量和错误防护 | `app/domain/leu.py`、`balise_telegram.py` | LEU 余量/默认报文测试 |

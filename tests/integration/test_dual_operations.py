@@ -98,7 +98,7 @@ def test_leu_page_compares_both_stations_and_exposes_detail_tabs(qtbot) -> None:
     ]
 
 
-def test_direction_request_is_always_sent_by_station_a(qtbot) -> None:  # type: ignore[no-untyped-def]
+def test_direction_request_uses_station_at_current_direction_origin(qtbot) -> None:  # type: ignore[no-untyped-def]
     window, runtime = _window(qtbot)
     calls: list[tuple[str, RunningDirection]] = []
 
@@ -123,12 +123,54 @@ def test_direction_request_is_always_sent_by_station_a(qtbot) -> None:  # type: 
     assert "目标=A站" in page.result_label.text()
     assert "测试拒绝" in page.result_label.text()
     assert page.table.rowCount() == 2
-    assert page.table.item(0, 0).text() == "A站（权威）"
-    assert page.table.item(1, 0).text() == "B站（投影）"
+    assert page.table.item(0, 0).text() == "A站（请求方）"
+    assert page.table.item(1, 0).text() == "B站（应答方）"
     assert "方向一致" in page.precondition_label.text()
 
 
-def test_direction_disconnect_drill_requests_a_before_faulting_b(qtbot) -> None:  # type: ignore[no-untyped-def]
+def test_direction_requester_role_reverses_after_direction_switch(qtbot) -> None:  # type: ignore[no-untyped-def]
+    window, runtime = _window(qtbot)
+    assert runtime.station_a.controller.restore_authoritative_direction(
+        RunningDirection.B_TO_A
+    ).success
+    assert runtime.station_b.controller.restore_authoritative_direction(
+        RunningDirection.B_TO_A
+    ).success
+    window.aggregator.update_a(runtime.station_a.controller.snapshot)
+    window.aggregator.update_b(runtime.station_b.controller.snapshot)
+    calls: list[str] = []
+
+    runtime.station_a.controller.request_direction_change = (  # type: ignore[method-assign]
+        lambda _direction: (calls.append("A") or OperationResult(False, "不应调用"))
+    )
+    runtime.station_b.controller.request_direction_change = (  # type: ignore[method-assign]
+        lambda direction: (calls.append("B") or OperationResult(False, "测试拒绝"))
+    )
+    page = window.direction_operations_page
+    page.direction_selector.setCurrentIndex(
+        page.direction_selector.findData(RunningDirection.A_TO_B)
+    )
+    qtbot.mouseClick(page.request_button, Qt.LeftButton)
+
+    assert calls == ["B"]
+    assert page.table.item(0, 0).text() == "A站（应答方）"
+    assert page.table.item(1, 0).text() == "B站（请求方）"
+
+
+def test_each_station_control_exposes_direction_request_handler_panel(qtbot) -> None:  # type: ignore[no-untyped-def]
+    window, _runtime = _window(qtbot)
+
+    assert window.station_a_detail.direction_request_group is not None
+    assert window.station_b_detail.direction_request_group is not None
+    assert "请求方" in window.station_a_detail.direction_role.text()
+    assert "应答方" in window.station_b_detail.direction_role.text()
+    assert window.findChild(QPushButton, "recoverDirectionButtonA") is not None
+    assert window.findChild(QPushButton, "recoverDirectionButtonB") is not None
+    assert window.findChild(QPushButton, "reviewDirectionRequestButtonA") is not None
+    assert window.findChild(QPushButton, "reviewDirectionRequestButtonB") is not None
+
+
+def test_direction_disconnect_drill_faults_current_responder(qtbot) -> None:  # type: ignore[no-untyped-def]
     window, runtime = _window(qtbot)
     order: list[str] = []
     page = window.direction_operations_page
@@ -137,11 +179,16 @@ def test_direction_disconnect_drill_requests_a_before_faulting_b(qtbot) -> None:
         order.append("request:A")
         return OperationResult(True, "请求已排队")
 
+    def request_b(_direction: RunningDirection) -> OperationResult:
+        order.append("request:B")
+        return OperationResult(True, "请求已排队")
+
     def fault_b(station_id: str, enabled: bool) -> OperationResult:
         order.append(f"fault:{station_id}:{enabled}")
         return OperationResult(True, "教学网络故障已注入")
 
     runtime.station_a.controller.request_direction_change = request_a  # type: ignore[method-assign]
+    runtime.station_b.controller.request_direction_change = request_b  # type: ignore[method-assign]
     page._fault_handler = fault_b
 
     qtbot.mouseClick(page.disconnect_drill_button, Qt.LeftButton)
@@ -358,7 +405,8 @@ def test_real_tcp_runtime_runs_forward_changes_direction_and_runs_reverse(
             ),
             timeout=4000,
         )
-        qtbot.mouseClick(window.network_status_page.restore_button, Qt.LeftButton)
+        # 当前方向已为 B→A，反向改方由 B 请求、A 应答，因此演练会中断 A 链路。
+        qtbot.mouseClick(window.network_status_page.restore_a_button, Qt.LeftButton)
         qtbot.waitUntil(
             lambda: (
                 runtime.station_a.controller.snapshot.connection_state.value

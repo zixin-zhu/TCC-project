@@ -229,7 +229,8 @@ def test_commit_ack_timeout_keeps_authority_truth_locked_and_projection_original
 
     assert timed_out.reject_code is DirectionRejectCode.TIMEOUT
     assert responder_disconnected.reject_code is DirectionRejectCode.DISCONNECTED
-    assert requester.current_direction is RunningDirection.B_TO_A
+    # COMMIT 尚未收到 ACK，申请方仍保持原方向并处于安全锁闭。
+    assert requester.current_direction is RunningDirection.A_TO_B
     assert responder.current_direction is RunningDirection.A_TO_B
     assert not requester.has_active_transaction
     assert not responder.has_active_transaction
@@ -296,13 +297,13 @@ def test_only_authority_station_can_start_direction_change() -> None:
 
 
 def test_symmetric_mode_allows_either_station_to_start_direction_change() -> None:
-    """新 CTCS-2 模型按事务角色决定请求方，不把 A 固定成永久权威。"""
+    """新 CTCS-2 模型按当前运行方向决定请求方，不把 A 固定成永久权威。"""
     requester = DirectionChangeMachine(
-        "B", "A", RunningDirection.A_TO_B, authority_station_id=None
+        "B", "A", RunningDirection.B_TO_A, authority_station_id=None
     )
 
     outcome = requester.start_request(
-        RunningDirection.B_TO_A,
+        RunningDirection.A_TO_B,
         _safe_guard(local_version=20, peer_version=10),
         now_ms=1000,
         transaction_id=_tx("symmetric-b-requester"),
@@ -369,6 +370,16 @@ def test_projection_confirmation_does_not_unlock_authority_before_ack() -> None:
         responder.handle(commit, _safe_guard(local_version=20, peer_version=10), now_ms=1300)
     )
 
+    projection_before_ack = responder.confirm_peer_applied(
+        requester.export_recovery_record(),
+        _safe_guard(local_version=20, peer_version=10),
+    )
+    assert not projection_before_ack.accepted
+    assert responder.has_active_transaction
+    assert responder.operation_locked is True
+    assert requester.operation_locked is True
+
+    requester.handle(ack, _safe_guard(), now_ms=1400)
     projection_confirmed = responder.confirm_peer_applied(
         requester.export_recovery_record(),
         _safe_guard(local_version=20, peer_version=10),
@@ -376,9 +387,6 @@ def test_projection_confirmation_does_not_unlock_authority_before_ack() -> None:
     assert projection_confirmed.accepted
     assert not responder.has_active_transaction
     assert responder.operation_locked is False
-    assert requester.operation_locked is True
-
-    requester.handle(ack, _safe_guard(), now_ms=1400)
     assert requester.operation_locked is False
 
 
@@ -426,8 +434,8 @@ def test_lost_application_confirmation_keeps_projection_locked_until_safe_recove
     )
 
 
-def test_authority_applies_before_commit_and_failure_never_rolls_back_truth() -> None:
-    """A 一旦发布权威方向，后续网络失败只能锁闭，不能回滚成第二种真值。"""
+def test_requester_does_not_apply_before_ack_and_failure_keeps_original_truth() -> None:
+    """双方确认前不切换方向；事务失败时两端继续保持原方向并锁闭。"""
     authority = DirectionChangeMachine("A", "B", RunningDirection.A_TO_B)
     projection = DirectionChangeMachine("B", "A", RunningDirection.A_TO_B)
     prepare = _sent_message(
@@ -448,10 +456,10 @@ def test_authority_applies_before_commit_and_failure_never_rolls_back_truth() ->
     failed = authority.disconnect()
 
     assert committing.phase is DirectionPhase.COMMITTING
-    assert authority.current_direction is RunningDirection.B_TO_A
+    assert authority.current_direction is RunningDirection.A_TO_B
     assert authority.operation_locked is True
     assert failed.phase is DirectionPhase.FAULT_LOCKED
-    assert authority.current_direction is RunningDirection.B_TO_A
+    assert authority.current_direction is RunningDirection.A_TO_B
 
 
 def test_fault_locked_machine_rejects_new_transaction_until_safe_resync() -> None:

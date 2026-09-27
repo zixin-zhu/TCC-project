@@ -316,6 +316,37 @@ def test_disconnect_locks_direction_dependent_operations() -> None:
     assert not controller.establish_route("A_DEPART").success
 
 
+def test_safety_lock_can_only_be_recovered_after_peer_direction_and_guard_are_fresh() -> None:
+    controller = _controller()
+    # 记录最近一次双方确认过的对站方向，模拟网络短暂中断后恢复。
+    assert controller.reconcile_peer_direction(RunningDirection.A_TO_B).success
+    controller.set_connection_state(ConnectionState.DEGRADED)
+    controller.set_connection_state(ConnectionState.HEALTHY)
+    controller.update_peer_snapshot(
+        PeerSnapshot("B", {"Q1": TrackState.CLEAR}, 0, 10_000)
+    )
+
+    recovered = controller.recover_safety_lock()
+
+    assert recovered.success
+    assert controller.snapshot.direction_operation_locked is False
+
+
+def test_safety_lock_recovery_rejects_when_a_route_is_still_active() -> None:
+    controller = _controller()
+    assert controller.reconcile_peer_direction(RunningDirection.A_TO_B).success
+    assert controller.establish_route("A_DEPART").success
+    controller.set_connection_state(ConnectionState.DEGRADED)
+    controller.set_connection_state(ConnectionState.HEALTHY)
+    controller.update_peer_snapshot(
+        PeerSnapshot("B", {"Q1": TrackState.CLEAR}, 0, 10_000)
+    )
+    recovered = controller.recover_safety_lock()
+
+    assert not recovered.success
+    assert controller.snapshot.direction_operation_locked is True
+
+
 def test_direction_transport_failure_is_visible_and_remains_fail_safe() -> None:
     config = load_project_config(ROOT / "configs", "A")
 
@@ -520,6 +551,8 @@ def test_authority_persistence_failure_prevents_apply_and_commit() -> None:
     assert station_a.request_direction_change(RunningDirection.B_TO_A).success
     assert station_b.handle_direction_message(to_b.pop(0)).success
 
+    assert station_a.handle_direction_message(to_a.pop(0)).success
+    assert station_b.handle_direction_message(to_b.pop(0)).success
     result = station_a.handle_direction_message(to_a.pop(0))
 
     assert not result.success

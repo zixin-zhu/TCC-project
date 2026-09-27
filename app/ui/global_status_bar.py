@@ -17,7 +17,7 @@ class GlobalStatusBar(QFrame):
         self.lifecycle_label = QLabel("系统：启动中")
         self.communication_label = QLabel("站间通信：等待双站")
         self.interface_label = QLabel("接口：--")
-        self.direction_label = QLabel("当前方向：--")
+        self.direction_label = QLabel("双方确认方向：--")
         self.lock_label = QLabel("作业状态：安全锁闭")
         self.alarm_label = QLabel("活动告警：--")
         for label in (
@@ -54,7 +54,7 @@ class GlobalStatusBar(QFrame):
             else "B→A"
         )
         consistency = "一致" if snapshot.direction_consistent else "方向不一致"
-        self.direction_label.setText(f"当前方向：{direction_text}（{consistency}）")
+        self.direction_label.setText(f"双方确认方向：{direction_text}（{consistency}）")
         self.lock_label.setText(
             "作业状态：安全锁闭"
             if snapshot.operation_locked

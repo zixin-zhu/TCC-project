@@ -36,7 +36,7 @@ class TelegramHistoryEntry:
 
 @dataclass(frozen=True)
 class DirectionAuthorityEntry:
-    """A 站持久化的唯一区间方向真值及最近一次恢复证据。"""
+    """单站 TCC 持久化的本站方向真值及最近一次双方确认恢复证据。"""
 
     station_id: str
     direction: RunningDirection

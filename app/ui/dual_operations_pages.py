@@ -33,6 +33,7 @@ from PyQt5.QtWidgets import (
 
 from app.core.enums import RunningDirection, TrackInputSource, TrackState
 from app.core.models import OperationResult
+from app.domain.direction_change import direction_requester_station
 from app.services.alarm_service import AlarmLevel
 from app.services.dual_train_coordinator import DualTrainCoordinator, DualTrainState
 from app.services.tcc_controller import TccController
@@ -52,6 +53,7 @@ DUAL_OPERATION_BUTTON_OBJECTS = frozenset(
         "cancelTsrButton",
         "requestDirectionButton",
         "requestDirectionDisconnectButton",
+        "recoverDirectionButton",
         "injectANetworkFaultButton",
         "restoreANetworkButton",
         "injectBNetworkFaultButton",
@@ -491,7 +493,7 @@ class TsrOperationsPage(_OperationPage):
 
 
 class DirectionOperationsPage(_OperationPage):
-    """区间改方只由 A 站权威控制器发起。"""
+    """展示双站改方事务；请求方随当前运行方向动态切换。"""
 
     def __init__(
         self,
@@ -501,8 +503,10 @@ class DirectionOperationsPage(_OperationPage):
     ) -> None:
         super().__init__(station_a, station_b)
         self._fault_handler = fault_handler
+        self._latest_model: DualStationSnapshot | None = None
+        self._last_direction: RunningDirection | None = None
         layout = QVBoxLayout(self)
-        heading = QLabel("权威方向、投影与改方事务")
+        heading = QLabel("双站本地权威与改方事务")
         heading.setObjectName("pageHeading")
         layout.addWidget(heading)
         self.status_label = QLabel()
@@ -518,12 +522,23 @@ class DirectionOperationsPage(_OperationPage):
         self.precondition_label.setWordWrap(True)
         precondition_layout.addWidget(self.precondition_label)
         layout.addWidget(preconditions)
+        self.request_handler_group = QGroupBox("双站改方请求处理（双方确认）")
+        self.request_handler_group.setObjectName("directionRequestHandlerGroup")
+        handler_layout = QVBoxLayout(self.request_handler_group)
+        self.transaction_label = QLabel()
+        self.transaction_label.setWordWrap(True)
+        handler_layout.addWidget(self.transaction_label)
+        self.recover_button = QPushButton("安全复核并解除锁闭")
+        self.recover_button.setObjectName("recoverDirectionButton")
+        self.recover_button.clicked.connect(self._recover)
+        handler_layout.addWidget(self.recover_button)
+        layout.addWidget(self.request_handler_group)
         controls = QHBoxLayout()
         self.direction_selector = QComboBox()
         self.direction_selector.addItem("A站 → B站", RunningDirection.A_TO_B)
         self.direction_selector.addItem("B站 → A站", RunningDirection.B_TO_A)
         configure_combo_box(self.direction_selector, "direction")
-        self.request_button = QPushButton("由A站申请区间改方")
+        self.request_button = QPushButton("由当前请求方申请区间改方")
         self.request_button.setObjectName("requestDirectionButton")
         self.disconnect_drill_button = QPushButton("发起改方并立即中断B站")
         self.disconnect_drill_button.setObjectName("requestDirectionDisconnectButton")
@@ -538,16 +553,19 @@ class DirectionOperationsPage(_OperationPage):
         layout.addWidget(self.result_label)
 
     def _request(self) -> None:
-        result = self.station_a.request_direction_change(
-            self.direction_selector.currentData()
-        )
-        self._show_result("A站", result)
+        current = RunningDirection(self.station_a.snapshot.running_direction)
+        requester_id = direction_requester_station(current)
+        requester = self.station_a if requester_id == "A" else self.station_b
+        result = requester.request_direction_change(self.direction_selector.currentData())
+        self._show_result(f"{requester_id}站", result)
 
     def _request_and_disconnect(self) -> None:
         """确定性复现改方报文排队后 B 链路立即中断的教学场景。"""
-        result = self.station_a.request_direction_change(
-            self.direction_selector.currentData()
-        )
+        current = RunningDirection(self.station_a.snapshot.running_direction)
+        requester_id = direction_requester_station(current)
+        responder_id = "B" if requester_id == "A" else "A"
+        requester = self.station_a if requester_id == "A" else self.station_b
+        result = requester.request_direction_change(self.direction_selector.currentData())
         if not result.success:
             self._show_result("A/B双站", result)
             return
@@ -556,7 +574,7 @@ class DirectionOperationsPage(_OperationPage):
                 "A/B双站", OperationResult(False, "运行时不支持网络故障注入")
             )
             return
-        fault_result = self._fault_handler("B", True)
+        fault_result = self._fault_handler(responder_id, True)
         combined = OperationResult(
             fault_result.success,
             (
@@ -567,19 +585,55 @@ class DirectionOperationsPage(_OperationPage):
         )
         self._show_result("A/B双站", combined)
 
+    def _recover(self) -> None:
+        """仅重走双方安全复核，不提供无条件清锁按钮。"""
+        results = (
+            self.station_a.recover_safety_lock(),
+            self.station_b.recover_safety_lock(),
+        )
+        success = all(item.success for item in results)
+        reason = "；".join(item.reason for item in results)
+        self._show_result("A/B双站", OperationResult(success, reason))
+
     def set_snapshot(self, model: DualStationSnapshot) -> None:
-        phase = self.station_a.direction_phase.value
+        self._latest_model = model
+        current = RunningDirection(model.station_a.running_direction)
+        if self._last_direction is not current:
+            opposite = (
+                RunningDirection.B_TO_A
+                if current is RunningDirection.A_TO_B
+                else RunningDirection.A_TO_B
+            )
+            self.direction_selector.setCurrentIndex(
+                self.direction_selector.findData(opposite)
+            )
+            self._last_direction = current
+        requester_id = direction_requester_station(current)
+        responder_id = "B" if requester_id == "A" else "A"
+        phase = (
+            self.station_a.direction_phase.value
+            if requester_id == "A"
+            else self.station_b.direction_phase.value
+        )
         self.status_label.setText(
-            f"事务阶段：{phase}　权威方向：{model.station_a.running_direction}　"
-            f"B站投影：{model.station_b.running_direction}　"
+            f"事务阶段：{phase}　当前共同方向：{model.station_a.running_direction}　"
+            f"请求方：{requester_id}站　应答方：{responder_id}站　"
             f"方向一致：{'是' if model.direction_consistent else '否'}　"
             f"联合锁闭：{'是' if model.operation_locked else '否'}"
         )
         self.table.setRowCount(2)
         for row, (snapshot, role, controller) in enumerate(
             (
-                (model.station_a, "A站（权威）", self.station_a),
-                (model.station_b, "B站（投影）", self.station_b),
+                (
+                    model.station_a,
+                    f"A站（{'请求方' if requester_id == 'A' else '应答方'}）",
+                    self.station_a,
+                ),
+                (
+                    model.station_b,
+                    f"B站（{'请求方' if requester_id == 'B' else '应答方'}）",
+                    self.station_b,
+                ),
             )
         ):
             values = (
@@ -604,7 +658,7 @@ class DirectionOperationsPage(_OperationPage):
         self.precondition_label.setText(
             "通信健康：{communication}　共享区段空闲：{shared}　"
             "两站无已建立进路：{routes}　方向一致：{direction}。\n"
-            "仅 A 站能够发起改方；区段或进路条件不满足时请求会被明确拒绝，"
+            "当前运行方向的起点站作为请求方，终点站必须完成本地安全校验并应答；"
             "通信、方向一致性或事务异常时保持联合安全锁闭。".format(
                 communication="是" if model.communication_healthy else "否",
                 shared="是" if shared_clear else "否",
@@ -612,9 +666,26 @@ class DirectionOperationsPage(_OperationPage):
                 direction="是" if model.direction_consistent else "否",
             )
         )
-        self.request_button.setEnabled(not model.operation_locked)
+        self.request_button.setText(f"由{requester_id}站申请区间改方")
+        self.request_button.setEnabled(
+            not model.operation_locked and model.communication_healthy
+        )
         self.disconnect_drill_button.setEnabled(
-            self._fault_handler is not None and not model.operation_locked
+            self._fault_handler is not None
+            and not model.operation_locked
+            and model.communication_healthy
+        )
+        self.recover_button.setEnabled(model.operation_locked)
+        requester_controller = self.station_a if requester_id == "A" else self.station_b
+        responder_controller = self.station_b if requester_id == "A" else self.station_a
+        requester_transaction = requester_controller.direction_transaction_snapshot()
+        responder_transaction = responder_controller.direction_transaction_snapshot()
+        self.transaction_label.setText(
+            f"请求方：{requester_id}站（{requester_transaction.phase.value}）；"
+            f"应答方：{responder_id}站（{responder_transaction.phase.value}）；"
+            f"事务号：{requester_transaction.transaction_id or responder_transaction.transaction_id or '无活动事务'}；"
+            f"请求方版本：{requester_transaction.requester_state_version if requester_transaction.requester_state_version is not None else '—'}；"
+            f"应答方版本：{responder_transaction.responder_state_version if responder_transaction.responder_state_version is not None else '—'}。"
         )
 
 
