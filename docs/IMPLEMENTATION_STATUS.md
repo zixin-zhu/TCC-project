@@ -274,6 +274,22 @@
 - 下一步：阶段 3，为所有 QComboBox 建立统一的角色宽度、文本测量和弹出列表
   自适应策略，覆盖双站操作页与单站详情页。
 
+### 阶段 3 执行账本
+
+- 在 `app/ui/styles.py` 增加 `configure_combo_box()` 和角色宽度表，统一站点、
+  区段、状态、信号、进路、方向、临时限速编号等下拉框的最小宽度。
+- 下拉弹出列表使用 `QFontMetrics` 测量最长文本，预留内边距与箭头区域；监听
+  `rowsInserted/rowsRemoved/modelReset/dataChanged/currentTextChanged`，动态区段、
+  信号和可编辑 TSR 编号在内容变化后自动重新计算，不使用全局超大固定宽度。
+- 经典浅色主题补充下拉框高度、内边距、箭头区域和弹出列表选中样式；双站操作
+  页及 A/B 单站详情页全部经过公共 helper，控件通过 `comboRole` 可审计。
+- 新增并通过：所有正式 QComboBox 均有角色宽度、动态选项重算、可编辑 TSR 文本
+  可见等回归测试。
+- 阶段定向测试 `22 passed`；完整回归 `284 passed`；compileall 和
+  `git diff --check` 均通过。
+- 下一步：阶段 4 集成验收，执行 `run_dual.py --validate-only`、完整回归、真实
+  双站静置/断心跳/重连演练，并核对 Git 工作树与远端一致。
+
 ## 已完成：阶段 1
 
 完成内容：

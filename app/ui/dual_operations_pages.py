@@ -36,7 +36,7 @@ from app.services.alarm_service import AlarmLevel
 from app.services.dual_train_coordinator import DualTrainCoordinator, DualTrainState
 from app.services.tcc_controller import TccController
 from app.ui.dual_snapshot import DualStationSnapshot
-from app.ui.styles import relay_text
+from app.ui.styles import configure_combo_box, relay_text
 
 
 DUAL_OPERATION_BUTTON_OBJECTS = frozenset(
@@ -121,8 +121,10 @@ class TrackOperationsPage(_OperationPage):
         self.target_selector = QComboBox()
         self.target_selector.setObjectName("trackTargetSelector")
         self.target_selector.addItems(["A站", "B站", "共享区间"])
+        configure_combo_box(self.target_selector, "station", min_width=150)
         self.section_selector = QComboBox()
         self.section_selector.setObjectName("trackSectionSelector")
+        configure_combo_box(self.section_selector, "section")
         self.state_selector = QComboBox()
         for state, text in (
             (TrackState.CLEAR, "空闲"),
@@ -131,6 +133,7 @@ class TrackOperationsPage(_OperationPage):
             (TrackState.SHUNT_BAD, "分路不良"),
         ):
             self.state_selector.addItem(text, state)
+        configure_combo_box(self.state_selector, "state")
         self.apply_button = QPushButton("应用轨道状态")
         self.apply_button.setObjectName("applyTrackStateButton")
         self.target_selector.currentTextChanged.connect(self._reload_sections)
@@ -250,6 +253,7 @@ class SignalOperationsPage(_OperationPage):
         controls = QHBoxLayout()
         self.station_selector = QComboBox()
         self.station_selector.addItems(["A站", "B站"])
+        configure_combo_box(self.station_selector, "station")
         self.signal_selector = QComboBox()
         self.failure_checkbox = QCheckBox("模拟红灯灯丝故障")
         self.apply_button = QPushButton("应用灯丝状态")
@@ -280,6 +284,7 @@ class SignalOperationsPage(_OperationPage):
         self.signal_selector.addItems(
             [item.id for item in self._controller().config.topology.signals]
         )
+        configure_combo_box(self.signal_selector, "signal")
 
     def _apply(self) -> None:
         target = self.station_selector.currentText()
@@ -385,9 +390,11 @@ class TsrOperationsPage(_OperationPage):
         form = QFormLayout()
         self.station_selector = QComboBox()
         self.station_selector.addItems(["A站", "B站"])
+        configure_combo_box(self.station_selector, "station")
         self.id_input = QComboBox()
         self.id_input.setEditable(True)
         self.id_input.addItem("TSR-DEMO")
+        configure_combo_box(self.id_input, "tsr")
         self.start_input = QDoubleSpinBox()
         self.start_input.setRange(0, 4800)
         self.start_input.setValue(1000)
@@ -510,6 +517,7 @@ class DirectionOperationsPage(_OperationPage):
         self.direction_selector = QComboBox()
         self.direction_selector.addItem("A站 → B站", RunningDirection.A_TO_B)
         self.direction_selector.addItem("B站 → A站", RunningDirection.B_TO_A)
+        configure_combo_box(self.direction_selector, "direction")
         self.request_button = QPushButton("由A站申请区间改方")
         self.request_button.setObjectName("requestDirectionButton")
         self.disconnect_drill_button = QPushButton("发起改方并立即中断B站")

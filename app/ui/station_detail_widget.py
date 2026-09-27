@@ -26,7 +26,7 @@ from app.core.enums import RunningDirection, TrackInputSource, TrackState
 from app.core.models import OperationResult
 from app.services.tcc_controller import TccController, TccSnapshot
 from app.services.train_demo_service import TrainDemoService
-from app.ui.styles import relay_text, set_semantic_state
+from app.ui.styles import configure_combo_box, relay_text, set_semantic_state
 from app.ui.topology_widget import TopologyWidget
 
 
@@ -122,6 +122,7 @@ class StationDetailWidget(QWidget):
                 if route.id.startswith(station_prefix)
             ]
         )
+        configure_combo_box(self.route_selector, "route")
         self.establish_route_button = QPushButton("建立进路")
         self.cancel_route_button = QPushButton("取消进路")
         self.establish_route_button.setObjectName("establishRouteButton")
@@ -141,6 +142,7 @@ class StationDetailWidget(QWidget):
         self.track_selector.addItems(
             [item.id for item in self.controller.config.topology.sections]
         )
+        configure_combo_box(self.track_selector, "section")
         self.track_state_selector = QComboBox()
         for state, text in (
             (TrackState.CLEAR, "空闲"),
@@ -149,6 +151,7 @@ class StationDetailWidget(QWidget):
             (TrackState.SHUNT_BAD, "分路不良"),
         ):
             self.track_state_selector.addItem(text, state)
+        configure_combo_box(self.track_state_selector, "state")
         self.apply_track_button = QPushButton("应用轨道状态")
         self.apply_track_button.clicked.connect(self._apply_track)
         controls.addWidget(self.track_selector)
@@ -167,6 +170,7 @@ class StationDetailWidget(QWidget):
         self.signal_selector.addItems(
             [item.id for item in self.controller.config.topology.signals]
         )
+        configure_combo_box(self.signal_selector, "signal")
         self.red_lamp_failure = QCheckBox("模拟红灯灯丝故障")
         button = QPushButton("应用灯丝状态")
         button.clicked.connect(self._apply_signal_fault)
@@ -205,6 +209,7 @@ class StationDetailWidget(QWidget):
         self.tsr_id = QComboBox()
         self.tsr_id.setEditable(True)
         self.tsr_id.addItem("TSR-DEMO")
+        configure_combo_box(self.tsr_id, "tsr")
         self.tsr_start = QDoubleSpinBox()
         self.tsr_start.setRange(0, 4800)
         self.tsr_start.setValue(1000)
@@ -244,6 +249,7 @@ class StationDetailWidget(QWidget):
         self.direction_target = QComboBox()
         self.direction_target.addItem("A站 → B站", RunningDirection.A_TO_B)
         self.direction_target.addItem("B站 → A站", RunningDirection.B_TO_A)
+        configure_combo_box(self.direction_target, "direction")
         self.direction_button = QPushButton("申请区间改方")
         self.direction_button.clicked.connect(self._request_direction)
         layout.addWidget(self.direction_status)

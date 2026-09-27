@@ -1,7 +1,7 @@
 """双站真实操作页与唯一列车协调器的界面集成测试。"""
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QPushButton
+from PyQt5.QtWidgets import QComboBox, QPushButton
 
 from app.core.enums import RunningDirection, TrackState
 from app.core.models import OperationResult
@@ -203,6 +203,17 @@ def test_network_page_labels_total_and_business_counters_distinctly(qtbot) -> No
     assert "20" in values
     assert "4" in values
     assert "3" in values
+
+
+def test_all_formal_comboboxes_have_role_width(qtbot) -> None:  # type: ignore[no-untyped-def]
+    """双站窗口和嵌入的单站详情页所有下拉框都必须走公共宽度策略。"""
+    window, _runtime = _window(qtbot)
+    combos = window.findChildren(QComboBox)
+
+    assert combos
+    assert all(combo.property("comboRole") for combo in combos)
+    assert all(combo.minimumWidth() >= 100 for combo in combos)
+    assert all(combo.view().minimumWidth() >= combo.minimumWidth() for combo in combos)
 
 
 def test_train_page_controls_unique_cross_station_coordinator(qtbot) -> None:  # type: ignore[no-untyped-def]

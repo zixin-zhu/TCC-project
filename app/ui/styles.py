@@ -1,6 +1,7 @@
-"""TCC 界面统一的经典浅色工业控制台主题。"""
+"""TCC 界面统一的经典浅色工业控制台主题与输入控件策略。"""
 
-from PyQt5.QtWidgets import QWidget
+from PyQt5.QtGui import QFontMetrics
+from PyQt5.QtWidgets import QComboBox, QWidget
 
 
 CLASSIC_CONSOLE_QSS = """
@@ -103,6 +104,19 @@ QTableWidget, QTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {
     selection-background-color: #c8e1f5;
     selection-color: #1f2d38;
 }
+QComboBox {
+    min-height: 28px;
+    padding: 2px 30px 2px 8px;
+}
+QComboBox::drop-down {
+    width: 26px;
+    border-left: 1px solid #b8c7d3;
+}
+QComboBox QAbstractItemView {
+    padding: 2px;
+    selection-background-color: #c8e1f5;
+    selection-color: #1f2d38;
+}
 QHeaderView::section {
     background: #dbe8f2;
     color: #1f2d38;
@@ -123,6 +137,70 @@ QWidget[trackState="OCCUPIED"] { color: #c62828; font-weight: 600; }
 QWidget[trackState="FAULT_OCCUPIED"] { color: #7b1fa2; font-weight: 600; }
 QWidget[trackState="SHUNT_BAD"] { color: #c05a00; font-weight: 600; }
 """
+
+
+COMBO_ROLE_MIN_WIDTHS = {
+    "station": 100,
+    "section": 130,
+    "state": 140,
+    "signal": 120,
+    "route": 180,
+    "direction": 160,
+    "tsr": 170,
+    "shared": 150,
+}
+
+
+def configure_combo_box(
+    combo: QComboBox,
+    role: str,
+    *,
+    min_width: int | None = None,
+) -> QComboBox:
+    """统一设置下拉框宽度，并让动态选项和可编辑文本触发重新测量。
+
+    ``role`` 表达字段语义而不是页面位置，便于双站操作页和单站详情页共享
+    同一套宽度基线。弹出列表额外按字体实际宽度测量，避免长区段、进路或
+    临时限速编号被截断；这里不使用全局超大固定宽度，保留经典控制台的紧凑
+    布局。
+    """
+    if not isinstance(combo, QComboBox):
+        raise TypeError("configure_combo_box 只接受 QComboBox")
+    if role not in COMBO_ROLE_MIN_WIDTHS:
+        raise ValueError(f"未知下拉框角色：{role}")
+    if combo.property("comboRole") is not None:
+        return combo
+
+    baseline = max(COMBO_ROLE_MIN_WIDTHS[role], min_width or 0)
+    combo.setProperty("comboRole", role)
+    combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+
+    def resize_to_contents(*_args: object) -> None:
+        metrics = QFontMetrics(combo.font())
+        content_width = max(
+            (metrics.horizontalAdvance(combo.itemText(index)) for index in range(combo.count())),
+            default=0,
+        )
+        if combo.isEditable() and combo.lineEdit() is not None:
+            content_width = max(
+                content_width,
+                metrics.horizontalAdvance(combo.lineEdit().text()),
+            )
+        # 左右内边距、下拉箭头和边框预留空间，确保显示文本而非只显示省略号。
+        width = max(baseline, content_width + 48)
+        combo.setMinimumWidth(width)
+        combo.view().setMinimumWidth(width)
+        if combo.lineEdit() is not None:
+            combo.lineEdit().setMinimumWidth(width)
+
+    model = combo.model()
+    model.rowsInserted.connect(resize_to_contents)
+    model.rowsRemoved.connect(resize_to_contents)
+    model.modelReset.connect(resize_to_contents)
+    model.dataChanged.connect(resize_to_contents)
+    combo.currentTextChanged.connect(resize_to_contents)
+    resize_to_contents()
+    return combo
 
 
 def repolish(widget: QWidget) -> None:
