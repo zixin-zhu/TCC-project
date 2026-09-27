@@ -7,7 +7,7 @@
 - 项目：CTCS-2 车站列控中心（TCC）A/B 双站教学仿真
 - 工作树：`/Users/zhu/Desktop/TCC-project/.worktrees/ctcs2-rebuild`
 - 分支：`codex/dual-station-dashboard`
-- 代码状态：阶段 0～阶段 5 已完成；工作区干净，远端已同步
+- 代码状态：阶段 0～阶段 6 已完成；工作区干净，远端已同步
 - 方案：`docs/tcc-vibe-plans/08-ctcs2-spec-and-ui-train-optimization.md`
 
 ## 本次方案已覆盖
@@ -18,7 +18,7 @@
 4. 应答器/LEU 报文选择、20% 存储余量、默认报文和临时限速六等级；
 5. P/Q/R/S/T/U/V/W 接口状态、启动自检和诊断教学模型；
 6. 列车 2D 线路可视化、列车选择下拉框、单列车复位后再次发车（阶段 5 已完成）；
-7. A/B 上下分区、逐条显示的日志告警页（方案已定义，阶段 6 尚未执行）；
+7. A/B 上下分区、逐条显示的日志告警页（阶段 6 已完成）；
 8. 分阶段测试、验收、提交、推送和中断恢复步骤。
 
 ## 下一步执行顺序
@@ -29,20 +29,20 @@
 4. 阶段 3：应答器/LEU、临时限速和断链保持（已完成）；
 5. 阶段 4：接口状态、启动自检和诊断教学模型（已完成）；
 6. 阶段 5：实现列车 2D 场景和可重复生命周期（已完成）；
-7. 阶段 6～7：实现 A/B 日志页及页面集成；
+7. 阶段 6～7：实现 A/B 日志页及页面集成（阶段 6 已完成，阶段 7 未开始）；
 8. 阶段 8：按规范场景做全量验收和交付。
 
 ## 最近一次阶段记录
 
-- 阶段：5
+- 阶段：6
 - 状态：已完成
-- 代码提交：`cc1880b feat(train): add 2d train scene and repeatable selected-train lifecycle`
+- 代码提交：`aa366d3 feat(ui): split station logs and alarms into row-based panels`
 - 推送分支：`origin/codex/dual-station-dashboard`
-- 定向测试：列车协调器、投影、2D 页面和双站列车操作共 25 项通过（真实 TCP 另纳入全量）
-- 全量测试：`314 passed in 7.30s`（允许本机回环端口）
-- 产物：`TrainProjectionMapper`、`TrainSceneWidget`、稳定 `train_selector`、场景/表格/下拉同步、`reset_train()` 和指定列车启动
-- 关键语义：线路坐标来自拓扑长度；UI 不推进列车；复位成功回到 `WAITING` 并递增生命周期版本；旧 `RESET` 保留为兼容别名；复位失败保留停车和占用
-- 下一步：阶段 6，A/B 上下分区、逐条日志告警页；开始前重新读取本文件、总控方案和阶段 6 小节
+- 定向测试：日志页、告警历史、控制器和双站主窗口共 30 项通过（真实 TCP 另纳入全量）
+- 全量测试：`316 passed in 8.05s`（允许本机回环端口）
+- 产物：`TccSnapshot.alarm_history`、`LogAlarmRow`、`DualLogAlarmPage`，A/B 上下表格、逐条操作/告警/恢复事件、每站 200 条上限
+- 关键语义：活动/已恢复状态用文字表达；告警恢复时间优先使用 `cleared_at_ms`；未把心跳活性刷新写入业务日志；长说明保留 tooltip
+- 下一步：阶段 7，组合页面、统一下拉宽度和交互门禁；开始前重新读取本文件、总控方案和阶段 7 小节
 
 ## 固定验证命令
 
