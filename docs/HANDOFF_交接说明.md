@@ -7,7 +7,7 @@
 - 项目：CTCS-2 车站列控中心（TCC）A/B 双站教学仿真
 - 工作树：`/Users/zhu/Desktop/TCC-project/.worktrees/ctcs2-rebuild`
 - 分支：`codex/dual-station-dashboard`
-- 代码状态：阶段 0、阶段 1、阶段 2 已完成；当前等待阶段 2 提交并推送后的回归确认
+- 代码状态：阶段 0、阶段 1、阶段 2 已完成；工作区干净，远端已同步
 - 方案：`docs/tcc-vibe-plans/08-ctcs2-spec-and-ui-train-optimization.md`
 
 ## 本次方案已覆盖
@@ -34,12 +34,14 @@
 ## 最近一次阶段记录
 
 - 阶段：2
-- 状态：已完成，待提交推送
+- 状态：已完成
+- 代码提交：`5b6abb3 feat(ctcs2): add track protection and coding safety rules`
+- 推送分支：`origin/codex/dual-station-dashboard`
 - 定向测试：轨道/防护/信号/进路/共享输入/控制器/方向共 86 项通过
 - 全量测试：`299 passed in 7.66s`（允许本机回环端口）
 - 产物：`TrackProtectionService`、连续分路不良 HU、编码 OFFLINE、编码故障注入/恢复、CTCS-2 防护规则配置
 - 关键语义：故障占用必须按“故障占用→后方出清→故障区段出清”顺序撤防；编码不可用停止输出并保持信号红灯
-- 下一步：阶段 2 提交并推送，然后进入阶段 3 应答器/LEU、临时限速和断链保持
+- 下一步：阶段 3，应答器/LEU、临时限速和断链保持；开始前重新读取本文件、总控方案和阶段 3 小节
 
 ## 固定验证命令
 
