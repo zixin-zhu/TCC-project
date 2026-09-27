@@ -1,22 +1,37 @@
 """双站首页中的单站关键状态摘要卡。"""
 
 from PyQt5.QtCore import pyqtSignal
-from PyQt5.QtWidgets import QGridLayout, QGroupBox, QLabel, QPushButton
+from PyQt5.QtGui import QFont
+from PyQt5.QtWidgets import (
+    QGridLayout,
+    QGroupBox,
+    QLabel,
+    QPushButton,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
-from app.core.models import ProjectConfig
-from app.services.tcc_controller import TccSnapshot
+from app.core.models import OperationResult, ProjectConfig
+from app.services.tcc_controller import TccController, TccSnapshot
 from app.ui.styles import relay_text, set_semantic_state
 
 
 class StationSummaryCard(QGroupBox):
-    """显示一站关键数据；卡片按钮只请求导航，不执行任何业务命令。"""
+    """显示一站关键数据，并提供受安全守卫约束的复核入口。"""
 
     navigate_requested = pyqtSignal(str)
 
-    def __init__(self, config: ProjectConfig, parent=None) -> None:  # type: ignore[no-untyped-def]
+    def __init__(
+        self,
+        config: ProjectConfig,
+        controller: TccController | None = None,
+        parent=None,
+    ) -> None:  # type: ignore[no-untyped-def]
         super().__init__(parent)
         self.config = config
         self.station_id = config.station.station_id
+        self.controller = controller
         self.setTitle(f"{config.station.station_name} · TCC-{self.station_id}")
         layout = QGridLayout(self)
         self.identity_label = QLabel(
@@ -31,7 +46,11 @@ class StationSummaryCard(QGroupBox):
         self.signal_label = QLabel("主信号：--")
         self.leu_label = QLabel("LEU/报文：--")
         self.tsr_alarm_label = QLabel("临时限速：--　活动告警：--")
-        self.metrics_label = QLabel("协议报文：发送/接收 --/--；业务报文：发送/接收 --/--")
+        self.metrics_label = QLabel("协议报文：发送/接收 --/--\n业务报文：发送/接收 --/--\n心跳报文：发送/接收 --/--")
+        self.metrics_label.setMinimumWidth(330)
+        self.metrics_label.setMaximumWidth(330)
+        self.metrics_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        self.metrics_label.setFont(QFont("Menlo", 10))
         fields = (
             self.identity_label,
             self.communication_label,
@@ -52,6 +71,32 @@ class StationSummaryCard(QGroupBox):
             lambda: self.navigate_requested.emit(self.station_id)
         )
         layout.addWidget(self.navigate_button, 5, 0, 1, 2)
+        self.safety_panel = QWidget()
+        safety_layout = QVBoxLayout(self.safety_panel)
+        safety_layout.setContentsMargins(8, 0, 0, 0)
+        safety_layout.addStretch(1)
+        self.recover_button = QPushButton("安全复核并解除锁闭")
+        self.recover_button.setObjectName(f"recoverDirectionButton{self.station_id}")
+        self.recover_button.clicked.connect(self._recover_safety_lock)
+        safety_layout.addWidget(self.recover_button)
+        self.recovery_result_label = QLabel("安全状态：等待快照")
+        self.recovery_result_label.setWordWrap(True)
+        safety_layout.addWidget(self.recovery_result_label)
+        safety_layout.addStretch(1)
+        layout.addWidget(self.safety_panel, 0, 2, 6, 1)
+        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(2, 0)
+
+    def _recover_safety_lock(self) -> None:
+        if self.controller is None:
+            self.recovery_result_label.setText("安全复核失败：未绑定本站控制器")
+            return
+        result: OperationResult = self.controller.recover_safety_lock()
+        self.recovery_result_label.setText(
+            ("安全复核成功：已解除锁闭；" if result.success else "安全复核失败：")
+            + result.reason
+        )
 
     def set_snapshot(self, snapshot: TccSnapshot) -> None:
         if snapshot.station_id != self.station_id:
@@ -113,7 +158,14 @@ class StationSummaryCard(QGroupBox):
         ) else ("warning" if snapshot.alarms else "info")
         set_semantic_state(self.tsr_alarm_label, "severity", severity)
         self.metrics_label.setText(
-            f"协议报文：发送/接收 {snapshot.network_sent}/{snapshot.network_received}；"
-            f"业务报文：发送/接收 {snapshot.business_sent}/{snapshot.business_received}；"
-            f"心跳：发送/接收 {snapshot.heartbeat_sent}/{snapshot.heartbeat_received}"
+            f"协议报文：发送/接收 {snapshot.network_sent:>8}/{snapshot.network_received:<8}\n"
+            f"业务报文：发送/接收 {snapshot.business_sent:>8}/{snapshot.business_received:<8}\n"
+            f"心跳报文：发送/接收 {snapshot.heartbeat_sent:>8}/{snapshot.heartbeat_received:<8}"
+        )
+        locked = snapshot.direction_operation_locked
+        self.recover_button.setEnabled(locked)
+        self.recovery_result_label.setText(
+            "安全状态：安全锁闭，可执行复核"
+            if locked
+            else "安全状态：作业允许，无需解除锁闭"
         )

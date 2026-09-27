@@ -23,6 +23,7 @@ from PyQt5.QtWidgets import (
 
 from app.services.tcc_controller import TccController
 from app.services.dual_train_coordinator import DualTrainCoordinator
+from app.services.shared_state_request_service import SharedStateRequestService
 from app.ui.corridor_overview_widget import CorridorOverviewWidget
 from app.ui.dual_operations_pages import (
     DirectionOperationsPage,
@@ -165,6 +166,9 @@ class DualStationMainWindow(QMainWindow):
         self.train_coordinator = DualTrainCoordinator(
             self.controller_a, self.controller_b, parent=self
         )
+        self.shared_request_service = SharedStateRequestService(
+            self.controller_a, self.controller_b
+        )
         self._closed = False
         self.setWindowTitle("CTCS-2 车站列控中心（TCC）双站联合仿真系统")
         self.resize(1440, 900)
@@ -211,8 +215,8 @@ class DualStationMainWindow(QMainWindow):
     def _build_pages(self) -> None:
         config_a = self.controller_a.config
         config_b = self.controller_b.config
-        self.station_a_card = StationSummaryCard(config_a)
-        self.station_b_card = StationSummaryCard(config_b)
+        self.station_a_card = StationSummaryCard(config_a, self.controller_a)
+        self.station_b_card = StationSummaryCard(config_b, self.controller_b)
         self.station_a_card.navigate_requested.connect(self._navigate_station)
         self.station_b_card.navigate_requested.connect(self._navigate_station)
 
@@ -261,16 +265,22 @@ class DualStationMainWindow(QMainWindow):
         self.pages.addWidget(corridor_page)
 
         self.station_a_detail = StationDetailWidget(
-            self.controller_a, include_train_page=False
+            self.controller_a,
+            include_train_page=False,
+            shared_request_service=self.shared_request_service,
+            network_fault_handler=getattr(self.runtime, "set_station_network_fault", None),
         )
         self.station_b_detail = StationDetailWidget(
-            self.controller_b, include_train_page=False
+            self.controller_b,
+            include_train_page=False,
+            shared_request_service=self.shared_request_service,
+            network_fault_handler=getattr(self.runtime, "set_station_network_fault", None),
         )
         self.pages.addWidget(self._wrap(self.station_a_detail))
         self.pages.addWidget(self._wrap(self.station_b_detail))
 
         self.track_operations_page = TrackOperationsPage(
-            self.controller_a, self.controller_b
+            self.controller_a, self.controller_b, self.shared_request_service
         )
         self.signal_operations_page = SignalOperationsPage(
             self.controller_a, self.controller_b

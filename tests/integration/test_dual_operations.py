@@ -44,6 +44,14 @@ def test_track_page_routes_station_and_shared_targets_through_controllers(qtbot)
     ]
     page.section_selector.setCurrentText("Q2")
     qtbot.mouseClick(page.apply_button, Qt.LeftButton)
+    assert runtime.station_a.controller.snapshot.tracks["Q2"] is TrackState.CLEAR
+    assert runtime.station_b.controller.snapshot.tracks["Q2"] is TrackState.CLEAR
+    assert "已提交申请，正在等待 A/B 站确认" in page.shared_request_status.text()
+    assert window.station_a_detail.shared_pending_table.rowCount() == 1
+    assert window.station_b_detail.shared_pending_table.rowCount() == 1
+
+    window.station_b_detail.shared_pending_table.selectRow(0)
+    qtbot.mouseClick(window.station_b_detail.approve_shared_button, Qt.LeftButton)
     assert runtime.station_a.controller.snapshot.tracks["Q2"] is TrackState.OCCUPIED
     assert runtime.station_b.controller.snapshot.tracks["Q2"] is TrackState.OCCUPIED
 
@@ -60,7 +68,11 @@ def test_track_page_routes_station_and_shared_targets_through_controllers(qtbot)
 
     assert runtime.station_a.controller.snapshot.tracks["Q2"] is TrackState.OCCUPIED
     assert runtime.station_b.controller.snapshot.tracks["Q2"] is TrackState.OCCUPIED
-    assert "部分失败" in page.result_label.text()
+    window.station_b_detail.shared_pending_table.selectRow(0)
+    qtbot.mouseClick(window.station_b_detail.approve_shared_button, Qt.LeftButton)
+    assert "对站写入失败" in window.station_b_detail.operation_result.text()
+    assert runtime.station_a.controller.snapshot.tracks["Q2"] is TrackState.OCCUPIED
+    assert runtime.station_b.controller.snapshot.tracks["Q2"] is TrackState.OCCUPIED
 
 
 def test_signal_and_tsr_pages_write_only_selected_station(qtbot) -> None:  # type: ignore[no-untyped-def]
@@ -157,17 +169,17 @@ def test_direction_requester_role_reverses_after_direction_switch(qtbot) -> None
     assert page.table.item(1, 0).text() == "B站（请求方）"
 
 
-def test_each_station_control_exposes_direction_request_handler_panel(qtbot) -> None:  # type: ignore[no-untyped-def]
+def test_each_station_control_exposes_shared_request_panel_and_network_buttons(qtbot) -> None:  # type: ignore[no-untyped-def]
     window, _runtime = _window(qtbot)
 
-    assert window.station_a_detail.direction_request_group is not None
-    assert window.station_b_detail.direction_request_group is not None
-    assert "请求方" in window.station_a_detail.direction_role.text()
-    assert "应答方" in window.station_b_detail.direction_role.text()
+    assert window.station_a_detail.findChild(QPushButton, "approveSharedRequestButtonA") is not None
+    assert window.station_b_detail.findChild(QPushButton, "approveSharedRequestButtonB") is not None
+    assert window.station_a_detail.findChild(QPushButton, "injectANetworkFaultButton") is not None
+    assert window.station_b_detail.findChild(QPushButton, "injectBNetworkFaultButton") is not None
     assert window.findChild(QPushButton, "recoverDirectionButtonA") is not None
     assert window.findChild(QPushButton, "recoverDirectionButtonB") is not None
-    assert window.findChild(QPushButton, "reviewDirectionRequestButtonA") is not None
-    assert window.findChild(QPushButton, "reviewDirectionRequestButtonB") is not None
+    assert window.station_a_detail.findChild(QPushButton, "reviewDirectionRequestButtonA") is None
+    assert window.station_b_detail.findChild(QPushButton, "reviewDirectionRequestButtonB") is None
 
 
 def test_direction_disconnect_drill_faults_current_responder(qtbot) -> None:  # type: ignore[no-untyped-def]

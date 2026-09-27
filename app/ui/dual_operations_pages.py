@@ -34,8 +34,8 @@ from PyQt5.QtWidgets import (
 from app.core.enums import RunningDirection, TrackInputSource, TrackState
 from app.core.models import OperationResult
 from app.domain.direction_change import direction_requester_station
-from app.services.alarm_service import AlarmLevel
 from app.services.dual_train_coordinator import DualTrainCoordinator, DualTrainState
+from app.services.shared_state_request_service import SharedStateRequestService
 from app.services.tcc_controller import TccController
 from app.ui.dual_snapshot import DualStationSnapshot
 from app.ui.styles import configure_combo_box, relay_text
@@ -118,8 +118,18 @@ class _OperationPage(QWidget):
 class TrackOperationsPage(_OperationPage):
     """按 A/B/共享物理目标执行人工轨道状态输入。"""
 
-    def __init__(self, station_a: TccController, station_b: TccController) -> None:
+    def __init__(
+        self,
+        station_a: TccController,
+        station_b: TccController,
+        shared_request_service: SharedStateRequestService | None = None,
+    ) -> None:
         super().__init__(station_a, station_b)
+        self.shared_request_service = shared_request_service
+        if self.shared_request_service is not None:
+            self.shared_request_service.requests_changed.connect(
+                self._refresh_shared_request_status
+            )
         layout = QVBoxLayout(self)
         heading = QLabel("双站轨道电路状态与人工输入")
         heading.setObjectName("pageHeading")
@@ -154,12 +164,25 @@ class TrackOperationsPage(_OperationPage):
             controls.addWidget(widget)
         controls.addStretch(1)
         layout.addLayout(controls)
+        self.shared_request_status = QLabel("共享区段申请状态：暂无待处理申请")
+        self.shared_request_status.setWordWrap(True)
+        layout.addWidget(self.shared_request_status)
         self.table = _readonly_table(
             ["区段", "归属", "A站状态/码序", "B站状态/码序", "一致性"]
         )
         layout.addWidget(self.table)
         layout.addWidget(self.result_label)
         self._reload_sections()
+
+    def _refresh_shared_request_status(self) -> None:
+        if self.shared_request_service is None:
+            return
+        pending = self.shared_request_service.pending_requests()
+        self.shared_request_status.setText(
+            "共享区段申请状态：已提交申请，正在等待 A/B 站确认……"
+            if pending
+            else "共享区段申请状态：暂无待处理申请"
+        )
 
     def _reload_sections(self) -> None:
         target = self.target_selector.currentText()
@@ -190,44 +213,18 @@ class TrackOperationsPage(_OperationPage):
             self._show_result(target, result)
             return
 
-        # 人工共享输入仍分别经过两个控制器；部分成功时保持保守状态并报警。
-        result_a = self.station_a.set_track_state(
-            section_id, TrackInputSource.OPERATOR, state
-        )
-        if not result_a.success:
-            self._show_result("共享区间", OperationResult(False, f"A站：{result_a.reason}"))
-            return
-        result_b = self.station_b.set_track_state(
-            section_id, TrackInputSource.OPERATOR, state
-        )
-        if not result_b.success:
-            compensation_text = ""
-            if state is TrackState.CLEAR:
-                compensation = self.station_a.set_track_state(
-                    section_id,
-                    TrackInputSource.OPERATOR,
-                    TrackState.OCCUPIED,
-                )
-                compensation_text = (
-                    "；A站已重新置为占用"
-                    if compensation.success
-                    else f"；A站重新占用失败：{compensation.reason}"
-                )
-            reason = (
-                f"共享人工输入部分失败：{result_b.reason}{compensation_text}"
+        if self.shared_request_service is None:
+            self._show_result(
+                "共享区间", OperationResult(False, "共享状态申请服务未初始化")
             )
-            for controller in (self.station_a, self.station_b):
-                controller.raise_external_alarm(
-                    "SHARED_INPUT_PARTIAL_FAILURE",
-                    AlarmLevel.CRITICAL,
-                    reason,
-                    "DUAL_TRACK_PAGE",
-                )
-            self._show_result("共享区间", OperationResult(False, reason))
             return
-        self._show_result("共享区间", OperationResult(True, "双站轨道状态已更新"))
+        # 申请方随当前运行方向确定：A→B 时由 A 提交，B→A 时由 B 提交。
+        requester = "A" if self.station_a.snapshot.running_direction == "A_TO_B" else "B"
+        result = self.shared_request_service.submit(section_id, state, requester)
+        self._show_result("共享区间", result)
 
     def set_snapshot(self, model: DualStationSnapshot) -> None:
+        self._refresh_shared_request_status()
         self.table.setRowCount(len(model.sections))
         for row, item in enumerate(model.sections):
             code_a = model.station_a.codes[item.section_id].code.value
@@ -522,17 +519,6 @@ class DirectionOperationsPage(_OperationPage):
         self.precondition_label.setWordWrap(True)
         precondition_layout.addWidget(self.precondition_label)
         layout.addWidget(preconditions)
-        self.request_handler_group = QGroupBox("双站改方请求处理（双方确认）")
-        self.request_handler_group.setObjectName("directionRequestHandlerGroup")
-        handler_layout = QVBoxLayout(self.request_handler_group)
-        self.transaction_label = QLabel()
-        self.transaction_label.setWordWrap(True)
-        handler_layout.addWidget(self.transaction_label)
-        self.recover_button = QPushButton("安全复核并解除锁闭")
-        self.recover_button.setObjectName("recoverDirectionButton")
-        self.recover_button.clicked.connect(self._recover)
-        handler_layout.addWidget(self.recover_button)
-        layout.addWidget(self.request_handler_group)
         controls = QHBoxLayout()
         self.direction_selector = QComboBox()
         self.direction_selector.addItem("A站 → B站", RunningDirection.A_TO_B)
@@ -584,16 +570,6 @@ class DirectionOperationsPage(_OperationPage):
             ),
         )
         self._show_result("A/B双站", combined)
-
-    def _recover(self) -> None:
-        """仅重走双方安全复核，不提供无条件清锁按钮。"""
-        results = (
-            self.station_a.recover_safety_lock(),
-            self.station_b.recover_safety_lock(),
-        )
-        success = all(item.success for item in results)
-        reason = "；".join(item.reason for item in results)
-        self._show_result("A/B双站", OperationResult(success, reason))
 
     def set_snapshot(self, model: DualStationSnapshot) -> None:
         self._latest_model = model
@@ -675,18 +651,6 @@ class DirectionOperationsPage(_OperationPage):
             and not model.operation_locked
             and model.communication_healthy
         )
-        self.recover_button.setEnabled(model.operation_locked)
-        requester_controller = self.station_a if requester_id == "A" else self.station_b
-        responder_controller = self.station_b if requester_id == "A" else self.station_a
-        requester_transaction = requester_controller.direction_transaction_snapshot()
-        responder_transaction = responder_controller.direction_transaction_snapshot()
-        self.transaction_label.setText(
-            f"请求方：{requester_id}站（{requester_transaction.phase.value}）；"
-            f"应答方：{responder_id}站（{responder_transaction.phase.value}）；"
-            f"事务号：{requester_transaction.transaction_id or responder_transaction.transaction_id or '无活动事务'}；"
-            f"请求方版本：{requester_transaction.requester_state_version if requester_transaction.requester_state_version is not None else '—'}；"
-            f"应答方版本：{responder_transaction.responder_state_version if responder_transaction.responder_state_version is not None else '—'}。"
-        )
 
 
 class NetworkStatusPage(_OperationPage):
@@ -719,6 +683,10 @@ class NetworkStatusPage(_OperationPage):
                 "作业锁闭",
             ]
         )
+        metrics_header = self.table.horizontalHeader()
+        for column in range(3, 9):
+            metrics_header.setSectionResizeMode(column, QHeaderView.Fixed)
+            metrics_header.resizeSection(column, 92)
         layout.addWidget(self.table)
         controls = QGroupBox("教学故障演练（真实断开并自动重连）")
         control_layout = QHBoxLayout(controls)

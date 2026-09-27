@@ -1,8 +1,9 @@
 """可嵌入的 TCC 单站业务详情组件。"""
 
 import json
+from collections.abc import Callable
 
-from PyQt5.QtCore import QTimer, pyqtSignal
+from PyQt5.QtCore import QTimer, Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -26,6 +27,7 @@ from app.core.enums import RunningDirection, TrackInputSource, TrackState
 from app.core.models import OperationResult
 from app.domain.direction_change import direction_requester_station
 from app.services.tcc_controller import TccController, TccSnapshot
+from app.services.shared_state_request_service import SharedStateRequestService
 from app.services.train_demo_service import TrainDemoService
 from app.ui.styles import configure_combo_box, relay_text, set_semantic_state
 from app.ui.topology_widget import TopologyWidget
@@ -41,11 +43,15 @@ class StationDetailWidget(QWidget):
         controller: TccController,
         *,
         include_train_page: bool = True,
+        shared_request_service: SharedStateRequestService | None = None,
+        network_fault_handler: Callable[[str, bool], OperationResult] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.controller = controller
         self.include_train_page = include_train_page
+        self.shared_request_service = shared_request_service
+        self._network_fault_handler = network_fault_handler
         self._external_operation_locked = False
         self._external_lock_reason = ""
         self._last_direction: RunningDirection | None = None
@@ -55,6 +61,10 @@ class StationDetailWidget(QWidget):
         self.train_timer.timeout.connect(self._train_tick)
         self.setObjectName("stationDetailRoot")
         self._build_ui()
+        if self.shared_request_service is not None:
+            self.shared_request_service.requests_changed.connect(
+                self._refresh_shared_requests
+            )
         controller.add_snapshot_listener(self.refresh)
         self.refresh(controller.snapshot)
 
@@ -136,6 +146,39 @@ class StationDetailWidget(QWidget):
         route_controls.addWidget(self.cancel_route_button)
         route_controls.addStretch(1)
         layout.addWidget(route_group)
+        self._build_shared_request_panel(layout)
+
+    def _build_shared_request_panel(self, layout: QVBoxLayout) -> None:
+        """在 A/B 控制页展示本站待确认和已处理的公共区段申请。"""
+        group = QGroupBox("公共区段申请确认（A/B 双站）")
+        group.setObjectName("sharedStateRequestGroup")
+        group_layout = QVBoxLayout(group)
+        self.shared_pending_table = QTableWidget(0, 6)
+        self.shared_pending_table.setHorizontalHeaderLabels(
+            ["申请编号", "区段", "目标状态", "申请站", "已确认站", "提交时间"]
+        )
+        self.shared_history_table = QTableWidget(0, 5)
+        self.shared_history_table.setHorizontalHeaderLabels(
+            ["申请编号", "区段", "结果", "处理时间", "原因"]
+        )
+        actions = QHBoxLayout()
+        self.approve_shared_button = QPushButton("同意选中申请")
+        self.reject_shared_button = QPushButton("拒绝选中申请")
+        station_suffix = self.controller.config.station.station_id
+        self.approve_shared_button.setObjectName(f"approveSharedRequestButton{station_suffix}")
+        self.reject_shared_button.setObjectName(f"rejectSharedRequestButton{station_suffix}")
+        self.approve_shared_button.clicked.connect(self._approve_shared_request)
+        self.reject_shared_button.clicked.connect(self._reject_shared_request)
+        actions.addWidget(self.approve_shared_button)
+        actions.addWidget(self.reject_shared_button)
+        actions.addStretch(1)
+        group_layout.addWidget(QLabel("待处理申请"))
+        group_layout.addWidget(self.shared_pending_table)
+        group_layout.addLayout(actions)
+        group_layout.addWidget(QLabel("已处理申请记录"))
+        group_layout.addWidget(self.shared_history_table)
+        layout.addWidget(group)
+        self._refresh_shared_requests()
 
     def _build_track_page(self) -> None:
         _, layout = self._new_page("轨道编码")
@@ -258,36 +301,28 @@ class StationDetailWidget(QWidget):
         layout.addWidget(self.direction_status)
         layout.addWidget(self.direction_target)
         layout.addWidget(self.direction_button)
-        self.direction_request_group = QGroupBox("改方请求处理（双站确认）")
-        self.direction_request_group.setObjectName("directionRequestHandlerGroup")
-        handler_layout = QVBoxLayout(self.direction_request_group)
-        self.direction_role = QLabel()
-        self.direction_role.setWordWrap(True)
-        self.direction_transaction = QLabel()
-        self.direction_transaction.setWordWrap(True)
-        handler_layout.addWidget(self.direction_role)
-        handler_layout.addWidget(self.direction_transaction)
-        self.review_direction_button = QPushButton("复核当前对站请求")
-        self.review_direction_button.setObjectName(
-            f"reviewDirectionRequestButton{self.controller.config.station.station_id}"
-        )
-        self.review_direction_button.clicked.connect(self._review_direction_request)
-        handler_layout.addWidget(self.review_direction_button)
-        self.recover_direction_button = QPushButton("安全复核并解除锁闭")
-        self.recover_direction_button.setObjectName(
-            f"recoverDirectionButton{self.controller.config.station.station_id}"
-        )
-        self.recover_direction_button.clicked.connect(self._recover_direction)
-        handler_layout.addWidget(self.recover_direction_button)
-        layout.addWidget(self.direction_request_group)
         layout.addStretch(1)
 
     def _build_network_page(self) -> None:
         _, layout = self._new_page("网络")
         self.network_status = QLabel()
         self.network_metrics = QLabel()
+        self.network_metrics.setMinimumWidth(360)
+        self.network_metrics.setMaximumWidth(360)
+        network_controls = QHBoxLayout()
+        suffix = self.controller.config.station.station_id
+        self.inject_network_button = QPushButton("模拟网络中断")
+        self.restore_network_button = QPushButton("恢复网络")
+        self.inject_network_button.setObjectName(f"inject{suffix}NetworkFaultButton")
+        self.restore_network_button.setObjectName(f"restore{suffix}NetworkButton")
+        self.inject_network_button.clicked.connect(lambda: self._set_network_fault(True))
+        self.restore_network_button.clicked.connect(lambda: self._set_network_fault(False))
+        network_controls.addWidget(self.inject_network_button)
+        network_controls.addWidget(self.restore_network_button)
+        network_controls.addStretch(1)
         layout.addWidget(self.network_status)
         layout.addWidget(self.network_metrics)
+        layout.addLayout(network_controls)
         layout.addStretch(1)
 
     def _build_train_page(self) -> None:
@@ -361,7 +396,7 @@ class StationDetailWidget(QWidget):
             f"当前方向：{snapshot.running_direction}；"
             f"作业状态：{'安全锁闭' if snapshot.direction_operation_locked else '允许'}"
         )
-        self._refresh_direction_handler(snapshot)
+        self._refresh_direction_status(snapshot)
         self.network_status.setText(f"站间通信：{snapshot.connection_state.value}")
         set_semantic_state(
             self.network_status,
@@ -369,10 +404,11 @@ class StationDetailWidget(QWidget):
             snapshot.connection_state.value,
         )
         self.network_metrics.setText(
-            f"协议报文：发送 {snapshot.network_sent} / 接收 {snapshot.network_received}；"
-            f"业务报文：发送 {snapshot.business_sent} / 接收 {snapshot.business_received}；"
-            f"心跳：发送 {snapshot.heartbeat_sent} / 接收 {snapshot.heartbeat_received}"
+            f"协议报文：发送 {snapshot.network_sent:>8} / 接收 {snapshot.network_received:<8}\n"
+            f"业务报文：发送 {snapshot.business_sent:>8} / 接收 {snapshot.business_received:<8}\n"
+            f"心跳报文：发送 {snapshot.heartbeat_sent:>8} / 接收 {snapshot.heartbeat_received:<8}"
         )
+        self._refresh_shared_requests()
         self._update_action_enabled(snapshot)
 
     def set_external_operation_lock(self, locked: bool, reason: str = "") -> None:
@@ -402,15 +438,8 @@ class StationDetailWidget(QWidget):
         )
         # 安全复核按钮故意不受全局业务锁闭门禁影响；它只能重跑守卫，
         # 守卫不满足时会拒绝，不能将锁闭状态直接改成允许。
-        self.recover_direction_button.setEnabled(
-            snapshot.direction_operation_locked or self._external_operation_locked
-        )
-        transaction = self.controller.direction_transaction_snapshot()
-        self.review_direction_button.setEnabled(
-            transaction.transaction_id is not None
-            and transaction.requester_station_id != snapshot.station_id
-            and transaction.phase.value in {"APPROVED", "COMMITTING"}
-        )
+        self.approve_shared_button.setEnabled(self.shared_request_service is not None)
+        self.reject_shared_button.setEnabled(self.shared_request_service is not None)
         if self.include_train_page:
             # 外部安全锁闭时列车按钮必须一致禁用（含创建/暂停/复位），
             # 与联合列车页的锁定行为保持一致，避免界面状态矛盾。
@@ -525,13 +554,16 @@ class StationDetailWidget(QWidget):
         self.operation_completed.emit(result)
 
     def _apply_track(self) -> None:
-        self._show_result(
-            self.controller.set_track_state(
-                self.track_selector.currentText(),
-                TrackInputSource.OPERATOR,
-                self.track_state_selector.currentData(),
+        section_id = self.track_selector.currentText()
+        state = self.track_state_selector.currentData()
+        if section_id.startswith("Q") and self.shared_request_service is not None:
+            self._show_result(
+                self.shared_request_service.submit(
+                    section_id, state, self.controller.config.station.station_id
+                )
             )
-        )
+            return
+        self._show_result(self.controller.set_track_state(section_id, TrackInputSource.OPERATOR, state))
 
     def _establish_route(self) -> None:
         self._show_result(
@@ -581,15 +613,7 @@ class StationDetailWidget(QWidget):
             )
         )
 
-    def _recover_direction(self) -> None:
-        """重试本站的双方方向复核，不能绕过控制器安全条件。"""
-        self._show_result(self.controller.recover_safety_lock())
-
-    def _review_direction_request(self) -> None:
-        """执行只读请求复核，实际批准仍由状态机的安全守卫完成。"""
-        self._show_result(self.controller.review_direction_request())
-
-    def _refresh_direction_handler(self, snapshot: TccSnapshot) -> None:
+    def _refresh_direction_status(self, snapshot: TccSnapshot) -> None:
         current_direction = RunningDirection(snapshot.running_direction)
         if self._last_direction is not current_direction:
             opposite = (
@@ -601,19 +625,82 @@ class StationDetailWidget(QWidget):
                 self.direction_target.findData(opposite)
             )
             self._last_direction = current_direction
-        requester_id = direction_requester_station(current_direction)
-        local_role = "请求方（可发起方向办理）" if snapshot.station_id == requester_id else "应答方（校验并确认请求）"
-        transaction = self.controller.direction_transaction_snapshot()
-        self.direction_role.setText(
-            f"本站角色：{local_role}；当前请求方：{requester_id}站；"
-            f"应答方：{'B' if requester_id == 'A' else 'A'}站。"
+
+    def _set_network_fault(self, enabled: bool) -> None:
+        station_id = self.controller.config.station.station_id
+        if self._network_fault_handler is None:
+            self._show_result(OperationResult(False, "运行时不支持网络故障注入"))
+            return
+        self._show_result(self._network_fault_handler(station_id, enabled))
+
+    def _selected_shared_request_id(self) -> str | None:
+        row = self.shared_pending_table.currentRow()
+        if row < 0:
+            return None
+        item = self.shared_pending_table.item(row, 0)
+        return item.data(Qt.UserRole) if item is not None else None
+
+    def _approve_shared_request(self) -> None:
+        if self.shared_request_service is None:
+            return
+        request_id = self._selected_shared_request_id()
+        if request_id is None:
+            self._show_result(OperationResult(False, "请先选择待确认申请"))
+            return
+        result = self.shared_request_service.approve(
+            request_id, self.controller.config.station.station_id
         )
-        self.direction_transaction.setText(
-            f"事务号：{transaction.transaction_id or '无活动事务'}；"
-            f"阶段：{transaction.phase.value}；"
-            f"请求方版本：{transaction.requester_state_version if transaction.requester_state_version is not None else '—'}；"
-            f"应答方版本：{transaction.responder_state_version if transaction.responder_state_version is not None else '—'}。"
+        self._show_result(result)
+
+    def _reject_shared_request(self) -> None:
+        if self.shared_request_service is None:
+            return
+        request_id = self._selected_shared_request_id()
+        if request_id is None:
+            self._show_result(OperationResult(False, "请先选择待拒绝申请"))
+            return
+        result = self.shared_request_service.reject(
+            request_id,
+            self.controller.config.station.station_id,
+            "本站安全条件未满足，拒绝公共区段状态申请",
         )
+        self._show_result(result)
+
+    def _refresh_shared_requests(self) -> None:
+        if not hasattr(self, "shared_pending_table"):
+            return
+        if self.shared_request_service is None:
+            self.shared_pending_table.setRowCount(0)
+            self.shared_history_table.setRowCount(0)
+            return
+        pending = self.shared_request_service.pending_requests()
+        self.shared_pending_table.setRowCount(len(pending))
+        for row, request in enumerate(pending):
+            values = (
+                request.request_id,
+                request.section_id,
+                request.requested_state.value,
+                f"{request.requester_station_id}站",
+                f"{request.approver_station_id or '等待对站确认'}",
+                request.created_at,
+            )
+            for column, value in enumerate(values):
+                item = QTableWidgetItem(str(value))
+                if column == 0:
+                    item.setData(Qt.UserRole, request.request_id)
+                self.shared_pending_table.setItem(row, column, item)
+        history = self.shared_request_service.history()
+        self.shared_history_table.setRowCount(len(history))
+        for row, request in enumerate(history):
+            values = (
+                request.request_id,
+                request.section_id,
+                request.status.value,
+                request.processed_at or "—",
+                request.reason,
+            )
+            for column, value in enumerate(values):
+                self.shared_history_table.setItem(row, column, QTableWidgetItem(str(value)))
 
     def _create_train(self) -> None:
         train = self.train_demo.create_train()

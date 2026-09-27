@@ -49,6 +49,8 @@ def test_real_window_handshake_sync_fault_and_reconnect(
             track_page.state_selector.findData(TrackState.OCCUPIED)
         )
         qtbot.mouseClick(track_page.apply_button, Qt.LeftButton)
+        window.station_b_detail.shared_pending_table.selectRow(0)
+        qtbot.mouseClick(window.station_b_detail.approve_shared_button, Qt.LeftButton)
         assert runtime.station_a.controller.snapshot.tracks["Q3"] is TrackState.OCCUPIED
         assert runtime.station_b.controller.snapshot.tracks["Q3"] is TrackState.OCCUPIED
 
@@ -56,6 +58,8 @@ def test_real_window_handshake_sync_fault_and_reconnect(
             track_page.state_selector.findData(TrackState.CLEAR)
         )
         qtbot.mouseClick(track_page.apply_button, Qt.LeftButton)
+        window.station_b_detail.shared_pending_table.selectRow(0)
+        qtbot.mouseClick(window.station_b_detail.approve_shared_button, Qt.LeftButton)
         qtbot.mouseClick(window.network_status_page.inject_button, Qt.LeftButton)
         qtbot.waitUntil(
             lambda: (
@@ -176,12 +180,16 @@ def test_seven_course_scenarios_run_through_real_dual_window_and_reset(
             track_page.state_selector.findData(TrackState.OCCUPIED)
         )
         qtbot.mouseClick(track_page.apply_button, Qt.LeftButton)
+        window.station_b_detail.shared_pending_table.selectRow(0)
+        qtbot.mouseClick(window.station_b_detail.approve_shared_button, Qt.LeftButton)
         assert runtime.station_a.controller.snapshot.tracks["Q3"] is TrackState.OCCUPIED
         assert runtime.station_b.controller.snapshot.tracks["Q3"] is TrackState.OCCUPIED
         track_page.state_selector.setCurrentIndex(
             track_page.state_selector.findData(TrackState.CLEAR)
         )
         qtbot.mouseClick(track_page.apply_button, Qt.LeftButton)
+        window.station_b_detail.shared_pending_table.selectRow(0)
+        qtbot.mouseClick(window.station_b_detail.approve_shared_button, Qt.LeftButton)
         assert runtime.station_a.controller.snapshot.tracks["Q3"] is TrackState.CLEAR
         assert runtime.station_b.controller.snapshot.tracks["Q3"] is TrackState.CLEAR
 
@@ -191,12 +199,16 @@ def test_seven_course_scenarios_run_through_real_dual_window_and_reset(
             track_page.state_selector.findData(TrackState.FAULT_OCCUPIED)
         )
         qtbot.mouseClick(track_page.apply_button, Qt.LeftButton)
+        window.station_b_detail.shared_pending_table.selectRow(0)
+        qtbot.mouseClick(window.station_b_detail.approve_shared_button, Qt.LeftButton)
         assert runtime.station_a.controller.snapshot.tracks["Q2"] is TrackState.FAULT_OCCUPIED
         assert runtime.station_a.controller.snapshot.codes["Q2"].code.value == "HU"
         track_page.state_selector.setCurrentIndex(
             track_page.state_selector.findData(TrackState.CLEAR)
         )
         qtbot.mouseClick(track_page.apply_button, Qt.LeftButton)
+        window.station_b_detail.shared_pending_table.selectRow(0)
+        qtbot.mouseClick(window.station_b_detail.approve_shared_button, Qt.LeftButton)
         assert runtime.station_a.controller.snapshot.tracks["Q2"] is TrackState.CLEAR
         assert runtime.station_b.controller.snapshot.tracks["Q2"] is TrackState.CLEAR
 
@@ -207,6 +219,8 @@ def test_seven_course_scenarios_run_through_real_dual_window_and_reset(
             track_page.state_selector.findData(TrackState.FAULT_OCCUPIED)
         )
         qtbot.mouseClick(track_page.apply_button, Qt.LeftButton)
+        window.station_b_detail.shared_pending_table.selectRow(0)
+        qtbot.mouseClick(window.station_b_detail.approve_shared_button, Qt.LeftButton)
         assert runtime.station_a.controller.snapshot.signals["SA"].aspect is SignalAspect.RED
         signal_page.station_selector.setCurrentText("A站")
         signal_page.signal_selector.setCurrentText("SA")
@@ -220,6 +234,8 @@ def test_seven_course_scenarios_run_through_real_dual_window_and_reset(
             track_page.state_selector.findData(TrackState.CLEAR)
         )
         qtbot.mouseClick(track_page.apply_button, Qt.LeftButton)
+        window.station_b_detail.shared_pending_table.selectRow(0)
+        qtbot.mouseClick(window.station_b_detail.approve_shared_button, Qt.LeftButton)
         assert runtime.station_a.controller.snapshot.tracks["Q1"] is TrackState.CLEAR
         assert runtime.station_b.controller.snapshot.tracks["Q1"] is TrackState.CLEAR
 
