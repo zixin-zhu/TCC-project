@@ -14,7 +14,7 @@
 - 阶段 2：已完成（`5b6abb3`，已推送）
 - 阶段 3：已完成（`de8cdd7`，已推送）
 - 阶段 4：已完成（`87cf2eb`，已推送）
-- 阶段 5：未开始
+- 阶段 5：已完成（`cc1880b`，已推送）
 - 阶段 6：未开始
 - 阶段 7：未开始
 - 阶段 8：未开始
@@ -102,3 +102,21 @@
   `origin/codex/dual-station-dashboard`。
 - 交接下一步：阶段 5 列车 2D 场景和可重复生命周期；保持 UI 只读快照、控制器为
   唯一写入口，继续采用测试先行和每阶段独立提交。
+
+## 阶段 5 完成记录
+
+- `DualTrainState` 增加 `lifecycle_version`；协调器允许多列待发列车，`start()`
+  支持指定 `train_id`，并新增 `reset_train(train_id)`。选中列车复位只清除该列车
+  的 TRAIN 来源，成功后回到 `WAITING`、清空区段/位置/速度/应答器并递增版本；
+  失败时保留 `STOPPED` 和保守占用。旧 `RESET` 枚举保留为 `WAITING` 兼容别名。
+- 新增 `TrainProjectionMapper`，按 topology 区段长度计算 `x_start/x_end`，正反向
+  列车均投影到同一物理线路坐标；不把 G01~G08 或固定像素坐标写死。
+- 新增 `TrainSceneWidget`：分层绘制区段、站点、列车图元和状态标签；图元使用
+  `train_id` 稳定复用，点击会同步下拉框与表格，UI 只消费协调器的 500 ms 快照。
+- `TrainOperationsPage` 增加列车下拉框、2D 场景、选中列车复位和全部复位二次确认；
+  下拉框使用统一内容测量宽度策略，刷新时按 ID 恢复选择，避免表格刷新导致丢选中项。
+- 阶段定向测试 `25 passed`；允许本机回环端口的全量回归 `314 passed in 7.30s`；
+  `git diff --check`、`compileall` 通过。
+- 代码提交 `cc1880b` 已推送到 `origin/codex/dual-station-dashboard`。
+- 交接下一步：阶段 6 A/B 上下分区日志告警页；日志需按事件逐条展示并限制历史上限，
+  不把心跳活性刷新当作业务事件。
