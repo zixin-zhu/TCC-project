@@ -4,7 +4,7 @@
 
 ## 2026-09-27 启动自检/LEU 告警 bugfix
 
-- 状态：实现完成，待提交推送。
+- 状态：已完成并推送，提交 `38600af`。
 - 启动自检：`DualStationApplication` 消费 A/B `state_changed`，两站协议健康
   后按 `StartupStep` 顺序完成聚合自检；运行中 U 断链显示“接口断开”，不再
   与“启动自检中”混淆。

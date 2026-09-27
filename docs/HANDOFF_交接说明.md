@@ -7,7 +7,7 @@
 - 项目：CTCS-2 车站列控中心（TCC）A/B 双站教学仿真
 - 工作树：`/Users/zhu/Desktop/TCC-project/.worktrees/ctcs2-rebuild`
 - 分支：`codex/dual-station-dashboard`
-- 代码状态：阶段 0～阶段 8 已完成；已完成启动自检/LEU 告警修复，待本次提交推送
+- 代码状态：阶段 0～阶段 8 已完成；启动自检/LEU 告警修复已提交推送，工作区干净
 - 方案：`docs/tcc-vibe-plans/08-ctcs2-spec-and-ui-train-optimization.md`
 
 ## 本次方案已覆盖
@@ -42,7 +42,7 @@
 - 全量测试：`321 passed in 7.78s`（允许本机回环端口）
 - 产物：`CTCS2_SPEC_ACCEPTANCE.md`、更新后的答辩场景/README、18 张三分辨率合成截图、规范矩阵测试
 - 关键语义：A/B 各自维护本站局部权威；Server/Client 只表示 TCP 建链顺序；规范边界、2D 列车、A/B 日志和三类断链入口均有可重建证据
-- 下一步：完成本次启动自检/LEU 告警 bugfix 提交并推送；重新连接后先查看本节和 `git log --oneline -5`
+- 下一步：若继续开发，先创建新的阶段方案；重新连接后先查看本节和 `git log --oneline -5`
 
 ## 2026-09-27 启动自检与 LEU 初始告警修复
 
@@ -60,6 +60,8 @@
   告警记录，避免过期严重文本残留。
 - 回归证据：新增启动自检、运行中断链、LEU 告警语义刷新和真实双站断言；
   `325 passed`，包含本机回环 TCP 握手、断链和恢复测试。
+- 提交：`38600af fix(startup): complete dual self-check and refresh LEU alarms`，
+  已推送到 `origin/codex/dual-station-dashboard`。
 - 风险边界：安全锁闭本身没有解除，界面仍显示作业锁闭和通信状态；本修复只
   修正启动诊断生命周期和告警语义，不把默认报文伪装成正常报文发送。
 
