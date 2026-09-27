@@ -14,6 +14,7 @@ from app.infrastructure.config_loader import (
 )
 from app.services.alarm_service import AlarmService
 from app.services.tcc_controller import TccController
+from app.services.shared_state_request_service import SharedStateRequestService
 from app.ui.main_window import TccMainWindow
 from app.ui.station_detail_widget import StationDetailWidget
 
@@ -114,23 +115,34 @@ def test_window_has_all_required_pages_and_no_empty_buttons(qtbot) -> None:  # t
     assert all(button.text().strip() for button in window.findChildren(QPushButton))
 
 
-def test_station_detail_is_embeddable_and_preserves_nine_function_pages(qtbot) -> None:  # type: ignore[no-untyped-def]
+def test_station_detail_is_embeddable_and_groups_network_direction_on_overview(qtbot) -> None:  # type: ignore[no-untyped-def]
     parent = QWidget()
-    detail = StationDetailWidget(_controller(), parent=parent)
+    station_a = _controller()
+    station_b = _controller("B")
+    detail = StationDetailWidget(
+        station_a,
+        include_train_page=False,
+        shared_request_service=SharedStateRequestService(station_a, station_b),
+        parent=parent,
+    )
     qtbot.addWidget(parent)
 
     assert detail.parent() is parent
     assert [detail.tabs.tabText(i) for i in range(detail.tabs.count())] == [
         "总览拓扑",
+        "申请处理",
         "轨道编码",
         "信号",
         "应答器/LEU",
         "临时限速",
-        "区间改方",
-        "列车演示",
-        "网络",
         "日志告警",
     ]
+    assert detail.direction_section is not None
+    assert detail.network_section is not None
+    assert detail.direction_section.parent() is detail.tabs.widget(0)
+    assert detail.network_section.parent() is detail.tabs.widget(0)
+    assert "区间改方" not in [detail.tabs.tabText(i) for i in range(detail.tabs.count())]
+    assert "网络" not in [detail.tabs.tabText(i) for i in range(detail.tabs.count())]
     assert detail.track_table.rowCount() == 8
     assert detail.signal_table.rowCount() > 0
     assert "simulation_envelope" in detail.envelope_text.toPlainText()

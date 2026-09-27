@@ -68,6 +68,14 @@ def test_station_card_button_only_emits_navigation_request(qtbot) -> None:  # ty
     assert spy[0] == ["B"]
 
 
+def test_station_card_places_safety_recovery_at_top_right(qtbot) -> None:  # type: ignore[no-untyped-def]
+    card = StationSummaryCard(load_project_config(ROOT / "configs", "A"))
+    qtbot.addWidget(card)
+
+    assert card.layout().itemAtPosition(0, 2).widget() is card.safety_panel
+    assert card.recover_button.text() == "安全复核并解除锁闭"
+
+
 def test_global_status_bar_exposes_text_and_semantic_state(qtbot) -> None:  # type: ignore[no-untyped-def]
     model = _model()
     status = GlobalStatusBar()

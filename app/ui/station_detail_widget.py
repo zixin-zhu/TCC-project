@@ -86,14 +86,18 @@ class StationDetailWidget(QWidget):
         self.tabs = QTabWidget()
         root.addWidget(self.tabs, 1)
         self._build_overview_page()
+        if self.shared_request_service is not None:
+            self._build_shared_request_page()
         self._build_track_page()
         self._build_signal_page()
         self._build_telegram_page()
         self._build_tsr_page()
-        self._build_direction_page()
+        if self.include_train_page:
+            self._build_direction_page()
         if self.include_train_page:
             self._build_train_page()
-        self._build_network_page()
+        if self.include_train_page:
+            self._build_network_page()
         self._build_log_page()
         self.operation_result = QLabel("就绪")
         self.operation_result.setObjectName("operationResult")
@@ -146,7 +150,16 @@ class StationDetailWidget(QWidget):
         route_controls.addWidget(self.cancel_route_button)
         route_controls.addStretch(1)
         layout.addWidget(route_group)
+
+        if not self.include_train_page:
+            self._build_direction_section(layout)
+            self._build_network_section(layout)
+
+    def _build_shared_request_page(self) -> None:
+        """A/B 控制页的独立公共区段申请处理页面。"""
+        _, layout = self._new_page("申请处理")
         self._build_shared_request_panel(layout)
+        layout.addStretch(1)
 
     def _build_shared_request_panel(self, layout: QVBoxLayout) -> None:
         """在 A/B 控制页展示本站待确认和已处理的公共区段申请。"""
@@ -288,8 +301,11 @@ class StationDetailWidget(QWidget):
         self.tsr_table.setHorizontalHeaderLabels(["命令号", "起点", "终点", "限速", "状态"])
         layout.addWidget(self.tsr_table)
 
-    def _build_direction_page(self) -> None:
-        _, layout = self._new_page("区间改方")
+    def _build_direction_section(self, parent_layout: QVBoxLayout) -> None:
+        group = QGroupBox("区间改方")
+        group.setObjectName("directionSection")
+        self.direction_section = group
+        layout = QVBoxLayout(group)
         self.direction_status = QLabel()
         self.direction_target = QComboBox()
         self.direction_target.addItem("A站 → B站", RunningDirection.A_TO_B)
@@ -301,10 +317,17 @@ class StationDetailWidget(QWidget):
         layout.addWidget(self.direction_status)
         layout.addWidget(self.direction_target)
         layout.addWidget(self.direction_button)
-        layout.addStretch(1)
+        parent_layout.addWidget(group)
 
-    def _build_network_page(self) -> None:
-        _, layout = self._new_page("网络")
+    def _build_direction_page(self) -> None:
+        _, layout = self._new_page("区间改方")
+        self._build_direction_section(layout)
+
+    def _build_network_section(self, parent_layout: QVBoxLayout) -> None:
+        group = QGroupBox("网络")
+        group.setObjectName("networkSection")
+        self.network_section = group
+        layout = QVBoxLayout(group)
         self.network_status = QLabel()
         self.network_metrics = QLabel()
         self.network_metrics.setMinimumWidth(360)
@@ -323,7 +346,11 @@ class StationDetailWidget(QWidget):
         layout.addWidget(self.network_status)
         layout.addWidget(self.network_metrics)
         layout.addLayout(network_controls)
-        layout.addStretch(1)
+        parent_layout.addWidget(group)
+
+    def _build_network_page(self) -> None:
+        _, layout = self._new_page("网络")
+        self._build_network_section(layout)
 
     def _build_train_page(self) -> None:
         _, layout = self._new_page("列车演示")
@@ -438,8 +465,9 @@ class StationDetailWidget(QWidget):
         )
         # 安全复核按钮故意不受全局业务锁闭门禁影响；它只能重跑守卫，
         # 守卫不满足时会拒绝，不能将锁闭状态直接改成允许。
-        self.approve_shared_button.setEnabled(self.shared_request_service is not None)
-        self.reject_shared_button.setEnabled(self.shared_request_service is not None)
+        if hasattr(self, "approve_shared_button"):
+            self.approve_shared_button.setEnabled(self.shared_request_service is not None)
+            self.reject_shared_button.setEnabled(self.shared_request_service is not None)
         if self.include_train_page:
             # 外部安全锁闭时列车按钮必须一致禁用（含创建/暂停/复位），
             # 与联合列车页的锁定行为保持一致，避免界面状态矛盾。

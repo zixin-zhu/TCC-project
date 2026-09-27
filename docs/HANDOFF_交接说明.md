@@ -7,7 +7,7 @@
 - 项目：CTCS-2 车站列控中心（TCC）A/B 双站教学仿真
 - 工作树：`/Users/zhu/Desktop/TCC-project/.worktrees/ctcs2-rebuild`
 - 分支：`codex/dual-station-dashboard`
-- 代码状态：阶段 0～阶段 8 已完成；“公共区段双站确认与控制台优化”阶段已提交并推送
+- 代码状态：阶段 0～阶段 8 已完成；“公共区段双站确认与控制台优化”和“单站控制页布局重构”阶段已提交并推送
 - 方案：`docs/tcc-vibe-plans/08-ctcs2-spec-and-ui-train-optimization.md`
 
 ## 本次方案已覆盖
@@ -67,6 +67,14 @@
 - 测试证据：新增共享申请事务单测；更新双站 UI/E2E 场景为“提交→对站确认→生效”；当前完整回归 `334 passed`（含真实本机 TCP）。
 - 阶段提交：`6aebbe0 feat(ctcs2): add bilateral shared-state confirmation workflow`，已推送到 `origin/codex/dual-station-dashboard`。
 - 下一步：重新连接后先执行 `git status --short` 和 `git log --oneline -5`；本阶段无需重复实现，后续需求从新阶段开始。
+
+## 2026-09-27 A/B 控制页布局重构（已完成）
+
+- 依据用户最新界面要求：安全复核按钮位于 A/B 站点摘要卡最上方一行最右侧；公共区段申请确认从“总览拓扑”移出，成为 A/B 控制页独立的“申请处理”页面。
+- 双站 `StationDetailWidget` 不再创建“网络”和“区间改方”页签；两部分内容改为“总览拓扑”页中的 `网络`、`区间改方` 两个独立区块。单站旧入口仍保留原九页，避免破坏单站诊断模式。
+- 新增布局回归测试，验证页签、区块归属和安全按钮位置；完整测试 `335 passed`。
+- 阶段提交：待本次提交完成后更新。
+- 下一步：重新连接后读取本节，确认工作区干净，再开始新的 UI/业务阶段。
 
 ## 2026-09-27 启动自检与 LEU 初始告警修复
 
