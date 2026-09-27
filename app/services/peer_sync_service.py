@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any, Iterable
 
 from app.core.enums import TrackState
@@ -26,6 +27,18 @@ class PeerSyncService:
     def reset(self) -> None:
         """传输中断后丢弃基线，防止把旧状态当作新会话增量基础。"""
         self._snapshot = None
+
+    def refresh_liveness(self, *, received_at_ms: int) -> PeerSnapshot:
+        """只刷新现有快照的接收时间，不改变状态版本或边界状态。
+
+        心跳证明对站连接仍然存活，但不包含任何可用于建立状态基线的业务
+        数据。没有收到本次连接的全量同步前，不能凭心跳创建 ``PeerSnapshot``，
+        否则会把“在线但未同步”误判为“状态已确认”。
+        """
+        if self._snapshot is None:
+            raise ProtocolError("尚无全量同步基线，拒绝仅凭心跳创建快照")
+        self._snapshot = replace(self._snapshot, received_at_ms=received_at_ms)
+        return self._snapshot
 
     def apply_full_sync(
         self, payload: Mapping[str, Any], *, received_at_ms: int

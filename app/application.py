@@ -242,6 +242,14 @@ class ApplicationRuntime(QObject):
             except ProtocolError as exc:
                 self._report_protocol_error(exc)
             return
+        if message.message_type is MessageType.HEARTBEAT:
+            # 心跳只证明连接活性，不改变对站状态版本；已有全量基线时刷新
+            # received_at_ms，避免空闲区间因没有状态变化而被误判为过期。
+            if self.peer_sync.snapshot is not None:
+                now = int(time.monotonic() * 1000)
+                refreshed = self.peer_sync.refresh_liveness(received_at_ms=now)
+                self.controller.update_peer_snapshot(refreshed)
+            return
         if message.message_type not in {
             MessageType.STATE_SYNC,
             MessageType.TRACK_BOUNDARY,

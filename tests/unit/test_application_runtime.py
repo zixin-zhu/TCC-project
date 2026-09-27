@@ -171,6 +171,102 @@ def test_incremental_boundary_update_does_not_require_direction_field(
     assert runtime.peer_sync.snapshot.state_version == 2
 
 
+def test_runtime_heartbeat_refreshes_existing_peer_snapshot_liveness(
+    qtbot, tmp_path: Path
+) -> None:  # type: ignore[no-untyped-def]
+    """空闲区间没有状态变化时，收到心跳仍必须刷新快照活性时间。"""
+    worker = FakeWorker()
+    runtime = ApplicationRuntime.build(
+        station_id="A",
+        config_dir=ROOT / "configs",
+        data_dir=tmp_path,
+        worker=worker,
+        network_thread=FakeThread(),
+    )
+    boundary_ids = [
+        item.id
+        for item in runtime.controller.config.topology.sections
+        if item.id.startswith("Q")
+    ]
+    worker.state_changed.emit(ConnectionState.HEALTHY)
+    worker.message_received.emit(
+        _incoming(
+            MessageType.STATE_SYNC,
+            1,
+            {
+                "state_version": 1,
+                "boundary_states": {item: "CLEAR" for item in boundary_ids},
+                "running_direction": "A_TO_B",
+            },
+        )
+    )
+    qtbot.waitUntil(lambda: runtime.peer_sync.snapshot is not None, timeout=1000)
+    before = runtime.peer_sync.snapshot
+    assert before is not None
+
+    worker.message_received.emit(_incoming(MessageType.HEARTBEAT, 0, {}))
+    qtbot.waitUntil(
+        lambda: runtime.peer_sync.snapshot is not None
+        and runtime.peer_sync.snapshot.received_at_ms > before.received_at_ms,
+        timeout=1000,
+    )
+
+    after = runtime.peer_sync.snapshot
+    assert after is not None
+    assert after.state_version == before.state_version
+    assert after.boundary_states == before.boundary_states
+
+
+def test_reconnect_requires_new_full_sync_before_unlock(qtbot, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    """重连后的心跳不能恢复旧基线，必须先收到本次连接的全量同步。"""
+    worker = FakeWorker()
+    runtime = ApplicationRuntime.build(
+        station_id="A",
+        config_dir=ROOT / "configs",
+        data_dir=tmp_path,
+        worker=worker,
+        network_thread=FakeThread(),
+    )
+    boundary_ids = [
+        item.id
+        for item in runtime.controller.config.topology.sections
+        if item.id.startswith("Q")
+    ]
+    full_sync = _incoming(
+        MessageType.STATE_SYNC,
+        1,
+        {
+            "state_version": 1,
+            "boundary_states": {item: "CLEAR" for item in boundary_ids},
+            "running_direction": "A_TO_B",
+        },
+    )
+    runtime._on_network_state(ConnectionState.HEALTHY)
+    runtime._on_message(full_sync)
+    assert runtime.controller.snapshot.direction_operation_locked is False
+
+    runtime._on_network_state(ConnectionState.DISCONNECTED)
+    runtime._on_message(_incoming(MessageType.HEARTBEAT, 0, {}))
+
+    assert runtime.peer_sync.snapshot is None
+    assert runtime.controller.snapshot.direction_operation_locked is True
+
+    runtime._on_message(
+        _incoming(
+            MessageType.STATE_SYNC,
+            2,
+            {
+                "state_version": 2,
+                "boundary_states": {item: "CLEAR" for item in boundary_ids},
+                "running_direction": "A_TO_B",
+            },
+        )
+    )
+
+    assert runtime.peer_sync.snapshot is not None
+    assert runtime.controller.snapshot.direction_operation_locked is False
+
+
 def test_accepted_full_sync_recovers_before_direction_guard_even_if_state_signal_lags(
     tmp_path: Path,
 ) -> None:

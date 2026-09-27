@@ -23,6 +23,38 @@ def test_full_sync_creates_peer_snapshot_with_receive_time() -> None:
     assert snapshot.received_at_ms == 1234
 
 
+def test_heartbeat_refreshes_snapshot_liveness_without_changing_version() -> None:
+    """心跳只能刷新活性时间，不能伪造状态版本或轨道状态变化。"""
+    service = PeerSyncService(peer_station_id="B", allowed_boundary_ids={"AB"})
+    original = service.apply_full_sync(
+        {
+            "boundary_states": {"AB": "CLEAR"},
+            "state_version": 7,
+        },
+        received_at_ms=100,
+    )
+
+    refreshed = service.refresh_liveness(received_at_ms=250)
+
+    assert refreshed is not original
+    assert refreshed.station_id == original.station_id
+    assert refreshed.boundary_states == original.boundary_states
+    assert refreshed.state_version == original.state_version
+    assert refreshed.received_at_ms == 250
+
+
+def test_heartbeat_cannot_create_snapshot_without_full_sync() -> None:
+    """没有全量基线时，心跳不能把连接伪装成已有状态快照。"""
+    service = PeerSyncService(peer_station_id="B", allowed_boundary_ids={"AB"})
+
+    try:
+        service.refresh_liveness(received_at_ms=250)
+    except ProtocolError as exc:
+        assert "全量" in str(exc)
+    else:
+        raise AssertionError("没有全量基线时心跳不应创建快照")
+
+
 def test_incremental_update_requires_baseline_and_monotonic_version() -> None:
     service = PeerSyncService(peer_station_id="B", allowed_boundary_ids={"AB"})
 

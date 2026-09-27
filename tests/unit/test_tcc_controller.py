@@ -500,7 +500,7 @@ def test_restart_replays_persisted_recovery_confirmation() -> None:
     assert persistence.direction.recovery == recovery
 
 
-def test_peer_snapshot_expiry_recalculates_once_and_fails_closed() -> None:
+def test_missing_heartbeat_still_expires_snapshot() -> None:
     now = [10_000]
     config = load_project_config(ROOT / "configs", "A")
     persistence = FakePersistence()
