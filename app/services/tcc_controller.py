@@ -95,6 +95,8 @@ class TccSnapshot:
     business_sent: int
     heartbeat_received: int
     heartbeat_sent: int
+    # 保留默认值，兼容阶段 1~5 的测试替身和外部只读快照构造。
+    alarm_history: tuple[AlarmRecord, ...] = ()
 
 
 class TccController:
@@ -823,6 +825,7 @@ class TccController:
             business_sent=self._business_sent,
             heartbeat_received=self._heartbeat_received,
             heartbeat_sent=self._heartbeat_sent,
+            alarm_history=self.alarms.history()[-200:],
         )
 
     def _state_payload(self) -> Mapping[str, Any]:

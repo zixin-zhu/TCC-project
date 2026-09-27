@@ -138,6 +138,12 @@ def test_coding_service_failure_is_visible_and_recoverable() -> None:
     assert recovered.success is True
     assert controller.snapshot.codes["Q1"].code is not TrackCode.OFFLINE
     assert all(item.code != "TRACK_CODING_OFFLINE" for item in controller.snapshot.alarms)
+    history = [
+        item
+        for item in controller.snapshot.alarm_history
+        if item.code == "TRACK_CODING_OFFLINE"
+    ]
+    assert history and history[-1].active is False
 
 
 def test_invalid_track_id_does_not_change_or_publish_state() -> None:

@@ -33,6 +33,7 @@ from app.ui.dual_operations_pages import (
     TrainOperationsPage,
     TsrOperationsPage,
 )
+from app.ui.dual_log_page import DualLogAlarmPage
 from app.ui.dual_snapshot import DualStationSnapshot, DualStationSnapshotAggregator
 from app.ui.global_status_bar import GlobalStatusBar
 from app.ui.station_detail_widget import StationDetailWidget
@@ -303,7 +304,7 @@ class DualStationMainWindow(QMainWindow):
             self.train_operations_page,
         ):
             self.pages.addWidget(page)
-        self.log_page = DualReadOnlyPage("双站操作日志与活动告警", "log")
+        self.log_page = DualLogAlarmPage()
         self.pages.addWidget(self.log_page)
 
     @staticmethod

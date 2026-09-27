@@ -9,6 +9,7 @@ from app.core.enums import ConnectionState, TrackInputSource, TrackState
 from app.core.models import OperationResult
 from app.dual_application import DualStationApplication
 from app.ui.dual_main_window import DualStationMainWindow
+from app.ui.dual_log_page import DualLogAlarmPage
 from tests.integration.test_dual_application_integration import (
     _copy_configs_with_port,
     _free_port,
@@ -64,6 +65,7 @@ def test_dual_window_has_twelve_real_pages_and_card_navigation(qtbot) -> None:  
     assert all(window.pages.widget(i).layout().count() > 0 for i in range(12))
     assert "A站列控中心" in window.station_a_card.identity_label.text()
     assert "B站列控中心" in window.station_b_card.identity_label.text()
+    assert isinstance(window.log_page, DualLogAlarmPage)
 
     qtbot.mouseClick(window.station_b_card.navigate_button, Qt.LeftButton)
 
