@@ -12,8 +12,10 @@ from PyQt5.QtWidgets import (
     QGroupBox,
     QHeaderView,
     QHBoxLayout,
+    QLayout,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QTabWidget,
     QTableWidget,
@@ -31,6 +33,34 @@ from app.services.shared_state_request_service import SharedStateRequestService
 from app.services.train_demo_service import TrainDemoService
 from app.ui.styles import configure_combo_box, relay_text, set_semantic_state
 from app.ui.topology_widget import TopologyWidget
+
+
+class _RatioTableWidget(QTableWidget):
+    """按指定比例分配列宽，窗口缩放时保持业务字段的视觉层级。"""
+
+    def __init__(self, column_count: int, ratios: tuple[int, ...]) -> None:
+        super().__init__(0, column_count)
+        if len(ratios) != column_count or any(ratio <= 0 for ratio in ratios):
+            raise ValueError("表格列宽比例必须与列数一致且均为正数")
+        self._column_width_ratios = ratios
+        self.setProperty("columnWidthRatios", ratios)
+        header = self.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Fixed)
+        header.setStretchLastSection(False)
+
+    def resizeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        super().resizeEvent(event)
+        self._apply_column_widths()
+
+    def _apply_column_widths(self) -> None:
+        available = self.viewport().width()
+        if available <= 0:
+            return
+        total = sum(self._column_width_ratios)
+        widths = [available * ratio // total for ratio in self._column_width_ratios]
+        widths[-1] += available - sum(widths)
+        for index, width in enumerate(widths):
+            self.setColumnWidth(index, max(1, width))
 
 
 class StationDetailWidget(QWidget):
@@ -86,13 +116,13 @@ class StationDetailWidget(QWidget):
         self.tabs = QTabWidget()
         root.addWidget(self.tabs, 1)
         self._build_overview_page()
-        if self.shared_request_service is not None:
-            # 申请处理单独放在总览之后，便于先处理对站申请，再进入设备操作页。
-            self._build_shared_request_page()
         self._build_track_page()
         self._build_signal_page()
         self._build_telegram_page()
         self._build_tsr_page()
+        if self.shared_request_service is not None:
+            # 申请处理放在临时限速右侧、日志告警左侧，形成连续的运行管理区。
+            self._build_shared_request_page()
         if self.include_train_page:
             self._build_direction_page()
         if self.include_train_page:
@@ -109,6 +139,10 @@ class StationDetailWidget(QWidget):
         """紧凑显示标识列，并让说明列占用剩余宽度且保留滚动能力。"""
         for table in self.findChildren(QTableWidget):
             header = table.horizontalHeader()
+            if table.property("columnWidthRatios"):
+                # 比例表由自身 resizeEvent 管理，不能再被通用的 Stretch 策略覆盖。
+                header.setSectionResizeMode(QHeaderView.Fixed)
+                continue
             header.setSectionResizeMode(QHeaderView.ResizeToContents)
             if table.columnCount() > 0:
                 header.setSectionResizeMode(
@@ -125,6 +159,8 @@ class StationDetailWidget(QWidget):
     def _build_overview_page(self) -> None:
         _, layout = self._new_page("总览拓扑")
         self.topology = TopologyWidget(self.controller.config.topology)
+        self.topology.setMinimumHeight(230)
+        self.topology.setMaximumHeight(300)
         layout.addWidget(self.topology)
         self.overview_summary = QLabel()
         layout.addWidget(self.overview_summary)
@@ -153,8 +189,11 @@ class StationDetailWidget(QWidget):
         layout.addWidget(route_group)
 
         if not self.include_train_page:
-            self._build_direction_section(layout)
-            self._build_network_section(layout)
+            operation_row = QHBoxLayout()
+            operation_row.setSpacing(10)
+            self._build_direction_section(operation_row)
+            self._build_network_section(operation_row)
+            layout.addLayout(operation_row)
 
     def _build_shared_request_page(self) -> None:
         """A/B 控制页的独立公共区段申请处理页面。"""
@@ -167,14 +206,16 @@ class StationDetailWidget(QWidget):
         group = QGroupBox("公共区段申请确认（A/B 双站）")
         group.setObjectName("sharedStateRequestGroup")
         group_layout = QVBoxLayout(group)
-        self.shared_pending_table = QTableWidget(0, 5)
+        self.shared_pending_table = _RatioTableWidget(5, (3, 3, 1, 8, 4))
         self.shared_pending_table.setHorizontalHeaderLabels(
             ["申请编号", "时间", "申请站", "内容", "操作"]
         )
-        self.shared_history_table = QTableWidget(0, 5)
+        self.shared_pending_table.setWordWrap(True)
+        self.shared_history_table = _RatioTableWidget(4, (3, 1, 3, 7))
         self.shared_history_table.setHorizontalHeaderLabels(
-            ["申请编号", "区段", "结果", "处理时间", "原因"]
+            ["申请编号", "结果", "处理时间", "内容"]
         )
+        self.shared_history_table.setWordWrap(True)
         group_layout.addWidget(QLabel("待处理申请"))
         group_layout.addWidget(self.shared_pending_table)
         group_layout.addWidget(QLabel("已处理申请记录"))
@@ -290,7 +331,7 @@ class StationDetailWidget(QWidget):
         self.tsr_table.setHorizontalHeaderLabels(["命令号", "起点", "终点", "限速", "状态"])
         layout.addWidget(self.tsr_table)
 
-    def _build_direction_section(self, parent_layout: QVBoxLayout) -> None:
+    def _build_direction_section(self, parent_layout: QLayout) -> None:
         group = QGroupBox("区间改方")
         group.setObjectName("directionSection")
         self.direction_section = group
@@ -303,6 +344,7 @@ class StationDetailWidget(QWidget):
         self.direction_button = QPushButton("申请区间改方")
         self.direction_button.setObjectName("requestDirectionButton")
         self.direction_button.clicked.connect(self._request_direction)
+        group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         layout.addWidget(self.direction_status)
         layout.addWidget(self.direction_target)
         layout.addWidget(self.direction_button)
@@ -312,15 +354,14 @@ class StationDetailWidget(QWidget):
         _, layout = self._new_page("区间改方")
         self._build_direction_section(layout)
 
-    def _build_network_section(self, parent_layout: QVBoxLayout) -> None:
+    def _build_network_section(self, parent_layout: QLayout) -> None:
         group = QGroupBox("网络")
         group.setObjectName("networkSection")
         self.network_section = group
         layout = QVBoxLayout(group)
         self.network_status = QLabel()
         self.network_metrics = QLabel()
-        self.network_metrics.setMinimumWidth(360)
-        self.network_metrics.setMaximumWidth(360)
+        self.network_metrics.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         network_controls = QHBoxLayout()
         suffix = self.controller.config.station.station_id
         self.inject_network_button = QPushButton("模拟网络中断")
@@ -332,6 +373,7 @@ class StationDetailWidget(QWidget):
         network_controls.addWidget(self.inject_network_button)
         network_controls.addWidget(self.restore_network_button)
         network_controls.addStretch(1)
+        group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         layout.addWidget(self.network_status)
         layout.addWidget(self.network_metrics)
         layout.addLayout(network_controls)
@@ -729,10 +771,9 @@ class StationDetailWidget(QWidget):
         for row, request in enumerate(history):
             values = (
                 request.request_id,
-                request.section_id,
                 request.status.value,
                 request.processed_at or "—",
-                request.reason,
+                request.content,
             )
             for column, value in enumerate(values):
                 self.shared_history_table.setItem(row, column, QTableWidgetItem(str(value)))

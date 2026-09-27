@@ -232,15 +232,9 @@ class DualStationMainWindow(QMainWindow):
             config_a.topology, config_a.balise_groups
         )
         self.corridor.section_clicked.connect(self._navigate_section)
-        self.corridor.setMaximumHeight(430)
-        home_layout.addWidget(self.corridor)
-        self.recent_table = QTableWidget(0, 3)
-        self.recent_table.setHorizontalHeaderLabels(
-            ["站点", "类型", "最近事件/严重告警"]
-        )
-        self.recent_table.horizontalHeader().setStretchLastSection(True)
-        self.recent_table.setMinimumHeight(100)
-        home_layout.addWidget(self.recent_table, 1)
+        # 总览页只保留双站摘要和联合线路图；日志告警通过左侧独立页面查看，
+        # 线路图占据剩余空间，避免底部事件表把拓扑压缩成狭长区域。
+        home_layout.addWidget(self.corridor, 1)
         self.pages.addWidget(home)
 
         corridor_page = QWidget()
@@ -377,7 +371,6 @@ class DualStationMainWindow(QMainWindow):
             self.log_page,
         ):
             page.set_snapshot(model)
-        self._fill_recent(model)
 
     def _recover_bilateral_lock(self) -> OperationResult:
         """顶部安全复核同时重跑 A/B 守卫，不提供强制解锁。"""
@@ -415,19 +408,6 @@ class DualStationMainWindow(QMainWindow):
                 self.corridor_detail_table.setItem(
                     row, column, QTableWidgetItem(value)
                 )
-
-    def _fill_recent(self, model: DualStationSnapshot) -> None:
-        rows: list[tuple[str, str, str]] = []
-        for snapshot in (model.station_a, model.station_b):
-            for alarm in snapshot.alarms:
-                if alarm.level.value == "CRITICAL":
-                    rows.append((snapshot.station_id, "严重告警", alarm.message))
-            for item in snapshot.operation_logs[:5]:
-                rows.append((snapshot.station_id, "操作", f"{item.operation}：{item.reason}"))
-        self.recent_table.setRowCount(min(10, len(rows)))
-        for row, values in enumerate(rows[:10]):
-            for column, value in enumerate(values):
-                self.recent_table.setItem(row, column, QTableWidgetItem(value))
 
     def _navigate_station(self, station_id: str) -> None:
         self.navigation.setCurrentRow(2 if station_id == "A" else 3)

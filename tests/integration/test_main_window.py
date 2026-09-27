@@ -130,11 +130,11 @@ def test_station_detail_is_embeddable_and_groups_network_direction_on_overview(q
     assert detail.parent() is parent
     assert [detail.tabs.tabText(i) for i in range(detail.tabs.count())] == [
         "总览拓扑",
-        "申请处理",
         "轨道编码",
         "信号",
         "应答器/LEU",
         "临时限速",
+        "申请处理",
         "日志告警",
     ]
     assert detail.direction_section is not None
@@ -146,6 +146,49 @@ def test_station_detail_is_embeddable_and_groups_network_direction_on_overview(q
     assert detail.track_table.rowCount() == 8
     assert detail.signal_table.rowCount() > 0
     assert "simulation_envelope" in detail.envelope_text.toPlainText()
+
+
+def test_dual_overview_places_direction_and_network_side_by_side(qtbot) -> None:  # type: ignore[no-untyped-def]
+    station_a = _controller()
+    station_b = _controller("B")
+    detail = StationDetailWidget(
+        station_a,
+        include_train_page=False,
+        shared_request_service=SharedStateRequestService(station_a, station_b),
+    )
+    detail.resize(1280, 900)
+    qtbot.addWidget(detail)
+    detail.show()
+    qtbot.wait(20)
+
+    overview = detail.tabs.widget(0)
+    assert detail.direction_section.parent() is overview
+    assert detail.network_section.parent() is overview
+    assert detail.direction_section.width() > 300
+    assert detail.network_section.width() > 300
+    assert abs(detail.direction_section.width() - detail.network_section.width()) < 80
+
+
+def test_shared_request_tables_use_readable_columns_and_history_content(qtbot) -> None:  # type: ignore[no-untyped-def]
+    station_a = _controller()
+    station_b = _controller("B")
+    detail = StationDetailWidget(
+        station_a,
+        include_train_page=False,
+        shared_request_service=SharedStateRequestService(station_a, station_b),
+    )
+    qtbot.addWidget(detail)
+
+    assert [
+        detail.shared_pending_table.horizontalHeaderItem(index).text()
+        for index in range(detail.shared_pending_table.columnCount())
+    ] == ["申请编号", "时间", "申请站", "内容", "操作"]
+    assert [
+        detail.shared_history_table.horizontalHeaderItem(index).text()
+        for index in range(detail.shared_history_table.columnCount())
+    ] == ["申请编号", "结果", "处理时间", "内容"]
+    assert detail.shared_pending_table.property("columnWidthRatios") == (3, 3, 1, 8, 4)
+    assert detail.shared_history_table.property("columnWidthRatios") == (3, 1, 3, 7)
 
 
 def test_station_detail_can_omit_train_page_for_future_dual_coordinator(qtbot) -> None:  # type: ignore[no-untyped-def]

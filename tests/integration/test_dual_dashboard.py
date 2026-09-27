@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtTest import QSignalSpy
-from PyQt5.QtWidgets import QLabel
+from PyQt5.QtWidgets import QLabel, QTableWidget
 
 from app.core.enums import ConnectionState, RunningDirection
 from app.core.interface_models import InterfaceHealth, InterfaceId, InterfaceStatus
@@ -128,3 +128,15 @@ def test_global_status_bar_exposes_text_and_semantic_state(qtbot) -> None:  # ty
     )
     assert "断开" in status.interface_label.text()
     assert "启动自检中" not in status.interface_label.text()
+
+
+def test_dual_overview_omits_recent_events_table(qtbot) -> None:  # type: ignore[no-untyped-def]
+    """双站总览只保留摘要和线路图，避免底部日志挤压拓扑空间。"""
+    from tests.integration.test_dual_operations import _window
+
+    window, _runtime = _window(qtbot)
+    home = window.pages.widget(0)
+
+    assert not hasattr(window, "recent_table")
+    assert not home.findChildren(QTableWidget)
+    assert window.corridor.parent() is home
