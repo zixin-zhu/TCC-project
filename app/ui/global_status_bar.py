@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 
-from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton
+from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton
 
 from app.core.interface_models import InterfaceHealth, InterfaceStatus
 from app.core.models import OperationResult
@@ -23,7 +23,6 @@ class GlobalStatusBar(QFrame):
         self.direction_label = QLabel("双方确认方向：--")
         self.lock_label = QLabel("作业状态：安全锁闭")
         self.alarm_label = QLabel("活动告警：--")
-        self.recovery_result_label = QLabel()
         self.recovery_button = QPushButton("安全复核并解除锁闭")
         self.recovery_button.setObjectName("globalRecoverDirectionButton")
         self.recovery_button.setEnabled(False)
@@ -38,7 +37,6 @@ class GlobalStatusBar(QFrame):
         ):
             layout.addWidget(label)
         layout.addStretch(1)
-        layout.addWidget(self.recovery_result_label)
         layout.addWidget(self.recovery_button)
         self.recovery_button.clicked.connect(self._recover)
 
@@ -53,9 +51,10 @@ class GlobalStatusBar(QFrame):
         if self._recovery_handler is None:
             return
         result = self._recovery_handler()
-        self.recovery_result_label.setText(
-            ("复核成功：" if result.success else "复核失败：") + result.reason
-        )
+        if result.success:
+            QMessageBox.information(self, "安全复核成功", result.reason)
+        else:
+            QMessageBox.warning(self, "安全复核失败", result.reason)
 
     def set_lifecycle_text(self, text: str, *, failed: bool = False) -> None:
         self.lifecycle_label.setText(f"系统：{text}")

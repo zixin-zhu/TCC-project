@@ -216,6 +216,8 @@ class StationDetailWidget(QWidget):
             ["申请编号", "结果", "处理时间", "内容"]
         )
         self.shared_history_table.setWordWrap(True)
+        self._shared_pending_signature: tuple[tuple[str, str, str, str], ...] | None = None
+        self._shared_history_signature: tuple[tuple[str, str, str, str], ...] | None = None
         group_layout.addWidget(QLabel("待处理申请"))
         group_layout.addWidget(self.shared_pending_table)
         group_layout.addWidget(QLabel("已处理申请记录"))
@@ -725,58 +727,84 @@ class StationDetailWidget(QWidget):
         if self.shared_request_service is None:
             self.shared_pending_table.setRowCount(0)
             self.shared_history_table.setRowCount(0)
+            self._shared_pending_signature = ()
+            self._shared_history_signature = ()
             return
         station_id = self.controller.config.station.station_id
         pending = self.shared_request_service.pending_requests_for(station_id)
-        self.shared_pending_table.setRowCount(len(pending))
-        for row, request in enumerate(pending):
-            values = (
+        pending_signature = tuple(
+            (
                 request.request_id,
                 request.created_at,
-                f"{request.requester_station_id}站",
+                request.requester_station_id,
                 request.content,
             )
-            for column, value in enumerate(values):
-                item = QTableWidgetItem(str(value))
-                if column == 0:
-                    item.setData(Qt.UserRole, request.request_id)
-            self.shared_pending_table.setItem(row, column, item)
-            actions = QWidget()
-            action_layout = QHBoxLayout(actions)
-            action_layout.setContentsMargins(2, 0, 2, 0)
-            approve_button = QPushButton("同意")
-            reject_button = QPushButton("拒绝")
-            approve_button.setObjectName(
-                f"approveSharedRequestButton{station_id}_{request.request_id}"
-            )
-            reject_button.setObjectName(
-                f"rejectSharedRequestButton{station_id}_{request.request_id}"
-            )
-            approve_button.clicked.connect(
-                lambda _checked=False, rid=request.request_id: self._approve_shared_request(
-                    rid
+            for request in pending
+        )
+        if pending_signature != self._shared_pending_signature:
+            self._shared_pending_signature = pending_signature
+            self.shared_pending_table.setRowCount(len(pending))
+            for row, request in enumerate(pending):
+                values = (
+                    request.request_id,
+                    request.created_at,
+                    f"{request.requester_station_id}站",
+                    request.content,
                 )
-            )
-            reject_button.clicked.connect(
-                lambda _checked=False, rid=request.request_id: self._reject_shared_request(
-                    rid
+                for column, value in enumerate(values):
+                    item = QTableWidgetItem(str(value))
+                    if column == 0:
+                        item.setData(Qt.UserRole, request.request_id)
+                    self.shared_pending_table.setItem(row, column, item)
+                actions = QWidget()
+                action_layout = QHBoxLayout(actions)
+                action_layout.setContentsMargins(2, 0, 2, 0)
+                approve_button = QPushButton("同意")
+                reject_button = QPushButton("拒绝")
+                approve_button.setObjectName(
+                    f"approveSharedRequestButton{station_id}_{request.request_id}"
                 )
-            )
-            action_layout.addWidget(approve_button)
-            action_layout.addWidget(reject_button)
-            self.shared_pending_table.setCellWidget(row, 4, actions)
-            self.shared_pending_table.setRowHeight(row, 36)
+                reject_button.setObjectName(
+                    f"rejectSharedRequestButton{station_id}_{request.request_id}"
+                )
+                approve_button.clicked.connect(
+                    lambda _checked=False, rid=request.request_id: self._approve_shared_request(
+                        rid
+                    )
+                )
+                reject_button.clicked.connect(
+                    lambda _checked=False, rid=request.request_id: self._reject_shared_request(
+                        rid
+                    )
+                )
+                action_layout.addWidget(approve_button)
+                action_layout.addWidget(reject_button)
+                self.shared_pending_table.setCellWidget(row, 4, actions)
+                self.shared_pending_table.setRowHeight(row, 36)
         history = self.shared_request_service.history()
-        self.shared_history_table.setRowCount(len(history))
-        for row, request in enumerate(history):
-            values = (
+        history_signature = tuple(
+            (
                 request.request_id,
                 request.status.value,
                 request.processed_at or "—",
                 request.content,
             )
-            for column, value in enumerate(values):
-                self.shared_history_table.setItem(row, column, QTableWidgetItem(str(value)))
+            for request in history
+        )
+        if history_signature != self._shared_history_signature:
+            self._shared_history_signature = history_signature
+            self.shared_history_table.setRowCount(len(history))
+            for row, request in enumerate(history):
+                values = (
+                    request.request_id,
+                    request.status.value,
+                    request.processed_at or "—",
+                    request.content,
+                )
+                for column, value in enumerate(values):
+                    self.shared_history_table.setItem(
+                        row, column, QTableWidgetItem(str(value))
+                    )
 
     def _create_train(self) -> None:
         train = self.train_demo.create_train()

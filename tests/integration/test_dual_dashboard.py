@@ -4,10 +4,11 @@ from pathlib import Path
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtTest import QSignalSpy
-from PyQt5.QtWidgets import QLabel, QTableWidget
+from PyQt5.QtWidgets import QLabel, QMessageBox, QTableWidget
 
 from app.core.enums import ConnectionState, RunningDirection
 from app.core.interface_models import InterfaceHealth, InterfaceId, InterfaceStatus
+from app.core.models import OperationResult
 from app.infrastructure.config_loader import load_project_config
 from app.ui.dual_snapshot import DualStationSnapshotAggregator
 from app.ui.global_status_bar import GlobalStatusBar
@@ -75,6 +76,22 @@ def test_global_status_bar_places_safety_recovery_at_far_right(qtbot) -> None:  
     assert status.recovery_button.text() == "安全复核并解除锁闭"
     assert status.recovery_button.objectName() == "globalRecoverDirectionButton"
     assert status.layout().itemAt(status.layout().count() - 1).widget() is status.recovery_button
+
+
+def test_global_recovery_reports_result_in_popup(monkeypatch, qtbot) -> None:  # type: ignore[no-untyped-def]
+    status = GlobalStatusBar()
+    qtbot.addWidget(status)
+    status.set_recovery_handler(lambda: OperationResult(False, "区间存在占用"))
+    messages: list[tuple[str, str]] = []
+
+    def capture_warning(_parent, title: str, text: str):  # type: ignore[no-untyped-def]
+        messages.append((title, text))
+
+    monkeypatch.setattr(QMessageBox, "warning", capture_warning)
+    qtbot.mouseClick(status.recovery_button, Qt.LeftButton)
+
+    assert messages == [("安全复核失败", "区间存在占用")]
+    assert not hasattr(status, "recovery_result_label")
 
 
 def test_global_status_bar_exposes_text_and_semantic_state(qtbot) -> None:  # type: ignore[no-untyped-def]

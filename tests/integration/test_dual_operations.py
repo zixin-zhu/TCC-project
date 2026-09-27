@@ -64,6 +64,9 @@ def test_track_page_routes_station_and_shared_targets_through_controllers(qtbot)
         window.station_b_detail.shared_pending_table.horizontalHeaderItem(index).text()
         for index in range(5)
     ] == ["申请编号", "时间", "申请站", "内容", "操作"]
+    assert window.station_b_detail.shared_pending_table.item(0, 0).text().startswith("SSR-")
+    assert window.station_b_detail.shared_pending_table.item(0, 1).text()
+    assert window.station_b_detail.shared_pending_table.item(0, 2).text() == "A站"
     assert "A站申请将Q2区段状态由空闲修改为占用" in window.station_b_detail.shared_pending_table.item(0, 3).text()
 
     _click_pending_action(window.station_b_detail, qtbot)
@@ -83,10 +86,25 @@ def test_track_page_routes_station_and_shared_targets_through_controllers(qtbot)
 
     assert runtime.station_a.controller.snapshot.tracks["Q2"] is TrackState.OCCUPIED
     assert runtime.station_b.controller.snapshot.tracks["Q2"] is TrackState.OCCUPIED
+
     _click_pending_action(window.station_b_detail, qtbot)
     assert "对站写入失败" in window.station_b_detail.operation_result.text()
     assert runtime.station_a.controller.snapshot.tracks["Q2"] is TrackState.OCCUPIED
     assert runtime.station_b.controller.snapshot.tracks["Q2"] is TrackState.OCCUPIED
+
+
+def test_snapshot_refresh_does_not_recreate_pending_action_widgets(qtbot) -> None:  # type: ignore[no-untyped-def]
+    """心跳/计数刷新不应销毁并重建待处理申请的行内按钮。"""
+    window, runtime = _window(qtbot)
+    assert window.shared_request_service.submit(
+        "Q2", TrackState.OCCUPIED, "A"
+    ).success
+    action_cell = window.station_b_detail.shared_pending_table.cellWidget(0, 4)
+    assert action_cell is not None
+
+    window.station_b_detail.refresh(runtime.station_b.controller.snapshot)
+
+    assert window.station_b_detail.shared_pending_table.cellWidget(0, 4) is action_cell
 
 
 def test_signal_and_tsr_pages_write_only_selected_station(qtbot) -> None:  # type: ignore[no-untyped-def]
