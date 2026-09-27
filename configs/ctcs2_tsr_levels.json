@@ -1,0 +1,7 @@
+{
+  "description": "CTCS-2 教学临时限速等级，不代表现场线路限速表",
+  "allowed_speeds_kmh": [45, 80, 120, 160, 200, 250],
+  "overlap_m": 80,
+  "default_braking_distance_m": 0,
+  "required_fields": ["start_m", "end_m", "braking_distance_m", "tcc_id", "update_point"]
+}

@@ -5,6 +5,9 @@ from enum import Enum
 from typing import Dict, Tuple
 
 
+CTCS2_TSR_SPEEDS_KMH = (45, 80, 120, 160, 200, 250)
+
+
 class TemporarySpeedState(str, Enum):
     PRESTORED = "PRESTORED"
     ACTIVE = "ACTIVE"
@@ -20,15 +23,29 @@ class TemporarySpeedRestriction:
     valid_from_ms: int
     valid_until_ms: int
     state: TemporarySpeedState
+    braking_distance_m: float = 0.0
+    overlap_m: float = 80.0
+    tcc_id: str = ""
+    update_point: str = ""
+    version: int = 1
 
 
 class TemporarySpeedService:
     """验证、预存、执行和撤销临时限速。"""
 
-    def __init__(self, line_start_m: float, line_end_m: float):
+    def __init__(
+        self,
+        line_start_m: float,
+        line_end_m: float,
+        *,
+        tcc_id: str = "",
+        overlap_m: float = 80.0,
+    ):
         self._line_start = line_start_m
         self._line_end = line_end_m
         self._items: Dict[str, TemporarySpeedRestriction] = {}
+        self._tcc_id = tcc_id
+        self._overlap_m = overlap_m
 
     @property
     def items(self) -> Tuple[TemporarySpeedRestriction, ...]:
@@ -49,6 +66,8 @@ class TemporarySpeedService:
             issues.append("限速里程范围无效")
         if speed_kmh <= 0 or speed_kmh > 500:
             issues.append("限速值必须大于 0 且不超过 500 km/h")
+        elif self._tcc_id and speed_kmh not in CTCS2_TSR_SPEEDS_KMH:
+            issues.append("限速等级必须为 45/80/120/160/200/250 km/h")
         if valid_from_ms >= valid_until_ms:
             issues.append("生效时间必须早于失效时间")
         if valid_until_ms <= now_ms:
@@ -64,19 +83,25 @@ class TemporarySpeedService:
         valid_from_ms: int,
         valid_until_ms: int,
         now_ms: int,
+        *,
+        braking_distance_m: float = 0.0,
+        update_point: str = "",
     ) -> TemporarySpeedRestriction:
         issues = self.validate(
             start_m, end_m, speed_kmh, valid_from_ms, valid_until_ms, now_ms
         )
         if issues:
             raise ValueError("；".join(issues))
+        if braking_distance_m < 0:
+            raise ValueError("制动距离不能为负数")
         if tsr_id in self._items and self._items[tsr_id].state is not TemporarySpeedState.CANCELLED:
             raise ValueError(f"临时限速 {tsr_id} 已存在")
         for existing in self._items.values():
             if existing.state is TemporarySpeedState.CANCELLED:
                 continue
-            mileage_overlaps = max(start_m, existing.start_m) < min(
-                end_m, existing.end_m
+            mileage_overlaps = (
+                start_m < existing.end_m + self._overlap_m
+                and end_m + self._overlap_m > existing.start_m
             )
             time_overlaps = max(valid_from_ms, existing.valid_from_ms) < min(
                 valid_until_ms, existing.valid_until_ms
@@ -91,6 +116,11 @@ class TemporarySpeedService:
             valid_from_ms,
             valid_until_ms,
             TemporarySpeedState.PRESTORED,
+            braking_distance_m,
+            self._overlap_m,
+            self._tcc_id,
+            update_point,
+            1,
         )
         self._items[tsr_id] = item
         return item

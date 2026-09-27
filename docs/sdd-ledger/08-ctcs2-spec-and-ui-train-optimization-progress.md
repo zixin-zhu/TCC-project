@@ -12,7 +12,7 @@
 - 阶段 0：已完成（追踪表测试 2 passed；全量基线 287 passed）
 - 阶段 1：已完成（`ed405ec`，已推送）
 - 阶段 2：已完成（`5b6abb3`，已推送）
-- 阶段 3：未开始
+- 阶段 3：已完成，待提交并推送
 - 阶段 4：未开始
 - 阶段 5：未开始
 - 阶段 6：未开始
@@ -66,3 +66,19 @@
   `git diff --check` 待提交前再次执行。
 - 交接下一步：阶段 3 应答器/LEU、临时限速和断链保持；阶段 2 全量
   `299 passed in 7.66s`，提交 `5b6abb3` 已推送到远端。
+
+## 阶段 3 完成记录
+
+- `LeuStorageModel` 强制 `reserve_ratio >= 0.20`，容量不足拒绝新模板写入；
+  `TelegramSelectionResult` 增加 `success/reason_code`，断联、输入过期、闭锁、
+  区段不安全、模板错误和校验错误均结构化回落默认报文。
+- `LeuContext` 记录方向、活动进路、临时限速、锁闭、区段状态和应答器组；
+  `TelegramSelectionAuditService` 在 TCC 选择路径保存完整输入、版本和结果。
+- 临时限速支持 CTCS-2 `45/80/120/160/200/250 km/h`，保存制动距离、80 m
+  重叠保护、TCC 编号、更新点和版本；正式 `TccController` 使用严格六档模式，
+  旧通用服务调用保留兼容。
+- 新增 `configs/ctcs2_tsr_levels.json`，并保持逻辑字段、教学位流和
+  `simulation_envelope` 三层展示边界。
+- 阶段定向测试 28 项通过；全量回归 `303 passed in 7.93s`；compileall 和
+  `git diff --check` 待提交前再次执行。
+- 交接下一步：提交并推送阶段 3，进入阶段 4 接口状态、启动自检和诊断教学模型。

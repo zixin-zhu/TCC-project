@@ -40,6 +40,7 @@ from app.infrastructure.sqlite_repository import (
 )
 from app.services.alarm_service import AlarmLevel, AlarmRecord, AlarmService
 from app.services.direction_change_service import DirectionChangeCoordinator
+from app.services.telegram_selection_audit import TelegramSelectionAuditService
 
 
 class PersistencePort(Protocol):
@@ -182,13 +183,16 @@ class TccController:
             self._telegram_service,
             input_timeout_ms=coding_rules.peer_timeout_ms,
         )
+        self.telegram_selection_audit = TelegramSelectionAuditService()
         self._leu_connected = True
         line_length = sum(
             section.length_m
             for section in config.topology.sections
             if section.id.startswith("Q")
         )
-        self._temporary_speeds = TemporarySpeedService(0, line_length)
+        self._temporary_speeds = TemporarySpeedService(
+            0, line_length, tcc_id=f"TCC_{config.station.station_id}"
+        )
         self._latest_codes: list[TrackCodingResult] = []
         self._latest_signals: list[SignalControlResult] = []
         self._latest_telegram: TelegramView | None = None
@@ -727,17 +731,37 @@ class TccController:
         else:
             selected = f"TG_{station}_ROUTE" if self.runtime.active_route_ids else None
             overrides = {}
-        return self._leu.select_for_port(
-            port_id,
-            LeuContext(
-                connected=self._leu_connected,
-                input_updated_ms=now_ms,
-                state_version=self.runtime.state_version,
-                selected_template_id=selected,
-                overrides=overrides,
+        context = LeuContext(
+            connected=self._leu_connected,
+            input_updated_ms=now_ms,
+            state_version=self.runtime.state_version,
+            selected_template_id=selected,
+            overrides=overrides,
+            direction=self.runtime.running_direction.value,
+            route_ids=tuple(sorted(self.runtime.active_route_ids)),
+            temporary_speed_ids=(
+                (active_tsr.tsr_id,) if active_tsr is not None else ()
             ),
+            operation_locked=self.runtime.direction_operation_locked,
+            track_states={
+                section_id: self.runtime.effective_track_state(section_id)
+                for section_id in self.runtime.track_inputs
+            },
+            balise_group_id=f"BG_{station}_01",
+        )
+        selection = self._leu.select_for_port(
+            port_id,
+            context,
             now_ms,
         )
+        self.telegram_selection_audit.append(
+            station,
+            port_id,
+            context,
+            selection,
+            occurred_at_ms=now_ms,
+        )
+        return selection
 
     def _telegram_view(self, selection: TelegramSelectionResult) -> TelegramView:
         telegram = selection.telegram

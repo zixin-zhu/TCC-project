@@ -82,6 +82,10 @@ class LogicalTelegramService:
         self._definitions = catalog["packet_definitions"]
         self._templates = catalog["templates"]
 
+    def has_template(self, template_id: str) -> bool:
+        """供 LEU 存储模型检查模板是否存在。"""
+        return template_id in self._templates
+
     def build(
         self,
         template_id: str,
