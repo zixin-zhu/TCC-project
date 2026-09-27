@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from PyQt5.QtCore import QObject, pyqtSignal
 
-from app.core.enums import ConnectionState, TrackInputSource, TrackState
+from app.core.enums import ConnectionState, RunningDirection, TrackInputSource, TrackState
 from app.core.models import OperationResult
 from app.services.alarm_service import AlarmLevel
 from app.services.tcc_controller import TccController
@@ -37,11 +37,40 @@ class SharedStateRequest:
     approver_station_id: str | None = None
     processed_at: str | None = None
     reason: str = "等待对站确认"
+    request_type: str = "TRACK"
+    requested_direction: RunningDirection | None = None
+    previous_state: TrackState | None = None
 
     @property
     def approvals(self) -> tuple[str, ...]:
         """兼容界面/测试使用的确认站点列表。"""
         return (self.approver_station_id,) if self.approver_station_id else ()
+
+    @property
+    def content(self) -> str:
+        """按申请类型生成表格中可直接阅读的业务内容。"""
+        if self.request_type == "DIRECTION" and self.requested_direction is not None:
+            old_direction = (
+                "B_TO_A"
+                if self.requested_direction is RunningDirection.A_TO_B
+                else "A_TO_B"
+            )
+            return (
+                f"{self.requester_station_id}站申请将方向由{old_direction}"
+                f"改为{self.requested_direction.value}"
+            )
+        state_text = {
+            TrackState.CLEAR: "空闲",
+            TrackState.OCCUPIED: "占用",
+            TrackState.FAULT_OCCUPIED: "故障占用",
+            TrackState.SHUNT_BAD: "分路不良",
+        }
+        before = state_text.get(self.previous_state, "未知")
+        target = state_text.get(self.requested_state, self.requested_state.value)
+        return (
+            f"{self.requester_station_id}站申请将{self.section_id}区段状态"
+            f"由{before}修改为{target}"
+        )
 
 
 class SharedStateRequestService(QObject):
@@ -81,10 +110,44 @@ class SharedStateRequestService(QObject):
             requested_state=requested_state,
             requester_station_id=requester_station_id,
             created_at=self._now(),
+            previous_state=(
+                self.station_a.snapshot.tracks.get(section_id)
+                if requester_station_id == "A"
+                else self.station_b.snapshot.tracks.get(section_id)
+            ),
         )
         self._pending[request.request_id] = request
         self.requests_changed.emit()
         return OperationResult(True, "已提交申请，正在等待 A/B 站确认……")
+
+    def submit_direction(
+        self, target_direction: RunningDirection, requester_station_id: str
+    ) -> OperationResult:
+        """登记改方申请；实际改方由对站批准后才调用控制器执行。"""
+        if requester_station_id not in {"A", "B"}:
+            return OperationResult(False, f"未知申请站点：{requester_station_id}")
+        if any(item.request_type == "DIRECTION" for item in self._pending.values()):
+            return OperationResult(False, "已存在待处理的改方申请")
+        request = SharedStateRequest(
+            request_id=f"SSR-{uuid4().hex[:8].upper()}",
+            section_id="方向",
+            requested_state=TrackState.CLEAR,
+            requester_station_id=requester_station_id,
+            created_at=self._now(),
+            request_type="DIRECTION",
+            requested_direction=target_direction,
+        )
+        self._pending[request.request_id] = request
+        self.requests_changed.emit()
+        return OperationResult(True, "已提交申请，正在等待 A/B 站确认……")
+
+    def pending_requests_for(self, station_id: str) -> tuple[SharedStateRequest, ...]:
+        """本站只显示对站申请，申请方自己的申请交由对站处理。"""
+        return tuple(
+            item
+            for item in self._pending.values()
+            if item.requester_station_id != station_id
+        )
 
     def approve(self, request_id: str, station_id: str) -> OperationResult:
         request = self._pending.get(request_id)
@@ -96,6 +159,27 @@ class SharedStateRequestService(QObject):
             return OperationResult(False, "申请方不能确认自己的申请，必须由对站确认")
         if not self._both_healthy():
             return OperationResult(False, "A/B 站间通信未健康，暂不能生效")
+
+        if request.request_type == "DIRECTION":
+            requester = (
+                self.station_a
+                if request.requester_station_id == "A"
+                else self.station_b
+            )
+            if request.requested_direction is None:
+                return self._reject_after_apply(request, station_id, "改方目标方向缺失")
+            result = requester.request_direction_change(request.requested_direction)
+            if not result.success:
+                return self._reject_after_apply(request, station_id, result.reason)
+            completed = replace(
+                request,
+                status=SharedRequestStatus.APPLIED,
+                approver_station_id=station_id,
+                processed_at=self._now(),
+                reason="对站批准，改方事务已发起并等待双方协议完成",
+            )
+            self._finish(request.request_id, completed)
+            return OperationResult(True, completed.reason)
 
         requester = self.station_a if request.requester_station_id == "A" else self.station_b
         responder = self.station_b if request.requester_station_id == "A" else self.station_a

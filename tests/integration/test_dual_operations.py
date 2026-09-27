@@ -23,6 +23,17 @@ def _window(qtbot):  # type: ignore[no-untyped-def]
     return window, runtime
 
 
+def _click_pending_action(detail, qtbot, action: str = "同意") -> None:  # type: ignore[no-untyped-def]
+    """点击待处理表格中第一条申请的行内操作按钮。"""
+    assert detail.shared_pending_table.rowCount() == 1
+    action_cell = detail.shared_pending_table.cellWidget(0, 4)
+    assert action_cell is not None
+    button = next(
+        item for item in action_cell.findChildren(QPushButton) if item.text() == action
+    )
+    qtbot.mouseClick(button, Qt.LeftButton)
+
+
 def test_track_page_routes_station_and_shared_targets_through_controllers(qtbot) -> None:  # type: ignore[no-untyped-def]
     window, runtime = _window(qtbot)
     page = window.track_operations_page
@@ -47,11 +58,15 @@ def test_track_page_routes_station_and_shared_targets_through_controllers(qtbot)
     assert runtime.station_a.controller.snapshot.tracks["Q2"] is TrackState.CLEAR
     assert runtime.station_b.controller.snapshot.tracks["Q2"] is TrackState.CLEAR
     assert "已提交申请，正在等待 A/B 站确认" in page.shared_request_status.text()
-    assert window.station_a_detail.shared_pending_table.rowCount() == 1
+    assert window.station_a_detail.shared_pending_table.rowCount() == 0
     assert window.station_b_detail.shared_pending_table.rowCount() == 1
+    assert [
+        window.station_b_detail.shared_pending_table.horizontalHeaderItem(index).text()
+        for index in range(5)
+    ] == ["申请编号", "时间", "申请站", "内容", "操作"]
+    assert "A站申请将Q2区段状态由空闲修改为占用" in window.station_b_detail.shared_pending_table.item(0, 3).text()
 
-    window.station_b_detail.shared_pending_table.selectRow(0)
-    qtbot.mouseClick(window.station_b_detail.approve_shared_button, Qt.LeftButton)
+    _click_pending_action(window.station_b_detail, qtbot)
     assert runtime.station_a.controller.snapshot.tracks["Q2"] is TrackState.OCCUPIED
     assert runtime.station_b.controller.snapshot.tracks["Q2"] is TrackState.OCCUPIED
 
@@ -68,8 +83,7 @@ def test_track_page_routes_station_and_shared_targets_through_controllers(qtbot)
 
     assert runtime.station_a.controller.snapshot.tracks["Q2"] is TrackState.OCCUPIED
     assert runtime.station_b.controller.snapshot.tracks["Q2"] is TrackState.OCCUPIED
-    window.station_b_detail.shared_pending_table.selectRow(0)
-    qtbot.mouseClick(window.station_b_detail.approve_shared_button, Qt.LeftButton)
+    _click_pending_action(window.station_b_detail, qtbot)
     assert "对站写入失败" in window.station_b_detail.operation_result.text()
     assert runtime.station_a.controller.snapshot.tracks["Q2"] is TrackState.OCCUPIED
     assert runtime.station_b.controller.snapshot.tracks["Q2"] is TrackState.OCCUPIED
@@ -131,9 +145,15 @@ def test_direction_request_uses_station_at_current_direction_origin(qtbot) -> No
 
     qtbot.mouseClick(page.request_button, Qt.LeftButton)
 
+    assert calls == []
+    assert window.station_a_detail.shared_pending_table.rowCount() == 0
+    assert window.station_b_detail.shared_pending_table.rowCount() == 1
+    assert "A站申请将方向由A_TO_B改为B_TO_A" in window.station_b_detail.shared_pending_table.item(0, 3).text()
+    _click_pending_action(window.station_b_detail, qtbot)
     assert calls == [("A", RunningDirection.B_TO_A)]
     assert "目标=A站" in page.result_label.text()
-    assert "测试拒绝" in page.result_label.text()
+    assert "已提交申请" in page.result_label.text()
+    assert "测试拒绝" in window.station_b_detail.operation_result.text()
     assert page.table.rowCount() == 2
     assert page.table.item(0, 0).text() == "A站（请求方）"
     assert page.table.item(1, 0).text() == "B站（应答方）"
@@ -164,6 +184,11 @@ def test_direction_requester_role_reverses_after_direction_switch(qtbot) -> None
     )
     qtbot.mouseClick(page.request_button, Qt.LeftButton)
 
+    assert calls == []
+    assert window.station_a_detail.shared_pending_table.rowCount() == 1
+    assert window.station_b_detail.shared_pending_table.rowCount() == 0
+    assert "B站申请将方向由B_TO_A改为A_TO_B" in window.station_a_detail.shared_pending_table.item(0, 3).text()
+    _click_pending_action(window.station_a_detail, qtbot)
     assert calls == ["B"]
     assert page.table.item(0, 0).text() == "A站（应答方）"
     assert page.table.item(1, 0).text() == "B站（请求方）"
@@ -172,12 +197,15 @@ def test_direction_requester_role_reverses_after_direction_switch(qtbot) -> None
 def test_each_station_control_exposes_shared_request_panel_and_network_buttons(qtbot) -> None:  # type: ignore[no-untyped-def]
     window, _runtime = _window(qtbot)
 
-    assert window.station_a_detail.findChild(QPushButton, "approveSharedRequestButtonA") is not None
-    assert window.station_b_detail.findChild(QPushButton, "approveSharedRequestButtonB") is not None
+    assert window.station_a_detail.shared_pending_table.columnCount() == 5
+    assert window.station_b_detail.shared_pending_table.columnCount() == 5
+    assert window.station_a_detail.findChild(QPushButton, "approveSharedRequestButtonA") is None
+    assert window.station_b_detail.findChild(QPushButton, "approveSharedRequestButtonB") is None
     assert window.station_a_detail.findChild(QPushButton, "injectANetworkFaultButton") is not None
     assert window.station_b_detail.findChild(QPushButton, "injectBNetworkFaultButton") is not None
-    assert window.findChild(QPushButton, "recoverDirectionButtonA") is not None
-    assert window.findChild(QPushButton, "recoverDirectionButtonB") is not None
+    assert window.findChild(QPushButton, "globalRecoverDirectionButton") is not None
+    assert window.station_a_detail.findChild(QPushButton, "recoverDirectionButtonA") is None
+    assert window.station_b_detail.findChild(QPushButton, "recoverDirectionButtonB") is None
     assert window.station_a_detail.findChild(QPushButton, "reviewDirectionRequestButtonA") is None
     assert window.station_b_detail.findChild(QPushButton, "reviewDirectionRequestButtonB") is None
 
@@ -205,7 +233,9 @@ def test_direction_disconnect_drill_faults_current_responder(qtbot) -> None:  # 
 
     qtbot.mouseClick(page.disconnect_drill_button, Qt.LeftButton)
 
-    assert order == ["request:A", "fault:B:True"]
+    assert order == ["fault:B:True"]
+    assert window.station_a_detail.shared_pending_table.rowCount() == 0
+    assert window.station_b_detail.shared_pending_table.rowCount() == 1
     assert "目标=A/B双站" in page.result_label.text()
     assert "成功" in page.result_label.text()
 

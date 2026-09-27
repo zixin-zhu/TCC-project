@@ -1,6 +1,7 @@
 """公共区段设备双站确认事务的测试。"""
 
-from app.core.enums import TrackInputSource, TrackState
+from app.core.enums import RunningDirection, TrackInputSource, TrackState
+from app.core.models import OperationResult
 from app.services.shared_state_request_service import (
     SharedRequestStatus,
     SharedStateRequestService,
@@ -64,3 +65,23 @@ def test_only_one_pending_request_is_allowed_for_a_shared_section() -> None:
 
     assert not duplicate.success
     assert "待处理申请" in duplicate.reason
+
+
+def test_direction_request_is_executed_only_after_peer_approval() -> None:
+    station_a, station_b, service = _service()
+    calls: list[str] = []
+
+    def request(direction):  # type: ignore[no-untyped-def]
+        calls.append(direction.value)
+        return OperationResult(True, "改方事务已发起")
+
+    station_a.request_direction_change = request  # type: ignore[method-assign]
+    assert service.submit_direction(RunningDirection.B_TO_A, "A").success
+    assert calls == []
+    request_record = service.pending_requests_for("B")[0]
+    assert "方向由A_TO_B改为B_TO_A" in request_record.content
+
+    approved = service.approve(request_record.request_id, "B")
+
+    assert approved.success
+    assert calls == ["B_TO_A"]

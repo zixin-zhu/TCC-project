@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 
 from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QPushButton
 
 from app.core.enums import ConnectionState, RunningDirection, SignalAspect, TrackState
 from app.dual_application import DualLifecycleState, DualStationApplication
@@ -13,6 +14,16 @@ from tests.integration.test_dual_application_integration import (
     _copy_configs_with_port,
     _free_port,
 )
+
+
+def _approve_first_pending(detail, qtbot) -> None:  # type: ignore[no-untyped-def]
+    assert detail.shared_pending_table.rowCount() == 1
+    action_cell = detail.shared_pending_table.cellWidget(0, 4)
+    assert action_cell is not None
+    button = next(
+        item for item in action_cell.findChildren(QPushButton) if item.text() == "同意"
+    )
+    qtbot.mouseClick(button, Qt.LeftButton)
 
 
 def test_real_window_handshake_sync_fault_and_reconnect(
@@ -49,8 +60,7 @@ def test_real_window_handshake_sync_fault_and_reconnect(
             track_page.state_selector.findData(TrackState.OCCUPIED)
         )
         qtbot.mouseClick(track_page.apply_button, Qt.LeftButton)
-        window.station_b_detail.shared_pending_table.selectRow(0)
-        qtbot.mouseClick(window.station_b_detail.approve_shared_button, Qt.LeftButton)
+        _approve_first_pending(window.station_b_detail, qtbot)
         assert runtime.station_a.controller.snapshot.tracks["Q3"] is TrackState.OCCUPIED
         assert runtime.station_b.controller.snapshot.tracks["Q3"] is TrackState.OCCUPIED
 
@@ -58,8 +68,7 @@ def test_real_window_handshake_sync_fault_and_reconnect(
             track_page.state_selector.findData(TrackState.CLEAR)
         )
         qtbot.mouseClick(track_page.apply_button, Qt.LeftButton)
-        window.station_b_detail.shared_pending_table.selectRow(0)
-        qtbot.mouseClick(window.station_b_detail.approve_shared_button, Qt.LeftButton)
+        _approve_first_pending(window.station_b_detail, qtbot)
         qtbot.mouseClick(window.network_status_page.inject_button, Qt.LeftButton)
         qtbot.waitUntil(
             lambda: (
@@ -180,16 +189,14 @@ def test_seven_course_scenarios_run_through_real_dual_window_and_reset(
             track_page.state_selector.findData(TrackState.OCCUPIED)
         )
         qtbot.mouseClick(track_page.apply_button, Qt.LeftButton)
-        window.station_b_detail.shared_pending_table.selectRow(0)
-        qtbot.mouseClick(window.station_b_detail.approve_shared_button, Qt.LeftButton)
+        _approve_first_pending(window.station_b_detail, qtbot)
         assert runtime.station_a.controller.snapshot.tracks["Q3"] is TrackState.OCCUPIED
         assert runtime.station_b.controller.snapshot.tracks["Q3"] is TrackState.OCCUPIED
         track_page.state_selector.setCurrentIndex(
             track_page.state_selector.findData(TrackState.CLEAR)
         )
         qtbot.mouseClick(track_page.apply_button, Qt.LeftButton)
-        window.station_b_detail.shared_pending_table.selectRow(0)
-        qtbot.mouseClick(window.station_b_detail.approve_shared_button, Qt.LeftButton)
+        _approve_first_pending(window.station_b_detail, qtbot)
         assert runtime.station_a.controller.snapshot.tracks["Q3"] is TrackState.CLEAR
         assert runtime.station_b.controller.snapshot.tracks["Q3"] is TrackState.CLEAR
 
@@ -199,16 +206,14 @@ def test_seven_course_scenarios_run_through_real_dual_window_and_reset(
             track_page.state_selector.findData(TrackState.FAULT_OCCUPIED)
         )
         qtbot.mouseClick(track_page.apply_button, Qt.LeftButton)
-        window.station_b_detail.shared_pending_table.selectRow(0)
-        qtbot.mouseClick(window.station_b_detail.approve_shared_button, Qt.LeftButton)
+        _approve_first_pending(window.station_b_detail, qtbot)
         assert runtime.station_a.controller.snapshot.tracks["Q2"] is TrackState.FAULT_OCCUPIED
         assert runtime.station_a.controller.snapshot.codes["Q2"].code.value == "HU"
         track_page.state_selector.setCurrentIndex(
             track_page.state_selector.findData(TrackState.CLEAR)
         )
         qtbot.mouseClick(track_page.apply_button, Qt.LeftButton)
-        window.station_b_detail.shared_pending_table.selectRow(0)
-        qtbot.mouseClick(window.station_b_detail.approve_shared_button, Qt.LeftButton)
+        _approve_first_pending(window.station_b_detail, qtbot)
         assert runtime.station_a.controller.snapshot.tracks["Q2"] is TrackState.CLEAR
         assert runtime.station_b.controller.snapshot.tracks["Q2"] is TrackState.CLEAR
 
@@ -219,8 +224,7 @@ def test_seven_course_scenarios_run_through_real_dual_window_and_reset(
             track_page.state_selector.findData(TrackState.FAULT_OCCUPIED)
         )
         qtbot.mouseClick(track_page.apply_button, Qt.LeftButton)
-        window.station_b_detail.shared_pending_table.selectRow(0)
-        qtbot.mouseClick(window.station_b_detail.approve_shared_button, Qt.LeftButton)
+        _approve_first_pending(window.station_b_detail, qtbot)
         assert runtime.station_a.controller.snapshot.signals["SA"].aspect is SignalAspect.RED
         signal_page.station_selector.setCurrentText("A站")
         signal_page.signal_selector.setCurrentText("SA")
@@ -234,8 +238,7 @@ def test_seven_course_scenarios_run_through_real_dual_window_and_reset(
             track_page.state_selector.findData(TrackState.CLEAR)
         )
         qtbot.mouseClick(track_page.apply_button, Qt.LeftButton)
-        window.station_b_detail.shared_pending_table.selectRow(0)
-        qtbot.mouseClick(window.station_b_detail.approve_shared_button, Qt.LeftButton)
+        _approve_first_pending(window.station_b_detail, qtbot)
         assert runtime.station_a.controller.snapshot.tracks["Q1"] is TrackState.CLEAR
         assert runtime.station_b.controller.snapshot.tracks["Q1"] is TrackState.CLEAR
 
@@ -273,6 +276,7 @@ def test_seven_course_scenarios_run_through_real_dual_window_and_reset(
             direction_page.direction_selector.findData(RunningDirection.B_TO_A)
         )
         qtbot.mouseClick(direction_page.request_button, Qt.LeftButton)
+        _approve_first_pending(window.station_b_detail, qtbot)
         qtbot.waitUntil(
             lambda: (
                 runtime.station_a.controller.snapshot.running_direction == "B_TO_A"

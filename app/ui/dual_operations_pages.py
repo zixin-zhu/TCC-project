@@ -497,9 +497,11 @@ class DirectionOperationsPage(_OperationPage):
         station_a: TccController,
         station_b: TccController,
         fault_handler: Callable[[str, bool], OperationResult] | None = None,
+        shared_request_service: SharedStateRequestService | None = None,
     ) -> None:
         super().__init__(station_a, station_b)
         self._fault_handler = fault_handler
+        self.shared_request_service = shared_request_service
         self._latest_model: DualStationSnapshot | None = None
         self._last_direction: RunningDirection | None = None
         layout = QVBoxLayout(self)
@@ -541,6 +543,12 @@ class DirectionOperationsPage(_OperationPage):
     def _request(self) -> None:
         current = RunningDirection(self.station_a.snapshot.running_direction)
         requester_id = direction_requester_station(current)
+        if self.shared_request_service is not None:
+            result = self.shared_request_service.submit_direction(
+                self.direction_selector.currentData(), requester_id
+            )
+            self._show_result(f"{requester_id}站", result)
+            return
         requester = self.station_a if requester_id == "A" else self.station_b
         result = requester.request_direction_change(self.direction_selector.currentData())
         self._show_result(f"{requester_id}站", result)
@@ -550,6 +558,31 @@ class DirectionOperationsPage(_OperationPage):
         current = RunningDirection(self.station_a.snapshot.running_direction)
         requester_id = direction_requester_station(current)
         responder_id = "B" if requester_id == "A" else "A"
+        if self.shared_request_service is not None:
+            result = self.shared_request_service.submit_direction(
+                self.direction_selector.currentData(), requester_id
+            )
+            if not result.success:
+                self._show_result(f"{requester_id}站", result)
+                return
+            # 申请已经登记但尚未执行；演练按钮只模拟应答方链路中断，
+            # 待恢复后仍可由对站在“申请处理”页逐条确认。
+            if self._fault_handler is None:
+                self._show_result(
+                    "A/B双站", OperationResult(False, "运行时不支持网络故障注入")
+                )
+                return
+            fault_result = self._fault_handler(responder_id, True)
+            combined = OperationResult(
+                fault_result.success,
+                (
+                    f"改方申请已提交；{fault_result.reason}"
+                    if fault_result.success
+                    else f"改方申请已提交，但故障注入失败：{fault_result.reason}"
+                ),
+            )
+            self._show_result("A/B双站", combined)
+            return
         requester = self.station_a if requester_id == "A" else self.station_b
         result = requester.request_direction_change(self.direction_selector.currentData())
         if not result.success:

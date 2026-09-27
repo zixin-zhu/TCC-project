@@ -87,6 +87,7 @@ class StationDetailWidget(QWidget):
         root.addWidget(self.tabs, 1)
         self._build_overview_page()
         if self.shared_request_service is not None:
+            # 申请处理单独放在总览之后，便于先处理对站申请，再进入设备操作页。
             self._build_shared_request_page()
         self._build_track_page()
         self._build_signal_page()
@@ -166,28 +167,16 @@ class StationDetailWidget(QWidget):
         group = QGroupBox("公共区段申请确认（A/B 双站）")
         group.setObjectName("sharedStateRequestGroup")
         group_layout = QVBoxLayout(group)
-        self.shared_pending_table = QTableWidget(0, 6)
+        self.shared_pending_table = QTableWidget(0, 5)
         self.shared_pending_table.setHorizontalHeaderLabels(
-            ["申请编号", "区段", "目标状态", "申请站", "已确认站", "提交时间"]
+            ["申请编号", "时间", "申请站", "内容", "操作"]
         )
         self.shared_history_table = QTableWidget(0, 5)
         self.shared_history_table.setHorizontalHeaderLabels(
             ["申请编号", "区段", "结果", "处理时间", "原因"]
         )
-        actions = QHBoxLayout()
-        self.approve_shared_button = QPushButton("同意选中申请")
-        self.reject_shared_button = QPushButton("拒绝选中申请")
-        station_suffix = self.controller.config.station.station_id
-        self.approve_shared_button.setObjectName(f"approveSharedRequestButton{station_suffix}")
-        self.reject_shared_button.setObjectName(f"rejectSharedRequestButton{station_suffix}")
-        self.approve_shared_button.clicked.connect(self._approve_shared_request)
-        self.reject_shared_button.clicked.connect(self._reject_shared_request)
-        actions.addWidget(self.approve_shared_button)
-        actions.addWidget(self.reject_shared_button)
-        actions.addStretch(1)
         group_layout.addWidget(QLabel("待处理申请"))
         group_layout.addWidget(self.shared_pending_table)
-        group_layout.addLayout(actions)
         group_layout.addWidget(QLabel("已处理申请记录"))
         group_layout.addWidget(self.shared_history_table)
         layout.addWidget(group)
@@ -465,9 +454,6 @@ class StationDetailWidget(QWidget):
         )
         # 安全复核按钮故意不受全局业务锁闭门禁影响；它只能重跑守卫，
         # 守卫不满足时会拒绝，不能将锁闭状态直接改成允许。
-        if hasattr(self, "approve_shared_button"):
-            self.approve_shared_button.setEnabled(self.shared_request_service is not None)
-            self.reject_shared_button.setEnabled(self.shared_request_service is not None)
         if self.include_train_page:
             # 外部安全锁闭时列车按钮必须一致禁用（含创建/暂停/复位），
             # 与联合列车页的锁定行为保持一致，避免界面状态矛盾。
@@ -635,10 +621,22 @@ class StationDetailWidget(QWidget):
         )
 
     def _request_direction(self) -> None:
-        self._show_result(
-            self.controller.request_direction_change(
-                self.direction_target.currentData()
+        target = self.direction_target.currentData()
+        if self.shared_request_service is not None:
+            requester_id = direction_requester_station(
+                RunningDirection(self.controller.snapshot.running_direction)
             )
+            if requester_id != self.controller.config.station.station_id:
+                self._show_result(OperationResult(False, "本站不是当前运行方向的请求方"))
+                return
+            self._show_result(
+                self.shared_request_service.submit_direction(
+                    target, requester_id
+                )
+            )
+            return
+        self._show_result(
+            self.controller.request_direction_change(target)
         )
 
     def _refresh_direction_status(self, snapshot: TccSnapshot) -> None:
@@ -661,31 +659,16 @@ class StationDetailWidget(QWidget):
             return
         self._show_result(self._network_fault_handler(station_id, enabled))
 
-    def _selected_shared_request_id(self) -> str | None:
-        row = self.shared_pending_table.currentRow()
-        if row < 0:
-            return None
-        item = self.shared_pending_table.item(row, 0)
-        return item.data(Qt.UserRole) if item is not None else None
-
-    def _approve_shared_request(self) -> None:
+    def _approve_shared_request(self, request_id: str) -> None:
         if self.shared_request_service is None:
-            return
-        request_id = self._selected_shared_request_id()
-        if request_id is None:
-            self._show_result(OperationResult(False, "请先选择待确认申请"))
             return
         result = self.shared_request_service.approve(
             request_id, self.controller.config.station.station_id
         )
         self._show_result(result)
 
-    def _reject_shared_request(self) -> None:
+    def _reject_shared_request(self, request_id: str) -> None:
         if self.shared_request_service is None:
-            return
-        request_id = self._selected_shared_request_id()
-        if request_id is None:
-            self._show_result(OperationResult(False, "请先选择待拒绝申请"))
             return
         result = self.shared_request_service.reject(
             request_id,
@@ -701,22 +684,46 @@ class StationDetailWidget(QWidget):
             self.shared_pending_table.setRowCount(0)
             self.shared_history_table.setRowCount(0)
             return
-        pending = self.shared_request_service.pending_requests()
+        station_id = self.controller.config.station.station_id
+        pending = self.shared_request_service.pending_requests_for(station_id)
         self.shared_pending_table.setRowCount(len(pending))
         for row, request in enumerate(pending):
             values = (
                 request.request_id,
-                request.section_id,
-                request.requested_state.value,
-                f"{request.requester_station_id}站",
-                f"{request.approver_station_id or '等待对站确认'}",
                 request.created_at,
+                f"{request.requester_station_id}站",
+                request.content,
             )
             for column, value in enumerate(values):
                 item = QTableWidgetItem(str(value))
                 if column == 0:
                     item.setData(Qt.UserRole, request.request_id)
-                self.shared_pending_table.setItem(row, column, item)
+            self.shared_pending_table.setItem(row, column, item)
+            actions = QWidget()
+            action_layout = QHBoxLayout(actions)
+            action_layout.setContentsMargins(2, 0, 2, 0)
+            approve_button = QPushButton("同意")
+            reject_button = QPushButton("拒绝")
+            approve_button.setObjectName(
+                f"approveSharedRequestButton{station_id}_{request.request_id}"
+            )
+            reject_button.setObjectName(
+                f"rejectSharedRequestButton{station_id}_{request.request_id}"
+            )
+            approve_button.clicked.connect(
+                lambda _checked=False, rid=request.request_id: self._approve_shared_request(
+                    rid
+                )
+            )
+            reject_button.clicked.connect(
+                lambda _checked=False, rid=request.request_id: self._reject_shared_request(
+                    rid
+                )
+            )
+            action_layout.addWidget(approve_button)
+            action_layout.addWidget(reject_button)
+            self.shared_pending_table.setCellWidget(row, 4, actions)
+            self.shared_pending_table.setRowHeight(row, 36)
         history = self.shared_request_service.history()
         self.shared_history_table.setRowCount(len(history))
         for row, request in enumerate(history):

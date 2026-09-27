@@ -1,8 +1,11 @@
 """双站主窗口顶部的全局运行状态条。"""
 
-from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel
+from collections.abc import Callable
+
+from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton
 
 from app.core.interface_models import InterfaceHealth, InterfaceStatus
+from app.core.models import OperationResult
 from app.ui.dual_snapshot import DualStationSnapshot
 from app.ui.styles import set_semantic_state
 
@@ -20,6 +23,11 @@ class GlobalStatusBar(QFrame):
         self.direction_label = QLabel("双方确认方向：--")
         self.lock_label = QLabel("作业状态：安全锁闭")
         self.alarm_label = QLabel("活动告警：--")
+        self.recovery_result_label = QLabel()
+        self.recovery_button = QPushButton("安全复核并解除锁闭")
+        self.recovery_button.setObjectName("globalRecoverDirectionButton")
+        self.recovery_button.setEnabled(False)
+        self._recovery_handler: Callable[[], OperationResult] | None = None
         for label in (
             self.lifecycle_label,
             self.communication_label,
@@ -30,6 +38,24 @@ class GlobalStatusBar(QFrame):
         ):
             layout.addWidget(label)
         layout.addStretch(1)
+        layout.addWidget(self.recovery_result_label)
+        layout.addWidget(self.recovery_button)
+        self.recovery_button.clicked.connect(self._recover)
+
+    def set_recovery_handler(
+        self, handler: Callable[[], OperationResult] | None
+    ) -> None:
+        """绑定顶部全局安全复核动作；按钮仍由快照锁闭状态控制。"""
+        self._recovery_handler = handler
+        self.recovery_button.setEnabled(handler is not None)
+
+    def _recover(self) -> None:
+        if self._recovery_handler is None:
+            return
+        result = self._recovery_handler()
+        self.recovery_result_label.setText(
+            ("复核成功：" if result.success else "复核失败：") + result.reason
+        )
 
     def set_lifecycle_text(self, text: str, *, failed: bool = False) -> None:
         self.lifecycle_label.setText(f"系统：{text}")
@@ -63,6 +89,9 @@ class GlobalStatusBar(QFrame):
         # 锁闭时把聚合器给出的具体原因作为悬浮提示，帮助用户定位「操作不了」根因。
         self.lock_label.setToolTip(
             snapshot.lock_reason if snapshot.operation_locked else ""
+        )
+        self.recovery_button.setEnabled(
+            self._recovery_handler is not None and snapshot.operation_locked
         )
         set_semantic_state(
             self.lock_label,

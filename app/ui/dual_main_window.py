@@ -24,6 +24,7 @@ from PyQt5.QtWidgets import (
 from app.services.tcc_controller import TccController
 from app.services.dual_train_coordinator import DualTrainCoordinator
 from app.services.shared_state_request_service import SharedStateRequestService
+from app.core.models import OperationResult
 from app.ui.corridor_overview_widget import CorridorOverviewWidget
 from app.ui.dual_operations_pages import (
     DirectionOperationsPage,
@@ -196,6 +197,7 @@ class DualStationMainWindow(QMainWindow):
         header_layout.addStretch(1)
         root.addWidget(header_bar)
         self.global_status = GlobalStatusBar()
+        self.global_status.set_recovery_handler(self._recover_bilateral_lock)
         root.addWidget(self.global_status)
 
         body = QHBoxLayout()
@@ -293,6 +295,7 @@ class DualStationMainWindow(QMainWindow):
             self.controller_a,
             self.controller_b,
             getattr(self.runtime, "set_station_network_fault", None),
+            self.shared_request_service,
         )
         self.network_status_page = NetworkStatusPage(
             self.controller_a,
@@ -375,6 +378,16 @@ class DualStationMainWindow(QMainWindow):
         ):
             page.set_snapshot(model)
         self._fill_recent(model)
+
+    def _recover_bilateral_lock(self) -> OperationResult:
+        """顶部安全复核同时重跑 A/B 守卫，不提供强制解锁。"""
+        results = (
+            self.controller_a.recover_safety_lock(),
+            self.controller_b.recover_safety_lock(),
+        )
+        success = all(item.success for item in results)
+        reason = "；".join(item.reason for item in results)
+        return OperationResult(success, reason)
 
     def _fill_corridor_details(self, model: DualStationSnapshot) -> None:
         """展示每个物理区段的双站视角，便于定位不一致和码序来源。"""
