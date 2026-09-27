@@ -7,7 +7,7 @@
 - 项目：CTCS-2 车站列控中心（TCC）A/B 双站教学仿真
 - 工作树：`/Users/zhu/Desktop/TCC-project/.worktrees/ctcs2-rebuild`
 - 分支：`codex/dual-station-dashboard`
-- 代码状态：本次只新增规范对齐与 UI/列车优化方案，未修改业务代码
+- 代码状态：阶段 0 已完成；新增规范追踪表和追踪表测试，业务代码尚未修改
 - 方案：`docs/tcc-vibe-plans/08-ctcs2-spec-and-ui-train-optimization.md`
 
 ## 本次方案已覆盖
@@ -29,6 +29,15 @@
 4. 阶段 5：实现列车 2D 场景和可重复生命周期；
 5. 阶段 6～7：实现 A/B 日志页及页面集成；
 6. 阶段 8：按规范场景做全量验收和交付。
+
+## 最近一次阶段记录
+
+- 阶段：0
+- 状态：已完成
+- 定向测试：`tests/unit/test_spec_traceability.py` → 2 passed
+- 全量基线：287 passed（网络测试需允许本地临时端口）
+- 产物：`docs/ctcs2-spec-traceability.md`、`tests/unit/test_spec_traceability.py`
+- 下一步：阶段 1，建立双站本地权威状态和站间安全事务
 
 ## 固定验证命令
 
