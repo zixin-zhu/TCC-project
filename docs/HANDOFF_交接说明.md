@@ -36,7 +36,7 @@
 
 - 阶段：8
 - 状态：已完成
-- 代码提交：待提交（阶段 8 交付证据）
+- 代码提交：`c2d4ee0 docs: record ctcs2 specification acceptance evidence`
 - 推送分支：`origin/codex/dual-station-dashboard`
 - 定向测试：规范矩阵 3 项通过；完整规范/真实 TCP/UI 回归共 321 项通过
 - 全量测试：`321 passed in 7.78s`（允许本机回环端口）
