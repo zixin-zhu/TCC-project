@@ -90,6 +90,10 @@ class TccSnapshot:
     operation_logs: tuple[OperationLogEntry, ...]
     network_received: int
     network_sent: int
+    business_received: int
+    business_sent: int
+    heartbeat_received: int
+    heartbeat_sent: int
 
 
 class TccController:
@@ -185,6 +189,10 @@ class TccController:
         self._operation_logs: list[OperationLogEntry] = []
         self._network_received = 0
         self._network_sent = 0
+        self._business_received = 0
+        self._business_sent = 0
+        self._heartbeat_received = 0
+        self._heartbeat_sent = 0
         if config.station.station_id == "A" and restored_authority is None:
             self._save_authoritative_direction(recovery=None)
         self.snapshot = self._recalculate_and_publish(
@@ -206,11 +214,28 @@ class TccController:
         """向界面暴露只读改方阶段，不允许界面接触状态机内部对象。"""
         return self._direction.machine.phase
 
-    def update_network_metrics(self, *, received: int, sent: int) -> None:
+    def update_network_metrics(
+        self,
+        *,
+        received: int,
+        sent: int,
+        business_received: int | None = None,
+        business_sent: int | None = None,
+        heartbeat_received: int | None = None,
+        heartbeat_sent: int | None = None,
+    ) -> None:
         """由主线程网络桥接更新只读统计，不触发新的站间状态同步。"""
         self._ensure_open()
         self._network_received = max(0, received)
         self._network_sent = max(0, sent)
+        if business_received is not None:
+            self._business_received = max(0, business_received)
+        if business_sent is not None:
+            self._business_sent = max(0, business_sent)
+        if heartbeat_received is not None:
+            self._heartbeat_received = max(0, heartbeat_received)
+        if heartbeat_sent is not None:
+            self._heartbeat_sent = max(0, heartbeat_sent)
         self._refresh_snapshot_only()
 
     def raise_external_alarm(
@@ -696,6 +721,10 @@ class TccController:
             operation_logs=tuple(reversed(self._operation_logs[-200:])),
             network_received=self._network_received,
             network_sent=self._network_sent,
+            business_received=self._business_received,
+            business_sent=self._business_sent,
+            heartbeat_received=self._heartbeat_received,
+            heartbeat_sent=self._heartbeat_sent,
         )
 
     def _state_payload(self) -> Mapping[str, Any]:

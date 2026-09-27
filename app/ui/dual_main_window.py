@@ -135,7 +135,9 @@ class DualReadOnlyPage(QWidget):
             )
         if self.kind == "network":
             return snapshot.connection_state.value, (
-                f"发送 {snapshot.network_sent}；接收 {snapshot.network_received}；"
+                f"协议发送 {snapshot.network_sent}；协议接收 {snapshot.network_received}；"
+                f"业务发送 {snapshot.business_sent}；业务接收 {snapshot.business_received}；"
+                f"心跳发送 {snapshot.heartbeat_sent}；心跳接收 {snapshot.heartbeat_received}；"
                 f"版本 {snapshot.state_version}"
             )
         if self.kind == "train":

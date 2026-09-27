@@ -621,7 +621,19 @@ class NetworkStatusPage(_OperationPage):
         heading.setObjectName("pageHeading")
         layout.addWidget(heading)
         self.table = _readonly_table(
-            ["站点", "角色", "连接状态", "发送", "接收", "状态版本", "作业锁闭"]
+            [
+                "站点",
+                "角色",
+                "连接状态",
+                "协议发送",
+                "协议接收",
+                "业务发送",
+                "业务接收",
+                "心跳发送",
+                "心跳接收",
+                "状态版本",
+                "作业锁闭",
+            ]
         )
         layout.addWidget(self.table)
         controls = QGroupBox("教学故障演练（真实断开并自动重连）")
@@ -664,6 +676,10 @@ class NetworkStatusPage(_OperationPage):
                 snapshot.connection_state.value,
                 str(snapshot.network_sent),
                 str(snapshot.network_received),
+                str(snapshot.business_sent),
+                str(snapshot.business_received),
+                str(snapshot.heartbeat_sent),
+                str(snapshot.heartbeat_received),
                 str(snapshot.state_version),
                 "锁闭" if snapshot.direction_operation_locked else "允许",
             )

@@ -95,6 +95,116 @@ def test_runtime_updates_network_metrics_from_worker_signals(qtbot, tmp_path: Pa
     assert runtime.controller.snapshot.network_sent == initial_sent + 1
 
 
+def test_heartbeat_increments_protocol_counter_not_business_counter(
+    qtbot, tmp_path: Path
+) -> None:  # type: ignore[no-untyped-def]
+    """心跳是保活协议，不应伪装成业务报文。"""
+    worker = FakeWorker()
+    runtime = ApplicationRuntime.build(
+        station_id="A",
+        config_dir=ROOT / "configs",
+        data_dir=tmp_path,
+        worker=worker,
+        network_thread=FakeThread(),
+    )
+    received_before = runtime.controller.snapshot.network_received
+    business_before = runtime.controller.snapshot.business_received
+    heartbeat_before = runtime.controller.snapshot.heartbeat_received
+
+    worker.message_received.emit(_incoming(MessageType.HEARTBEAT, 0, {}))
+    worker.message_sent.emit(_incoming(MessageType.HEARTBEAT, 0, {}))
+    qtbot.waitUntil(
+        lambda: runtime.controller.snapshot.network_received == received_before + 1,
+        timeout=1000,
+    )
+
+    snapshot = runtime.controller.snapshot
+    assert snapshot.network_received == received_before + 1
+    assert snapshot.business_received == business_before
+    assert snapshot.heartbeat_received == heartbeat_before + 1
+    assert snapshot.heartbeat_sent == 1
+
+
+def test_hello_ack_are_not_business_messages(qtbot, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    """握手报文属于协议控制面，不计入业务统计。"""
+    worker = FakeWorker()
+    runtime = ApplicationRuntime.build(
+        station_id="A",
+        config_dir=ROOT / "configs",
+        data_dir=tmp_path,
+        worker=worker,
+        network_thread=FakeThread(),
+    )
+
+    worker.message_received.emit(_incoming(MessageType.HELLO, 0, {}))
+    worker.message_received.emit(_incoming(MessageType.ACK, 0, {}))
+    qtbot.waitUntil(
+        lambda: runtime.controller.snapshot.network_received == 2,
+        timeout=1000,
+    )
+
+    snapshot = runtime.controller.snapshot
+    assert snapshot.business_received == 0
+    assert snapshot.heartbeat_received == 0
+
+
+def test_state_sync_increments_business_counter(qtbot, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    """全量同步是业务状态报文，应单独计入业务接收数。"""
+    worker = FakeWorker()
+    runtime = ApplicationRuntime.build(
+        station_id="A",
+        config_dir=ROOT / "configs",
+        data_dir=tmp_path,
+        worker=worker,
+        network_thread=FakeThread(),
+    )
+    boundary_ids = [
+        item.id
+        for item in runtime.controller.config.topology.sections
+        if item.id.startswith("Q")
+    ]
+    worker.message_received.emit(
+        _incoming(
+            MessageType.STATE_SYNC,
+            1,
+            {
+                "state_version": 1,
+                "boundary_states": {item: "CLEAR" for item in boundary_ids},
+                "running_direction": "A_TO_B",
+            },
+        )
+    )
+    qtbot.waitUntil(
+        lambda: runtime.controller.snapshot.business_received == 1,
+        timeout=1000,
+    )
+
+    assert runtime.controller.snapshot.business_received == 1
+    assert runtime.controller.snapshot.heartbeat_received == 0
+
+
+def test_idle_connection_has_zero_business_rate(qtbot, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    """连续空闲心跳不会制造业务报文增长。"""
+    worker = FakeWorker()
+    runtime = ApplicationRuntime.build(
+        station_id="A",
+        config_dir=ROOT / "configs",
+        data_dir=tmp_path,
+        worker=worker,
+        network_thread=FakeThread(),
+    )
+
+    for _ in range(3):
+        worker.message_received.emit(_incoming(MessageType.HEARTBEAT, 0, {}))
+    qtbot.waitUntil(
+        lambda: runtime.controller.snapshot.heartbeat_received == 3,
+        timeout=1000,
+    )
+
+    assert runtime.controller.snapshot.business_received == 0
+    assert runtime.controller.snapshot.business_sent == 0
+
+
 def _incoming(message_type, state_version, payload):  # type: ignore[no-untyped-def]
     return ProtocolMessage(
         magic="TCCSIM",

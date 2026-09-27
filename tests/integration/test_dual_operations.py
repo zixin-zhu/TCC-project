@@ -162,6 +162,49 @@ def test_network_page_exposes_reversible_b_station_fault_controls(qtbot) -> None
     assert runtime.station_b.controller.snapshot.connection_state.value == "HEALTHY"
 
 
+def test_network_page_labels_total_and_business_counters_distinctly(qtbot) -> None:  # type: ignore[no-untyped-def]
+    """通信页必须明确区分协议总数、业务报文数和心跳数。"""
+    window, runtime = _window(qtbot)
+    page = window.network_status_page
+    runtime.station_a.controller.update_network_metrics(
+        received=20,
+        sent=22,
+        business_received=3,
+        business_sent=4,
+        heartbeat_received=17,
+        heartbeat_sent=18,
+    )
+    window.aggregator.update_a(runtime.station_a.controller.snapshot)
+    window.aggregator.update_b(runtime.station_b.controller.snapshot)
+
+    headers = [
+        page.table.horizontalHeaderItem(index).text()
+        for index in range(page.table.columnCount())
+    ]
+    values = [
+        page.table.item(row, column).text()
+        for row in range(page.table.rowCount())
+        for column in range(page.table.columnCount())
+    ]
+    assert headers == [
+        "站点",
+        "角色",
+        "连接状态",
+        "协议发送",
+        "协议接收",
+        "业务发送",
+        "业务接收",
+        "心跳发送",
+        "心跳接收",
+        "状态版本",
+        "作业锁闭",
+    ]
+    assert "22" in values
+    assert "20" in values
+    assert "4" in values
+    assert "3" in values
+
+
 def test_train_page_controls_unique_cross_station_coordinator(qtbot) -> None:  # type: ignore[no-untyped-def]
     window, runtime = _window(qtbot)
     assert runtime.station_a.controller.establish_route("A_DEPART").success

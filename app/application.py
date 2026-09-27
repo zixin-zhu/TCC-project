@@ -24,7 +24,7 @@ from app.network.network_worker import (
     NetworkWorker,
     PeerNetworkSettings,
 )
-from app.network.protocol import MessageType, ProtocolMessage
+from app.network.protocol import BUSINESS_MESSAGE_TYPES, MessageType, ProtocolMessage
 from app.services.alarm_service import AlarmLevel, AlarmService
 from app.services.direction_change_protocol import DirectionProtocolAdapter
 from app.services.peer_sync_service import PeerSyncService
@@ -70,6 +70,10 @@ class ApplicationRuntime(QObject):
         self.state_provider = state_provider
         self._received_count = 0
         self._sent_count = 0
+        self._business_received = 0
+        self._business_sent = 0
+        self._heartbeat_received = 0
+        self._heartbeat_sent = 0
         # Qt queued signal 可能在线程 wait() 成功后才交付；关闭边界先关闭此门，
         # 避免迟到的网络/定时器回调写入已经关闭的控制器和数据库。
         self._accept_async_events = True
@@ -205,6 +209,10 @@ class ApplicationRuntime(QObject):
         if not self._accept_async_events:
             return
         self._received_count += 1
+        if message.message_type in BUSINESS_MESSAGE_TYPES:
+            self._business_received += 1
+        if message.message_type is MessageType.HEARTBEAT:
+            self._heartbeat_received += 1
         self._publish_network_metrics()
         if message.message_type is MessageType.ERROR and (
             not isinstance(message.payload, Mapping)
@@ -309,12 +317,21 @@ class ApplicationRuntime(QObject):
         if not self._accept_async_events:
             return
         self._sent_count += 1
+        if isinstance(_message, ProtocolMessage):
+            if _message.message_type in BUSINESS_MESSAGE_TYPES:
+                self._business_sent += 1
+            if _message.message_type is MessageType.HEARTBEAT:
+                self._heartbeat_sent += 1
         self._publish_network_metrics()
 
     def _publish_network_metrics(self) -> None:
         self.controller.update_network_metrics(
             received=self._received_count,
             sent=self._sent_count,
+            business_received=self._business_received,
+            business_sent=self._business_sent,
+            heartbeat_received=self._heartbeat_received,
+            heartbeat_sent=self._heartbeat_sent,
         )
 
     @pyqtSlot()

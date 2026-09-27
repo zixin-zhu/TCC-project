@@ -36,6 +36,23 @@ class MessageType(str, Enum):
     ERROR = "ERROR"
 
 
+# 业务报文只统计会改变或确认列控业务状态的消息；HELLO、ACK、HEARTBEAT
+# 属于协议控制面，不能因为连接保活而让界面误报“业务消息持续增长”。
+BUSINESS_MESSAGE_TYPES = frozenset(
+    {
+        MessageType.STATE_SYNC,
+        MessageType.TRACK_BOUNDARY,
+        MessageType.SIGNAL_STATUS,
+        MessageType.DIRECTION_PREPARE,
+        MessageType.DIRECTION_READY,
+        MessageType.DIRECTION_COMMIT,
+        MessageType.DIRECTION_COMMITTED,
+        MessageType.DIRECTION_CONFIRM,
+        MessageType.ALARM_SUMMARY,
+    }
+)
+
+
 class SessionAction(str, Enum):
     """接收一条消息后，连接层需要执行的附加动作。"""
 

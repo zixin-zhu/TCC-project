@@ -337,8 +337,9 @@ class StationDetailWidget(QWidget):
             snapshot.connection_state.value,
         )
         self.network_metrics.setText(
-            f"已接收业务消息：{snapshot.network_received}　"
-            f"已发送业务消息：{snapshot.network_sent}"
+            f"协议报文：发送 {snapshot.network_sent} / 接收 {snapshot.network_received}；"
+            f"业务报文：发送 {snapshot.business_sent} / 接收 {snapshot.business_received}；"
+            f"心跳：发送 {snapshot.heartbeat_sent} / 接收 {snapshot.heartbeat_received}"
         )
         self._update_action_enabled(snapshot)
 

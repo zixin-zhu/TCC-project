@@ -31,7 +31,7 @@ class StationSummaryCard(QGroupBox):
         self.signal_label = QLabel("主信号：--")
         self.leu_label = QLabel("LEU/报文：--")
         self.tsr_alarm_label = QLabel("临时限速：--　活动告警：--")
-        self.metrics_label = QLabel("发送/接收：--/--")
+        self.metrics_label = QLabel("协议报文：发送/接收 --/--；业务报文：发送/接收 --/--")
         fields = (
             self.identity_label,
             self.communication_label,
@@ -113,5 +113,7 @@ class StationSummaryCard(QGroupBox):
         ) else ("warning" if snapshot.alarms else "info")
         set_semantic_state(self.tsr_alarm_label, "severity", severity)
         self.metrics_label.setText(
-            f"发送/接收：{snapshot.network_sent}/{snapshot.network_received}"
+            f"协议报文：发送/接收 {snapshot.network_sent}/{snapshot.network_received}；"
+            f"业务报文：发送/接收 {snapshot.business_sent}/{snapshot.business_received}；"
+            f"心跳：发送/接收 {snapshot.heartbeat_sent}/{snapshot.heartbeat_received}"
         )
