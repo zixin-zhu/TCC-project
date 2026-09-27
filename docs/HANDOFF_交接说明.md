@@ -114,6 +114,8 @@
   省略并允许换行，保证长申请文本可读。
 - 新增布局回归测试和视觉离屏截图检查；完整回归 `339 passed`，`git diff --check`
   与离屏编译检查通过。
+- 阶段提交：`f848a71 refactor(ui): polish dual dashboard layout`，已推送到
+  `origin/codex/dual-station-dashboard`。
 - 下一步：重新连接后读取本节和最新提交，保持业务状态机与审批流程不变。
 
 ## 2026-09-27 启动自检与 LEU 初始告警修复
