@@ -96,8 +96,10 @@
 - 测试证据：完整回归 `336 passed`，包含真实本机 TCP 握手、断链恢复、A/B UI
   页面顺序、行内审批、动态请求方及重复场景；`git diff --check`、离屏编译检查
   均通过（字节码缓存使用 `/tmp/tcc-pyc`，避免沙箱目录权限干扰）。
-- 下一步：提交并推送本阶段代码与文档；重新连接后先查看本节、`git status --short`
-  和最新 `git log --oneline -5`，不要回退到旧的外置审批按钮方案。
+- 阶段提交：`6cee11e fix(ui): enforce peer approval and global recovery action`，
+  已推送到 `origin/codex/dual-station-dashboard`。
+- 下一步：重新连接后先查看本节、`git status --short` 和最新 `git log --oneline -5`，
+  不要回退到旧的外置审批按钮方案。
 
 ## 2026-09-27 启动自检与 LEU 初始告警修复
 
