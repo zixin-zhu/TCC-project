@@ -7,7 +7,7 @@
 - 项目：CTCS-2 车站列控中心（TCC）A/B 双站教学仿真
 - 工作树：`/Users/zhu/Desktop/TCC-project/.worktrees/ctcs2-rebuild`
 - 分支：`codex/dual-station-dashboard`
-- 代码状态：阶段 0～阶段 8 已完成；当前正在完成“公共区段双站确认与控制台优化”阶段，尚未提交
+- 代码状态：阶段 0～阶段 8 已完成；“公共区段双站确认与控制台优化”阶段已提交并推送
 - 方案：`docs/tcc-vibe-plans/08-ctcs2-spec-and-ui-train-optimization.md`
 
 ## 本次方案已覆盖
@@ -65,8 +65,8 @@
 - 站点摘要卡最右侧新增“安全复核并解除锁闭”，失败时显示控制器返回的具体原因；方向页原“改方请求处理”视觉板块已删除。
 - A/B 单站网络页新增本站网络中断/恢复按钮；协议、业务、心跳计数改为固定宽度分行显示，通信页计数列固定宽度，避免数字增长推动布局。
 - 测试证据：新增共享申请事务单测；更新双站 UI/E2E 场景为“提交→对站确认→生效”；当前完整回归 `334 passed`（含真实本机 TCP）。
-- 当前工作区：代码和测试已完成，待执行 `git diff --check`、更新状态文档、阶段提交和推送。
-- 下一步：先检查工作区 diff，再提交本阶段；重新连接后继续从本节开始，不重复已通过的 334 项测试。
+- 阶段提交：`6aebbe0 feat(ctcs2): add bilateral shared-state confirmation workflow`，已推送到 `origin/codex/dual-station-dashboard`。
+- 下一步：重新连接后先执行 `git status --short` 和 `git log --oneline -5`；本阶段无需重复实现，后续需求从新阶段开始。
 
 ## 2026-09-27 启动自检与 LEU 初始告警修复
 
