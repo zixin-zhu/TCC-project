@@ -20,6 +20,7 @@ from PyQt5.QtWidgets import (
     QHeaderView,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QTabWidget,
@@ -37,6 +38,7 @@ from app.services.dual_train_coordinator import DualTrainCoordinator, DualTrainS
 from app.services.tcc_controller import TccController
 from app.ui.dual_snapshot import DualStationSnapshot
 from app.ui.styles import configure_combo_box, relay_text
+from app.ui.train_scene import TrainSceneWidget
 
 
 DUAL_OPERATION_BUTTON_OBJECTS = frozenset(
@@ -57,6 +59,7 @@ DUAL_OPERATION_BUTTON_OBJECTS = frozenset(
         "startTrainButton",
         "pauseTrainButton",
         "resetTrainButton",
+        "resetAllTrainButton",
     }
 )
 
@@ -711,22 +714,30 @@ class TrainOperationsPage(_OperationPage):
         heading.setObjectName("pageHeading")
         layout.addWidget(heading)
         controls = QHBoxLayout()
+        self.train_selector = QComboBox()
+        self.train_selector.setObjectName("trainSelector")
+        configure_combo_box(self.train_selector, "train")
         self.create_button = QPushButton("添加待发列车")
         self.dispatch_button = QPushButton("发送选中列车")
         self.start_button = QPushButton("开始仿真")
         self.pause_button = QPushButton("暂停仿真")
-        self.reset_button = QPushButton("复位列车")
+        self.reset_button = QPushButton("复位选中列车")
+        self.reset_all_button = QPushButton("全部复位")
         for name, button in (
             ("createTrainButton", self.create_button),
             ("dispatchTrainButton", self.dispatch_button),
             ("startTrainButton", self.start_button),
             ("pauseTrainButton", self.pause_button),
             ("resetTrainButton", self.reset_button),
+            ("resetAllTrainButton", self.reset_all_button),
         ):
             button.setObjectName(name)
             controls.addWidget(button)
+        controls.insertWidget(0, self.train_selector)
         controls.addStretch(1)
         layout.addLayout(controls)
+        self.train_scene = TrainSceneWidget(station_a.config.topology)
+        layout.addWidget(self.train_scene)
         self.train_table = _readonly_table(
             ["列车", "方向", "区段", "位置(m)", "当前速度", "目标速度", "前方距离", "最后应答器", "安全状态"]
         )
@@ -740,9 +751,16 @@ class TrainOperationsPage(_OperationPage):
         self.start_button.clicked.connect(self._start)
         self.pause_button.clicked.connect(self._pause)
         self.reset_button.clicked.connect(self._reset)
+        self.reset_all_button.clicked.connect(self._reset_all)
+        self.train_selector.currentIndexChanged.connect(self._on_selector_changed)
+        self.train_table.currentCellChanged.connect(self._on_table_changed)
+        self.train_scene.train_selected.connect(self._select_train)
         coordinator.trains_changed.connect(self.set_trains)
 
     def _selected_train_id(self) -> str | None:
+        selected = self.train_selector.currentData()
+        if isinstance(selected, str) and selected:
+            return selected
         row = self.train_table.currentRow()
         if row < 0 and self.train_table.rowCount() == 1:
             row = 0
@@ -755,6 +773,7 @@ class TrainOperationsPage(_OperationPage):
         except RuntimeError as exc:
             self._show_result("联合列车", OperationResult(False, str(exc)))
             return
+        self._select_train(train.train_id)
         self._show_result("联合列车", OperationResult(True, f"已创建 {train.train_id}"))
 
     def _dispatch(self) -> None:
@@ -767,16 +786,80 @@ class TrainOperationsPage(_OperationPage):
         self._show_result("联合列车", result)
 
     def _start(self) -> None:
-        self._show_result("联合列车", self.coordinator.start())
+        self._show_result("联合列车", self.coordinator.start(self._selected_train_id()))
 
     def _pause(self) -> None:
         self.coordinator.pause()
         self._show_result("联合列车", OperationResult(True, "仿真已暂停"))
 
     def _reset(self) -> None:
+        train_id = self._selected_train_id()
+        result = (
+            self.coordinator.reset_train(train_id)
+            if train_id is not None
+            else OperationResult(False, "请选择要复位的列车")
+        )
+        self._show_result("联合列车", result)
+
+    def _reset_all(self) -> None:
+        if QMessageBox.question(
+            self,
+            "确认全部复位",
+            "全部复位会清除所有列车的 TRAIN 占用，是否继续？",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        ) is not QMessageBox.Yes:
+            return
         self._show_result("联合列车", self.coordinator.reset())
 
+    def _on_selector_changed(self, _index: int) -> None:
+        self._sync_selection(self.train_selector.currentData())
+
+    def _on_table_changed(self, row: int, *_args: object) -> None:
+        item = self.train_table.item(row, 0) if row >= 0 else None
+        self._select_train(item.text() if item is not None else None)
+
+    def _select_train(self, train_id: str | None) -> None:
+        if train_id is None:
+            self.train_scene.set_selected_train(None)
+            return
+        index = self.train_selector.findData(train_id)
+        if index >= 0 and self.train_selector.currentIndex() != index:
+            self.train_selector.blockSignals(True)
+            self.train_selector.setCurrentIndex(index)
+            self.train_selector.blockSignals(False)
+        self._sync_selection(train_id)
+
+    def _sync_selection(self, train_id: object) -> None:
+        selected = train_id if isinstance(train_id, str) else None
+        row = -1
+        for candidate in range(self.train_table.rowCount()):
+            item = self.train_table.item(candidate, 0)
+            if item is not None and item.text() == selected:
+                row = candidate
+                break
+        self.train_table.blockSignals(True)
+        self.train_table.clearSelection()
+        if row >= 0:
+            self.train_table.selectRow(row)
+        self.train_table.blockSignals(False)
+        self.train_scene.set_selected_train(selected)
+
     def set_trains(self, trains: tuple[DualTrainState, ...]) -> None:
+        previous = self._selected_train_id()
+        self.train_selector.blockSignals(True)
+        self.train_selector.clear()
+        for train in trains:
+            self.train_selector.addItem(
+                f"{train.train_id} · {train.direction.value} · {train.status.value}",
+                train.train_id,
+            )
+        selected = previous if previous in {item.train_id for item in trains} else None
+        if selected is None and trains:
+            selected = trains[0].train_id
+        if selected is not None:
+            self.train_selector.setCurrentIndex(self.train_selector.findData(selected))
+        self.train_selector.blockSignals(False)
         self.train_table.setRowCount(len(trains))
         for row, train in enumerate(trains):
             values = (
@@ -792,6 +875,8 @@ class TrainOperationsPage(_OperationPage):
             )
             for column, value in enumerate(values):
                 self.train_table.setItem(row, column, QTableWidgetItem(value))
+        self.train_scene.set_trains(trains)
+        self._sync_selection(selected)
 
     def set_snapshot(self, model: DualStationSnapshot) -> None:
         # 双站聚合锁闭时必须一致禁用全部列车操作按钮（含暂停/复位），
@@ -802,3 +887,4 @@ class TrainOperationsPage(_OperationPage):
         self.start_button.setEnabled(available)
         self.pause_button.setEnabled(available)
         self.reset_button.setEnabled(available)
+        self.reset_all_button.setEnabled(available)

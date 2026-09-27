@@ -246,3 +246,37 @@ def test_failed_reset_keeps_train_position_and_conservative_occupancy(qapp) -> N
     assert train.status is DualTrainStatus.STOPPED
     assert train.section_id == "A_T1"
     assert station_a.snapshot.tracks["A_T1"] is TrackState.OCCUPIED
+
+
+def test_multiple_waiting_trains_and_selected_reset_can_dispatch_again(qapp) -> None:  # type: ignore[no-untyped-def]
+    """阶段 5：复位指定列车后必须回到 WAITING，并可再次派发。"""
+    station_a, station_b = _pair()
+    assert station_a.establish_route("A_DEPART").success
+    coordinator = DualTrainCoordinator(station_a, station_b)
+
+    first = coordinator.create_train()
+    second = coordinator.create_train()
+    assert first.train_id != second.train_id
+    assert first.status is DualTrainStatus.WAITING
+    assert second.status is DualTrainStatus.WAITING
+
+    assert coordinator.dispatch(first.train_id).success
+    assert coordinator.reset_train(first.train_id).success
+    assert first.status is DualTrainStatus.WAITING
+    assert first.lifecycle_version == 1
+    assert first.section_id is None
+    assert coordinator.dispatch(first.train_id).success
+    assert first.status is DualTrainStatus.READY
+
+
+def test_start_accepts_a_specific_train_id(qapp) -> None:  # type: ignore[no-untyped-def]
+    station_a, station_b = _pair()
+    assert station_a.establish_route("A_DEPART").success
+    coordinator = DualTrainCoordinator(station_a, station_b)
+    train = coordinator.create_train()
+    assert coordinator.dispatch(train.train_id).success
+
+    result = coordinator.start(train.train_id)
+
+    assert result.success
+    assert train.status is DualTrainStatus.RUNNING

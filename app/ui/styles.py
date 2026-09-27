@@ -148,6 +148,7 @@ COMBO_ROLE_MIN_WIDTHS = {
     "direction": 160,
     "tsr": 170,
     "shared": 150,
+    "train": 220,
 }
 
 

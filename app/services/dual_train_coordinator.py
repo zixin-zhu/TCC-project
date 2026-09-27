@@ -21,7 +21,9 @@ class DualTrainStatus(str, Enum):
     RUNNING = "RUNNING"
     STOPPED = "STOPPED"
     ARRIVED = "ARRIVED"
-    RESET = "RESET"
+    # 旧页面曾把复位态命名为 RESET；现在复位成功后必须可再次发车，
+    # 因此保留为 WAITING 的兼容别名，避免旧调用方失效但不再制造死状态。
+    RESET = "WAITING"
 
 
 @dataclass
@@ -38,6 +40,7 @@ class DualTrainState:
     last_balise_id: str | None = None
     safety_state: str = "待发"
     status: DualTrainStatus = DualTrainStatus.WAITING
+    lifecycle_version: int = 0
 
 
 class DualTrainCoordinator(QObject):
@@ -71,12 +74,7 @@ class DualTrainCoordinator(QObject):
         self.timer.timeout.connect(lambda: self.tick(0.5))
 
     def create_train(self) -> DualTrainState:
-        """按 A 站权威方向创建待发列车；同一时刻只允许一列活动列车。"""
-        if any(
-            item.status not in {DualTrainStatus.ARRIVED, DualTrainStatus.RESET}
-            for item in self.trains.values()
-        ):
-            raise RuntimeError("已有未结束的演示列车")
+        """按当前方向创建待发列车；允许同时维护多列待发演示列车。"""
         direction = RunningDirection(self._station_a.snapshot.running_direction)
         train = DualTrainState(
             train_id=f"T{self._next_number:03d}",
@@ -123,13 +121,19 @@ class DualTrainCoordinator(QObject):
         self._emit_changed()
         return OperationResult(True, "列车已进入待启动状态")
 
-    def start(self) -> OperationResult:
-        """启动唯一 500 ms 时钟，并使已派发列车进入运行态。"""
-        candidates = [
-            item
-            for item in self.trains.values()
-            if item.status in {DualTrainStatus.READY, DualTrainStatus.STOPPED}
-        ]
+    def start(self, train_id: str | None = None) -> OperationResult:
+        """启动唯一 500 ms 时钟；可只启动指定列车，兼容无参数批量启动。"""
+        if train_id is not None:
+            train = self.trains.get(train_id)
+            if train is None:
+                return self._failure(f"未知演示列车 {train_id}")
+            candidates = [train]
+        else:
+            candidates = [
+                item
+                for item in self.trains.values()
+                if item.status in {DualTrainStatus.READY, DualTrainStatus.STOPPED}
+            ]
         if not candidates:
             return self._failure("没有可启动的演示列车")
         self._manually_paused = False
@@ -144,6 +148,37 @@ class DualTrainCoordinator(QObject):
         self.timer.start()
         self._emit_changed()
         return OperationResult(True, "列车演示已启动")
+
+    def reset_train(self, train_id: str) -> OperationResult:
+        """只复位一列车，成功后回到 WAITING，允许再次派发。"""
+        train = self.trains.get(train_id)
+        if train is None:
+            return self._failure(f"未知演示列车 {train_id}")
+        self._manually_paused = False
+        if train.section_id is not None:
+            cleared = self._track_input.set_state(
+                train.section_id, TrackInputSource.TRAIN, TrackState.CLEAR
+            )
+            if not cleared.success:
+                train.current_speed_kmh = 0.0
+                train.target_speed_kmh = 0.0
+                train.status = DualTrainStatus.STOPPED
+                train.safety_state = f"复位失败，保留占用：{cleared.reason}"
+                self._emit_changed()
+                return self._failure(cleared.reason)
+        train.section_id = None
+        train.position_m = 0.0
+        train.current_speed_kmh = 0.0
+        train.target_speed_kmh = 0.0
+        train.distance_ahead_m = 0.0
+        train.last_balise_id = None
+        train.safety_state = "复位完成，可再次发车"
+        train.status = DualTrainStatus.WAITING
+        train.lifecycle_version += 1
+        if not any(item.status is DualTrainStatus.RUNNING for item in self.trains.values()):
+            self.timer.stop()
+        self._emit_changed()
+        return OperationResult(True, f"列车 {train_id} 已复位，可再次发车")
 
     def pause(self, reason: str = "人工暂停") -> None:
         """暂停时钟并把活动列车置为停车，不改变任何轨道占用。"""
