@@ -62,3 +62,40 @@ def test_real_dual_runtime_reaches_healthy_and_closes_without_leaks(
     assert stopped
     assert not application.station_a.network_thread.thread.isRunning()
     assert not application.station_b.network_thread.thread.isRunning()
+
+
+def test_idle_healthy_dual_station_stays_unlocked_after_multiple_timeout_windows(
+    tmp_path: Path, qtbot
+) -> None:  # type: ignore[no-untyped-def]
+    """空闲区间连续收到心跳时，不得因没有状态变化而快照过期。"""
+    config_dir = tmp_path / "configs"
+    _copy_configs_with_port(config_dir, _free_port())
+    application = DualStationApplication.build(
+        config_dir=config_dir, data_root=tmp_path / "data"
+    )
+
+    application.start()
+    try:
+        qtbot.waitUntil(
+            lambda: (
+                application.station_a.controller.snapshot.connection_state
+                is ConnectionState.HEALTHY
+                and application.station_b.controller.snapshot.connection_state
+                is ConnectionState.HEALTHY
+                and not application.station_a.controller.snapshot.direction_operation_locked
+                and not application.station_b.controller.snapshot.direction_operation_locked
+            ),
+            timeout=4000,
+        )
+        # 当前测试配置的 disconnect_after_ms 为 1000；静置两个以上周期，
+        # 若心跳没有刷新 PeerSnapshot.received_at_ms，此处会稳定重现锁闭。
+        qtbot.wait(2300)
+        for station in (application.station_a, application.station_b):
+            snapshot = station.controller.snapshot
+            assert snapshot.connection_state is ConnectionState.HEALTHY
+            assert snapshot.direction_operation_locked is False
+            assert not any(
+                alarm.code == "PEER_SNAPSHOT_STALE" for alarm in snapshot.alarms
+            )
+    finally:
+        assert application.stop(timeout_ms=2000)

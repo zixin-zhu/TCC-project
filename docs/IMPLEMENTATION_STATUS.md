@@ -290,6 +290,18 @@
 - 下一步：阶段 4 集成验收，执行 `run_dual.py --validate-only`、完整回归、真实
   双站静置/断心跳/重连演练，并核对 Git 工作树与远端一致。
 
+### 阶段 4 集成验收账本
+
+- 新增真实双站空闲验收：在测试配置 `heartbeat_interval_ms=50`、
+  `disconnect_after_ms=1000` 下，静置 2300 ms 仍保持两站 HEALTHY、作业不锁闭、
+  且没有 `PEER_SNAPSHOT_STALE` 告警。
+- 断心跳安全语义由既有过期测试覆盖：超过阈值后仍会安全锁闭；重连后的心跳
+  不创建旧基线，必须再次收到全量同步才能恢复作业允许。
+- 最终完整回归 `285 passed in 7.16s`；正式入口 `.venv/bin/python run_dual.py
+  --validate-only` 校验 A=SERVER、B=CLIENT、共享端点 `127.0.0.1:9500` 通过；
+  compileall 和 `git diff --check` 通过。
+- 下一步：提交并推送本阶段集成验收测试，确认本地工作树干净且远端与本地一致。
+
 ## 已完成：阶段 1
 
 完成内容：
