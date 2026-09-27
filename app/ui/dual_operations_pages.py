@@ -52,6 +52,8 @@ DUAL_OPERATION_BUTTON_OBJECTS = frozenset(
         "cancelTsrButton",
         "requestDirectionButton",
         "requestDirectionDisconnectButton",
+        "injectANetworkFaultButton",
+        "restoreANetworkButton",
         "injectBNetworkFaultButton",
         "restoreBNetworkButton",
         "createTrainButton",
@@ -649,15 +651,25 @@ class NetworkStatusPage(_OperationPage):
         layout.addWidget(self.table)
         controls = QGroupBox("教学故障演练（真实断开并自动重连）")
         control_layout = QHBoxLayout(controls)
+        self.inject_a_button = QPushButton("模拟A站网络中断")
+        self.restore_a_button = QPushButton("恢复A站网络")
         self.inject_button = QPushButton("模拟B站网络中断")
         self.restore_button = QPushButton("恢复B站网络")
+        self.inject_a_button.setObjectName("injectANetworkFaultButton")
+        self.restore_a_button.setObjectName("restoreANetworkButton")
         self.inject_button.setObjectName("injectBNetworkFaultButton")
         self.restore_button.setObjectName("restoreBNetworkButton")
-        self.inject_button.clicked.connect(lambda: self._set_fault(True))
-        self.restore_button.clicked.connect(lambda: self._set_fault(False))
+        self.inject_a_button.clicked.connect(lambda: self._set_fault("A", True))
+        self.restore_a_button.clicked.connect(lambda: self._set_fault("A", False))
+        self.inject_button.clicked.connect(lambda: self._set_fault("B", True))
+        self.restore_button.clicked.connect(lambda: self._set_fault("B", False))
         enabled = fault_handler is not None
+        self.inject_a_button.setEnabled(enabled)
+        self.restore_a_button.setEnabled(enabled)
         self.inject_button.setEnabled(enabled)
         self.restore_button.setEnabled(enabled)
+        control_layout.addWidget(self.inject_a_button)
+        control_layout.addWidget(self.restore_a_button)
         control_layout.addWidget(self.inject_button)
         control_layout.addWidget(self.restore_button)
         control_layout.addStretch(1)
@@ -670,11 +682,11 @@ class NetworkStatusPage(_OperationPage):
         self.note.setWordWrap(True)
         layout.addWidget(self.note)
 
-    def _set_fault(self, enabled: bool) -> None:
+    def _set_fault(self, station_id: str, enabled: bool) -> None:
         if self._fault_handler is None:
-            self._show_result("B站", OperationResult(False, "运行时不支持网络故障注入"))
+            self._show_result(station_id + "站", OperationResult(False, "运行时不支持网络故障注入"))
             return
-        self._show_result("B站", self._fault_handler("B", enabled))
+        self._show_result(station_id + "站", self._fault_handler(station_id, enabled))
 
     def set_snapshot(self, model: DualStationSnapshot) -> None:
         self.table.setRowCount(2)

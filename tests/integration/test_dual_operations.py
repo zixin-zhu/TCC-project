@@ -162,6 +162,17 @@ def test_network_page_exposes_reversible_b_station_fault_controls(qtbot) -> None
     assert runtime.station_b.controller.snapshot.connection_state.value == "HEALTHY"
 
 
+def test_network_page_exposes_reversible_a_station_fault_controls(qtbot) -> None:  # type: ignore[no-untyped-def]
+    window, runtime = _window(qtbot)
+    page = window.network_status_page
+
+    qtbot.mouseClick(page.inject_a_button, Qt.LeftButton)
+    assert runtime.station_a.controller.snapshot.connection_state.value == "DEGRADED"
+    assert "A站" in page.result_label.text()
+    qtbot.mouseClick(page.restore_a_button, Qt.LeftButton)
+    assert runtime.station_a.controller.snapshot.connection_state.value == "HEALTHY"
+
+
 def test_network_page_labels_total_and_business_counters_distinctly(qtbot) -> None:  # type: ignore[no-untyped-def]
     """通信页必须明确区分协议总数、业务报文数和心跳数。"""
     window, runtime = _window(qtbot)

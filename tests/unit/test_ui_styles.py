@@ -71,3 +71,14 @@ def test_editable_tsr_combo_keeps_text_visible(qtbot) -> None:  # type: ignore[n
     assert combo.minimumWidth() >= 170
     assert combo.lineEdit() is not None
     assert combo.lineEdit().minimumWidth() >= 170
+
+
+def test_train_combo_keeps_direction_and_status_visible(qtbot) -> None:  # type: ignore[no-untyped-def]
+    combo = QComboBox()
+    qtbot.addWidget(combo)
+    combo.addItem("T001 · A_TO_B · RUNNING")
+    configure_combo_box(combo, "train")
+    qtbot.wait(20)
+
+    assert combo.minimumWidth() >= 220
+    assert combo.view().minimumWidth() >= combo.minimumWidth()

@@ -92,6 +92,7 @@ def test_train_page_disables_all_buttons_including_pause_reset_when_locked(
         page.start_button,
         page.pause_button,
         page.reset_button,
+        page.reset_all_button,
     ):
         assert button.isEnabled(), f"{button.objectName()} 在解锁时应可用"
 
@@ -103,6 +104,7 @@ def test_train_page_disables_all_buttons_including_pause_reset_when_locked(
         page.start_button,
         page.pause_button,
         page.reset_button,
+        page.reset_all_button,
     ):
         assert not button.isEnabled(), (
             f"{button.objectName()} 在锁闭时应被一致禁用"
