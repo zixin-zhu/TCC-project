@@ -54,7 +54,8 @@
 - 已修改：安全锁闭恢复增加 `TccController.recover_safety_lock()`；无新鲜对站方向、有活动事务、区段/进路条件不满足时继续拒绝并保持锁闭。
 - 定向验证：改方、控制器、A/B 请求处理页和双站操作页测试通过。
 - 完整验证：`331 passed`，包含真实本机 TCP 握手、双向改方、动态应答方断链恢复和 Qt UI 回归。
-- 交接下一步：提交并推送本阶段；重新连接后先读取本节和最新 `git log`，不要重复改方协议阶段。
+- 阶段提交：`37f8e70 fix(ctcs2): enforce bilateral direction authority and recovery`，已推送到 `origin/codex/dual-station-dashboard`。
+- 交接下一步：重新连接后先读取本节和最新 `git log`，不要重复改方协议阶段。
 
 ## 2026-09-27 启动自检与 LEU 初始告警修复
 
