@@ -157,7 +157,7 @@ PYTHONPYCACHEPREFIX=/tmp/tcc-pycache QT_QPA_PLATFORM=offscreen \
 - 修复：将待处理/已处理表格的单元格写入放回列循环；为待处理和历史记录增加内容签名缓存，仅在申请集合真正变化时重建表格和行内按钮；复核成功使用信息弹窗，失败使用警告弹窗，并移除常驻结果标签。
 - 新增回归：验证待处理前三列有申请编号、时间、申请站；验证刷新前后行内按钮对象保持不变；验证复核失败弹窗标题和原因。
 - 验证证据：定向 3 项通过；相关集成 37 项通过；完整回归 `341 passed in 7.63s`；`git diff --check` 与 `compileall` 通过。
-- 本阶段状态：代码和测试已完成，待提交并推送；重新连接后先运行 `git status --short`，再查看本节和最新提交，不要重复修复上述问题。
+- 本阶段状态：已完成并推送；阶段提交为 `2fdffa9 fix(ui): stabilize pending requests and recovery feedback`。重新连接后先运行 `git status --short`，再查看本节和最新提交，不要重复修复上述问题。
 
 ## 阶段完成记录模板
 

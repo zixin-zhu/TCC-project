@@ -598,4 +598,4 @@ sed -n '1,240p' docs/IMPLEMENTATION_STATUS.md
 - 相关集成测试：37 项通过（含真实本机 TCP 回环）。
 - 全量测试：`341 passed in 7.63s`。
 - 代码质量：`git diff --check`、`PYTHONPYCACHEPREFIX=/tmp/tcc-pyc ... compileall -q app tests` 通过。
-- 状态：代码、测试和交接说明已完成，待创建阶段提交并推送；提交后在本节补充提交哈希。
+- 状态：已完成并推送；阶段提交为 `2fdffa9 fix(ui): stabilize pending requests and recovery feedback`，分支为 `origin/codex/dual-station-dashboard`。
