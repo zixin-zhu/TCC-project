@@ -7,7 +7,7 @@
 - 项目：CTCS-2 车站列控中心（TCC）A/B 双站教学仿真
 - 工作树：`/Users/zhu/Desktop/TCC-project/.worktrees/ctcs2-rebuild`
 - 分支：`codex/dual-station-dashboard`
-- 代码状态：阶段 0～阶段 3 已完成；当前等待阶段 3 提交并推送后的回归确认
+- 代码状态：阶段 0～阶段 3 已完成；工作区干净，远端已同步
 - 方案：`docs/tcc-vibe-plans/08-ctcs2-spec-and-ui-train-optimization.md`
 
 ## 本次方案已覆盖
@@ -35,12 +35,14 @@
 ## 最近一次阶段记录
 
 - 阶段：3
-- 状态：已完成，待提交推送
+- 状态：已完成
+- 代码提交：`de8cdd7 feat(ctcs2): enforce telegram capacity and temporary speed lifecycle`
+- 推送分支：`origin/codex/dual-station-dashboard`
 - 定向测试：LEU/选择审计/限速/控制器共 28 项通过
 - 全量测试：`303 passed in 7.93s`（允许本机回环端口）
 - 产物：`LeuStorageModel`、结构化报文选择结果、`TelegramSelectionAuditService`、CTCS-2 六档限速与 80 m 重叠规则
 - 关键语义：LEU 至少保留 20% 存储余量；默认/故障回落不报告成功发送；正式 TCC 启用六档限速并保存制动距离、TCC、更新点和版本
-- 下一步：阶段 3 提交并推送，然后进入阶段 4 接口状态、启动自检和诊断教学模型
+- 下一步：阶段 4，接口状态、启动自检和诊断教学模型；开始前重新读取本文件、总控方案和阶段 4 小节
 
 ## 固定验证命令
 
