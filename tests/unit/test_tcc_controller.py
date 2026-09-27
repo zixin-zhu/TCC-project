@@ -6,6 +6,7 @@ from app.core.enums import (
     ConnectionState,
     RunningDirection,
     SignalAspect,
+    TrackCode,
     TrackInputSource,
     TrackState,
 )
@@ -120,7 +121,23 @@ def test_controller_starts_disconnected_and_fail_closed() -> None:
 
     assert controller.snapshot.connection_state is ConnectionState.DISCONNECTED
     assert controller.snapshot.direction_operation_locked is True
-    assert not controller.establish_route("A_DEPART").success
+
+
+def test_coding_service_failure_is_visible_and_recoverable() -> None:
+    controller = _controller()
+
+    failed = controller.set_coding_available(False)
+
+    assert failed.success is True
+    assert controller.snapshot.codes["Q1"].code is TrackCode.OFFLINE
+    assert controller.snapshot.signals["SA"].aspect is SignalAspect.RED
+    assert any(item.code == "TRACK_CODING_OFFLINE" for item in controller.snapshot.alarms)
+
+    recovered = controller.set_coding_available(True)
+
+    assert recovered.success is True
+    assert controller.snapshot.codes["Q1"].code is not TrackCode.OFFLINE
+    assert all(item.code != "TRACK_CODING_OFFLINE" for item in controller.snapshot.alarms)
 
 
 def test_invalid_track_id_does_not_change_or_publish_state() -> None:

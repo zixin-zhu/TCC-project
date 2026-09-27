@@ -1,0 +1,7 @@
+{
+  "description": "附录1占用/出清顺序教学防护规则",
+  "fault_occupancy_requires_rear_clear": true,
+  "shunt_bad_hu_threshold": 2,
+  "clear_sequence": ["FAULT_OCCUPIED", "REAR_CLEAR", "FAULT_CLEAR"],
+  "unknown_state_action": "HU"
+}

@@ -7,7 +7,7 @@
 - 项目：CTCS-2 车站列控中心（TCC）A/B 双站教学仿真
 - 工作树：`/Users/zhu/Desktop/TCC-project/.worktrees/ctcs2-rebuild`
 - 分支：`codex/dual-station-dashboard`
-- 代码状态：阶段 0、阶段 1 已完成；工作区干净，远端已同步
+- 代码状态：阶段 0、阶段 1、阶段 2 已完成；当前等待阶段 2 提交并推送后的回归确认
 - 方案：`docs/tcc-vibe-plans/08-ctcs2-spec-and-ui-train-optimization.md`
 
 ## 本次方案已覆盖
@@ -25,22 +25,21 @@
 
 1. 阶段 0：建立 `docs/ctcs2-spec-traceability.md` 和基线测试，不改业务代码；
 2. 阶段 1：双站本地权威状态和方向事务（已完成）；
-3. 阶段 2～4：实现 CTCS-2 状态/编码/报文/接口/诊断；
-4. 阶段 5：实现列车 2D 场景和可重复生命周期；
-5. 阶段 6～7：实现 A/B 日志页及页面集成；
-6. 阶段 8：按规范场景做全量验收和交付。
+3. 阶段 2：轨道状态、编码、信号点灯和附录 1 防护（已完成）；
+4. 阶段 3～4：实现 CTCS-2 报文/接口/诊断；
+5. 阶段 5：实现列车 2D 场景和可重复生命周期；
+6. 阶段 6～7：实现 A/B 日志页及页面集成；
+7. 阶段 8：按规范场景做全量验收和交付。
 
 ## 最近一次阶段记录
 
-- 阶段：1
-- 状态：已完成
-- 代码提交：`ed405ec refactor(safety): model symmetric local authority and interstation agreement`
-- 推送分支：`origin/codex/dual-station-dashboard`
-- 定向测试：本地权威/一致性/方向/同步/运行时共 52 passed；控制器与方向服务 34 passed
-- 全量测试：阶段回归需在允许本机回环端口的环境运行；普通沙箱的 4 项 TCP 测试仅因 `PermissionError` 未能绑定临时端口
-- 产物：`LocalAuthorityState`、`InterstationAgreement`、对称改方模式、站间元数据同步、方向复核接口
-- 关键语义：A/B 各自持有本站方向和设备状态；A Server/B Client 只表示建链角色；全量同步方向不直接覆盖本地，方向不一致保持安全锁闭
-- 下一步：阶段 2，轨道状态/编码/信号防护；开始前重新读取本文件、总控方案和阶段 2 小节
+- 阶段：2
+- 状态：已完成，待提交推送
+- 定向测试：轨道/防护/信号/进路/共享输入/控制器/方向共 86 项通过
+- 全量测试：`299 passed in 7.66s`（允许本机回环端口）
+- 产物：`TrackProtectionService`、连续分路不良 HU、编码 OFFLINE、编码故障注入/恢复、CTCS-2 防护规则配置
+- 关键语义：故障占用必须按“故障占用→后方出清→故障区段出清”顺序撤防；编码不可用停止输出并保持信号红灯
+- 下一步：阶段 2 提交并推送，然后进入阶段 3 应答器/LEU、临时限速和断链保持
 
 ## 固定验证命令
 

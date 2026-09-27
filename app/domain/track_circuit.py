@@ -1,6 +1,7 @@
 """配置驱动的区间/站内轨道电路教学编码。"""
 
-from typing import Dict, List, Optional, Sequence, Tuple
+from dataclasses import dataclass
+from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from app.core.enums import RouteType, RunningDirection, SectionKind, TrackCode, TrackState
 from app.core.models import (
@@ -10,6 +11,77 @@ from app.core.models import (
     TopologyConfig,
     TrackCodingResult,
 )
+
+
+@dataclass(frozen=True)
+class TrackProtectionSnapshot:
+    """附录 1 占用/出清顺序检查结果。"""
+
+    active: bool
+    protected_sections: Tuple[str, ...]
+    reason: str
+
+
+class TrackProtectionService:
+    """按“故障区段占用→后方出清→故障区段出清”维护安全防护。
+
+    服务只保存事件顺序，不直接修改 TCC 运行态；编码层消费
+    ``snapshot.protected_sections`` 并输出 HU，便于单元测试和审计。
+    """
+
+    def __init__(self, ordered_sections: Iterable[str]) -> None:
+        self._ordered_sections = tuple(ordered_sections)
+        if not self._ordered_sections or len(set(self._ordered_sections)) != len(
+            self._ordered_sections
+        ):
+            raise ValueError("防护区段顺序必须非空且不重复")
+        self._fault_sections: Set[str] = set()
+        self._rear_clear_sections: Dict[str, Set[str]] = {}
+
+    @property
+    def snapshot(self) -> TrackProtectionSnapshot:
+        protected: Set[str] = set()
+        for fault_section in self._fault_sections:
+            index = self._ordered_sections.index(fault_section)
+            protected.update(self._ordered_sections[: index + 1])
+        if not protected:
+            return TrackProtectionSnapshot(False, (), "无顺序异常防护")
+        return TrackProtectionSnapshot(
+            True,
+            tuple(section for section in self._ordered_sections if section in protected),
+            "故障占用未按规定完成后方区段出清，保持 HU 防护",
+        )
+
+    def observe(self, section_id: str, state: TrackState) -> TrackProtectionSnapshot:
+        """记录一个有效区段状态，并返回更新后的防护快照。"""
+        if section_id not in self._ordered_sections:
+            raise ValueError(f"未知防护区段：{section_id}")
+        if state is TrackState.FAULT_OCCUPIED:
+            self._fault_sections.add(section_id)
+            self._rear_clear_sections[section_id] = set()
+            return self.snapshot
+        if state is TrackState.CLEAR:
+            section_index = self._ordered_sections.index(section_id)
+            for fault_section in tuple(self._fault_sections):
+                fault_index = self._ordered_sections.index(fault_section)
+                rear = self._rear_clear_sections.setdefault(fault_section, set())
+                if section_index < fault_index:
+                    rear.add(section_id)
+                elif section_id == fault_section:
+                    required = set(self._ordered_sections[:fault_index])
+                    if required.issubset(rear):
+                        self._fault_sections.remove(fault_section)
+                        self._rear_clear_sections.pop(fault_section, None)
+            return self.snapshot
+        # 故障区段后的再次占用使此前的“已出清”证据失效。
+        for fault_section in self._fault_sections:
+            if self._ordered_sections.index(section_id) < self._ordered_sections.index(
+                fault_section
+            ):
+                self._rear_clear_sections.setdefault(fault_section, set()).discard(
+                    section_id
+                )
+        return self.snapshot
 
 
 class TrackCircuitCodingService:
@@ -24,8 +96,24 @@ class TrackCircuitCodingService:
         runtime: StationRuntimeState,
         peer_snapshot: Optional[PeerSnapshot],
         now_ms: int,
+        *,
+        coding_available: bool = True,
+        protection_sections: Iterable[str] = (),
     ) -> List[TrackCodingResult]:
         """重新计算全部区段；邻站信息不可用时对区间统一保护。"""
+        if not coding_available:
+            return [
+                TrackCodingResult(
+                    section_id=section.id,
+                    direction=runtime.running_direction,
+                    code=TrackCode.OFFLINE,
+                    reason="轨道编码服务离线，停止编码输出并保持安全防护",
+                    looked_ahead_sections=(),
+                    protected=True,
+                    state_version=runtime.state_version,
+                )
+                for section in self.topology.sections
+            ]
         block_ids = [
             section.id
             for section in self.topology.sections
@@ -53,7 +141,10 @@ class TrackCircuitCodingService:
             }
         else:
             block_results = self._calculate_blocks(
-                direction_order, runtime, peer_snapshot
+                direction_order,
+                runtime,
+                peer_snapshot,
+                protection_sections=frozenset(protection_sections),
             )
 
         results: List[TrackCodingResult] = []
@@ -69,8 +160,22 @@ class TrackCircuitCodingService:
         ordered_ids: Sequence[str],
         runtime: StationRuntimeState,
         peer_snapshot: PeerSnapshot,
+        *,
+        protection_sections: Set[str] | frozenset[str] = frozenset(),
     ) -> Dict[str, TrackCodingResult]:
         states = [runtime.effective_track_state(section_id) for section_id in ordered_ids]
+        shunt_protection = set(protection_sections)
+        run_start = 0
+        while run_start < len(states):
+            if states[run_start] is not TrackState.SHUNT_BAD:
+                run_start += 1
+                continue
+            run_end = run_start
+            while run_end < len(states) and states[run_end] is TrackState.SHUNT_BAD:
+                run_end += 1
+            if run_end - run_start >= 2:
+                shunt_protection.update(ordered_ids[:run_end])
+            run_start = run_end
         # 只读取当前运行方向最前端对应的邻站边界。快照可以同时携带两端
         # 状态，若使用“任一占用”会让运行后方的无关边界错误降低全线码序。
         forward_boundary_id = ordered_ids[-1]
@@ -84,7 +189,11 @@ class TrackCircuitCodingService:
         for index, section_id in enumerate(ordered_ids):
             state = states[index]
             looked = tuple(ordered_ids[index + 1 :])
-            if state is not TrackState.CLEAR:
+            if section_id in shunt_protection:
+                code = TrackCode.HU
+                reason = "连续分路不良或顺序防护未解除，向前设置 HU 防护码"
+                protected = True
+            elif state is not TrackState.CLEAR:
                 code = TrackCode.HU
                 reason = f"本区段状态为 {state.value}，采用保护码"
                 protected = True

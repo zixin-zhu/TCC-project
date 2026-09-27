@@ -1,0 +1,7 @@
+{
+  "description": "CTCS-2 教学编码保护补充规则，不代表具体线路工程数据",
+  "offline_code": "OFFLINE",
+  "fault_occupancy_code": "HU",
+  "shunt_bad_hu_threshold": 2,
+  "peer_snapshot_required": true
+}

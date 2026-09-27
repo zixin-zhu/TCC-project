@@ -30,6 +30,7 @@ class RunningDirection(str, Enum):
 
 class TrackCode(str, Enum):
     NONE = "NONE"
+    OFFLINE = "OFFLINE"
     DETECT = "DETECT"
     HU = "HU"
     U = "U"

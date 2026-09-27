@@ -13,6 +13,7 @@ from app.core.models import (
 
 _CODE_TO_ASPECT: Dict[TrackCode, SignalAspect] = {
     TrackCode.NONE: SignalAspect.RED,
+    TrackCode.OFFLINE: SignalAspect.RED,
     TrackCode.DETECT: SignalAspect.RED,
     TrackCode.HU: SignalAspect.RED,
     TrackCode.U: SignalAspect.YELLOW,
@@ -63,7 +64,11 @@ class SignalControlService:
                 protected = True
             else:
                 aspect = _CODE_TO_ASPECT[coding.code]
-                reason = f"防护区段 {signal.protects_section} 编码为 {coding.code.value}"
+                reason = (
+                    "轨道编码服务离线，保持红灯"
+                    if coding.code is TrackCode.OFFLINE
+                    else f"防护区段 {signal.protects_section} 编码为 {coding.code.value}"
+                )
                 protected = coding.protected or aspect is SignalAspect.RED
 
             alarm_level = None

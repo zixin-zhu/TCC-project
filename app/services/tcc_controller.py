@@ -32,7 +32,7 @@ from app.domain.temporary_speed import (
     TemporarySpeedService,
     TemporarySpeedState,
 )
-from app.domain.track_circuit import TrackCircuitCodingService
+from app.domain.track_circuit import TrackCircuitCodingService, TrackProtectionService
 from app.infrastructure.sqlite_repository import (
     DirectionAuthorityEntry,
     OperationLogEntry,
@@ -168,6 +168,12 @@ class TccController:
         # 应用启动到完成健康握手和权威全量同步之前必须 fail-closed。
         self._direction.on_connection_state(ConnectionState.DISCONNECTED)
         self._coding = TrackCircuitCodingService(config.topology, coding_rules)
+        self._coding_available = True
+        self._track_protection = TrackProtectionService(
+            section.id
+            for section in config.topology.sections
+            if section.id.startswith("Q")
+        )
         self._signals = SignalControlService(config.topology)
         self._routes = RouteControlService(config.topology)
         self._telegram_service = LogicalTelegramService(telegram_catalog)
@@ -451,6 +457,10 @@ class TccController:
             result = OperationResult(False, str(exc))
             self._save_operation(f"设置区段 {section_id}", result, {"state": state.value})
             return result
+        if section_id.startswith("Q"):
+            self._track_protection.observe(
+                section_id, self.runtime.effective_track_state(section_id)
+            )
         result = OperationResult(True, "区段状态已更新" if change.changed else "区段状态未变化")
         if self.runtime.state_version != before_version:
             self._recalculate_and_publish(
@@ -460,6 +470,38 @@ class TccController:
             self._save_operation(
                 f"设置区段 {section_id}", result, {"state": state.value}
             )
+        return result
+
+    def set_coding_available(self, available: bool) -> OperationResult:
+        """切换教学编码服务可用性；不可用时所有码序输出 OFFLINE。"""
+        self._ensure_open()
+        if type(available) is not bool:
+            return OperationResult(False, "编码服务可用性必须是布尔值")
+        if self._coding_available == available:
+            return OperationResult(True, "编码服务状态未变化")
+        self._coding_available = available
+        self.runtime.state_version += 1
+        result = OperationResult(
+            True,
+            "编码服务已恢复"
+            if available
+            else "编码服务故障，已停止编码输出并保持红灯防护",
+        )
+        if available:
+            self.alarms.clear_alarm(
+                "TRACK_CODING_OFFLINE", "track_circuit", now_ms=self._clock_ms()
+            )
+        else:
+            self.alarms.raise_alarm(
+                "TRACK_CODING_OFFLINE",
+                AlarmLevel.CRITICAL,
+                result.reason,
+                "track_circuit",
+                now_ms=self._clock_ms(),
+            )
+        self._recalculate_and_publish(
+            operation=("设置轨道编码服务", result, {"available": available})
+        )
         return result
 
     def establish_route(self, route_id: str) -> OperationResult:
@@ -593,7 +635,11 @@ class TccController:
         if include_state_stage:
             self._stage_listener("state")
         self._latest_codes = self._coding.recalculate_all(
-            self.runtime, self.peer_snapshot, now
+            self.runtime,
+            self.peer_snapshot,
+            now,
+            coding_available=self._coding_available,
+            protection_sections=self._track_protection.snapshot.protected_sections,
         )
         self._stage_listener("coding")
         self._latest_signals = self._signals.recalculate(
@@ -635,7 +681,11 @@ class TccController:
                     now_ms=now,
                 )
                 self._latest_codes = self._coding.recalculate_all(
-                    self.runtime, self.peer_snapshot, now
+                    self.runtime,
+                    self.peer_snapshot,
+                    now,
+                    coding_available=self._coding_available,
+                    protection_sections=self._track_protection.snapshot.protected_sections,
                 )
                 self._latest_signals = self._signals.recalculate(
                     self.runtime, self._latest_codes
