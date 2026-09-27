@@ -51,9 +51,28 @@ def test_real_dual_runtime_reaches_healthy_and_closes_without_leaks(
                 is ConnectionState.HEALTHY
                 and application.station_b.controller.snapshot.connection_state
                 is ConnectionState.HEALTHY
+                and application.interface_status.startup_complete
             ),
             timeout=4000,
         )
+        active_startup_lock = [
+            (
+                station.controller.config.station.station_id,
+                station.controller.snapshot.connection_state.value,
+                station.controller.snapshot.direction_operation_locked,
+                station.controller.snapshot.telegram.mode.value,
+                station.controller.snapshot.telegram.reason,
+                item.level.value,
+                item.message,
+            )
+            for station in (application.station_a, application.station_b)
+            for item in station.controller.snapshot.alarms
+            if item.code == "LEU_DEFAULT"
+            and item.active
+            and item.level.value == "CRITICAL"
+            and "方向或进路处于安全锁闭" in item.message
+        ]
+        assert not active_startup_lock, active_startup_lock
         assert (data_root / "A" / "tcc_a.db").is_file()
         assert (data_root / "B" / "tcc_b.db").is_file()
     finally:

@@ -123,6 +123,53 @@ def test_controller_starts_disconnected_and_fail_closed() -> None:
     assert controller.snapshot.direction_operation_locked is True
 
 
+def test_initial_startup_lock_does_not_leave_leu_default_critical_alarm_active() -> None:
+    """启动尚未完成握手时的预期安全锁闭，不应伪装成持续 LEU 故障。"""
+    config = load_project_config(ROOT / "configs", "A")
+    controller = TccController(
+        config,
+        load_coding_rules(ROOT / "configs" / "coding_rules.json"),
+        load_telegram_catalog(ROOT / "configs" / "telegram_packets.json"),
+        alarms=AlarmService(),
+        persistence=FakePersistence(),
+        publish_state=lambda _payload: None,
+        snapshot_listener=lambda _snapshot: None,
+        clock_ms=lambda: 10_000,
+    )
+
+    assert controller.snapshot.direction_operation_locked is True
+    assert not any(
+        item.code == "LEU_DEFAULT" and item.active
+        for item in controller.snapshot.alarms
+    )
+
+
+def test_leu_alarm_reason_and_level_refresh_after_startup_lock() -> None:
+    """启动锁闭解除后，不能残留旧的 CRITICAL 告警文本。"""
+    config = load_project_config(ROOT / "configs", "A")
+    controller = TccController(
+        config,
+        load_coding_rules(ROOT / "configs" / "coding_rules.json"),
+        load_telegram_catalog(ROOT / "configs" / "telegram_packets.json"),
+        alarms=AlarmService(),
+        persistence=FakePersistence(),
+        publish_state=lambda _payload: None,
+        snapshot_listener=lambda _snapshot: None,
+        clock_ms=lambda: 10_000,
+    )
+    controller.set_connection_state(ConnectionState.HEALTHY)
+    controller.update_peer_snapshot(
+        PeerSnapshot("B", {"Q1": TrackState.CLEAR}, 0, 10_000)
+    )
+    controller.restore_authoritative_direction(RunningDirection.A_TO_B)
+
+    active = [item for item in controller.snapshot.alarms if item.code == "LEU_DEFAULT"]
+    assert active
+    assert active[0].level.value == "WARNING"
+    assert "无匹配" in active[0].message
+    assert "方向或进路处于安全锁闭" not in active[0].message
+
+
 def test_coding_service_failure_is_visible_and_recoverable() -> None:
     controller = _controller()
 

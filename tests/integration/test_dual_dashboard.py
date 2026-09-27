@@ -105,3 +105,17 @@ def test_global_status_bar_exposes_text_and_semantic_state(qtbot) -> None:  # ty
         )
     )
     assert "故障" in status.interface_label.text()
+
+    status.set_interface_status(
+        (
+            InterfaceStatus(
+                InterfaceId.U,
+                InterfaceHealth.DISCONNECTED,
+                changed_at_ms=3,
+                message="站间通信：DISCONNECTED",
+            ),
+        ),
+        startup_complete=True,
+    )
+    assert "断开" in status.interface_label.text()
+    assert "启动自检中" not in status.interface_label.text()

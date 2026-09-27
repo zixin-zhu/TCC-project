@@ -9,15 +9,20 @@ from __future__ import annotations
 from enum import Enum
 from pathlib import Path
 from typing import Protocol
+import time
 
 from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
 
 from app.application import ApplicationRuntime
-from app.core.enums import NetworkRole
+from app.core.enums import ConnectionState, NetworkRole
 from app.core.exceptions import ConfigError
 from app.core.models import ProjectConfig
 from app.core.models import OperationResult
-from app.core.interface_models import InterfaceHealth, InterfaceId
+from app.core.interface_models import (
+    InterfaceHealth,
+    InterfaceId,
+    StartupStep,
+)
 from app.infrastructure.config_loader import load_project_config
 from app.services.interface_status_service import InterfaceStatusService
 
@@ -87,9 +92,20 @@ class DualStationApplication(QObject):
         self._b_started = False
         self._station_a_stopped = False
         self._station_b_stopped = False
+        # 仅记录协议层已完成 HELLO/ACK 的站点；它不等价于业务作业允许，
+        # 后者仍由两站控制器的安全锁闭状态独立决定。
+        self._healthy_stations: set[str] = set()
         self.interface_status = InterfaceStatusService()
         station_a.worker.server_ready.connect(self._on_server_ready)
         station_a.worker.error_occurred.connect(self._on_station_a_error)
+        # 真实 worker 具备 state_changed；测试替身或旧扩展若没有该信号，
+        # 仍保留原有启动编排能力，不因诊断功能破坏兼容性。
+        for station_id, station in (("A", station_a), ("B", station_b)):
+            state_signal = getattr(station.worker, "state_changed", None)
+            if state_signal is not None:
+                state_signal.connect(
+                    lambda state, sid=station_id: self._on_station_state(sid, state)
+                )
 
     @classmethod
     def build(
@@ -115,6 +131,7 @@ class DualStationApplication(QObject):
         """只启动 A；B 必须等待本次 A 的监听就绪信号。"""
         if self.state is not DualLifecycleState.IDLE:
             return
+        self._healthy_stations.clear()
         self.interface_status.begin_startup(now_ms=0)
         self._set_state(DualLifecycleState.STARTING_A)
         self.station_a.start()
@@ -126,6 +143,54 @@ class DualStationApplication(QObject):
         self._b_started = True
         self.station_b.start()
         self._set_state(DualLifecycleState.RUNNING)
+
+    @pyqtSlot(str, object)
+    def _on_station_state(self, station_id: str, state: ConnectionState) -> None:
+        """把 A/B 协议连接状态汇总到 U 接口，并推进启动自检。
+
+        ``HEALTHY`` 只表示站间协议握手和全量同步通道可用，不会解除方向
+        安全锁闭；方向恢复仍由各站控制器收到对端快照后独立完成。
+        """
+        if station_id not in {"A", "B"} or not isinstance(state, ConnectionState):
+            return
+        health = {
+            ConnectionState.HEALTHY: InterfaceHealth.HEALTHY,
+            ConnectionState.DEGRADED: InterfaceHealth.DEGRADED,
+            ConnectionState.DISCONNECTED: InterfaceHealth.DISCONNECTED,
+            ConnectionState.CONNECTING: InterfaceHealth.INITIALIZING,
+            ConnectionState.HANDSHAKING: InterfaceHealth.INITIALIZING,
+        }[state]
+        if state is ConnectionState.HEALTHY:
+            self._healthy_stations.add(station_id)
+        else:
+            self._healthy_stations.discard(station_id)
+        self.interface_status.set_state(
+            InterfaceId.U,
+            health,
+            now_ms=int(time.monotonic() * 1000),
+            message=f"A/B 站间协议：{state.value}",
+        )
+        if self._healthy_stations == {"A", "B"}:
+            self._complete_startup_checks()
+
+    def _complete_startup_checks(self) -> None:
+        """在双站协议健康后一次性完成已验证的启动自检顺序。
+
+        本仿真中的逻辑单元、安全 I/O、数据仓储、轨道电路、联锁/CTC、
+        对端 TCC 和 LEU 均在 ``build()`` 阶段完成装配；A/B 协议健康是
+        最后一个外部条件。这里仍严格通过 ``InterfaceStatusService`` 按
+        规范顺序逐项记录，避免直接把状态字典改成“全健康”。
+        """
+        if self.interface_status.startup_complete:
+            return
+        now_ms = int(time.monotonic() * 1000)
+        for step in StartupStep:
+            self.interface_status.complete_startup_step(
+                step,
+                success=True,
+                now_ms=now_ms,
+                message="启动自检通过；双站协议通道已健康",
+            )
 
     @pyqtSlot(str)
     def _on_station_a_error(self, message: str) -> None:

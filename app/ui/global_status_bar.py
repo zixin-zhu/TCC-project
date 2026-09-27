@@ -80,9 +80,16 @@ class GlobalStatusBar(QFrame):
         )
 
     def set_interface_status(
-        self, statuses: tuple[InterfaceStatus, ...] | list[InterfaceStatus]
+        self,
+        statuses: tuple[InterfaceStatus, ...] | list[InterfaceStatus],
+        *,
+        startup_complete: bool | None = None,
     ) -> None:
-        """展示 P/Q/R/S/T/U/V/W 接口汇总，不用颜色替代具体状态文字。"""
+        """展示 P/Q/R/S/T/U/V/W 接口汇总，不用颜色替代具体状态文字。
+
+        ``startup_complete`` 用来区分“首次启动尚未完成”与“运行中链路
+        断开”。旧调用未提供该参数时保持兼容，仍按初始化状态显示自检。
+        """
         if not statuses:
             self.interface_label.setText("接口：未接入诊断")
             set_semantic_state(self.interface_label, "severity", "warning")
@@ -101,10 +108,13 @@ class GlobalStatusBar(QFrame):
         elif degraded:
             text = f"接口：{degraded} 项降级"
             severity = "warning"
-        elif initializing or disconnected:
+        elif initializing or (disconnected and startup_complete is not True):
             pending = initializing + disconnected
             text = f"接口：启动自检中（待检查 {pending} 项）"
             severity = "warning"
+        elif disconnected:
+            text = f"接口：{disconnected} 项断开"
+            severity = "critical"
         else:
             text = f"接口：全部健康（{len(statuses)} 项）"
             severity = "info"

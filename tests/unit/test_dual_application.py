@@ -7,7 +7,9 @@ from pathlib import Path
 import pytest
 from PyQt5.QtCore import QObject, pyqtSignal
 
+from app.core.enums import ConnectionState
 from app.core.exceptions import ConfigError
+from app.core.interface_models import InterfaceHealth, InterfaceId
 from app.dual_application import DualLifecycleState, DualStationApplication
 
 
@@ -17,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class FakeWorker(QObject):
     server_ready = pyqtSignal(str, int)
     error_occurred = pyqtSignal(str)
+    state_changed = pyqtSignal(object)
 
 
 class FakeRuntime:
@@ -50,6 +53,47 @@ def test_b_starts_once_only_after_a_reports_real_listener_ready(qtbot) -> None: 
 
     assert events == ["start:A", "start:B"]
     assert application.state is DualLifecycleState.RUNNING
+
+
+def test_startup_self_check_completes_after_both_protocols_are_healthy(qtbot) -> None:  # type: ignore[no-untyped-def]
+    """真实协议健康后，聚合接口自检必须完成，不能永久停在初始化。"""
+    events: list[str] = []
+    station_a = FakeRuntime("A", events)
+    station_b = FakeRuntime("B", events)
+    application = DualStationApplication(station_a, station_b)
+
+    application.start()
+    station_a.worker.server_ready.emit("127.0.0.1", 9500)
+    station_a.worker.state_changed.emit(ConnectionState.HEALTHY)
+    station_b.worker.state_changed.emit(ConnectionState.HEALTHY)
+    qtbot.waitUntil(lambda: application.interface_status.startup_complete)
+
+    assert all(
+        item.health is InterfaceHealth.HEALTHY
+        for item in application.interface_status.snapshot()
+    )
+    assert len(application.interface_status.startup_results) == 7
+
+
+def test_runtime_disconnect_is_not_reported_as_startup_self_check(qtbot) -> None:  # type: ignore[no-untyped-def]
+    """启动完成后的断链只降级 U 接口，不应重新伪装成启动自检。"""
+    events: list[str] = []
+    station_a = FakeRuntime("A", events)
+    station_b = FakeRuntime("B", events)
+    application = DualStationApplication(station_a, station_b)
+
+    application.start()
+    station_a.worker.server_ready.emit("127.0.0.1", 9500)
+    station_a.worker.state_changed.emit(ConnectionState.HEALTHY)
+    station_b.worker.state_changed.emit(ConnectionState.HEALTHY)
+    qtbot.waitUntil(lambda: application.interface_status.startup_complete)
+
+    station_b.worker.state_changed.emit(ConnectionState.DISCONNECTED)
+    qtbot.waitUntil(
+        lambda: application.interface_status.get(InterfaceId.U).health
+        is InterfaceHealth.DISCONNECTED
+    )
+    assert application.interface_status.startup_complete is True
 
 
 def test_a_startup_error_prevents_b_from_starting(qtbot) -> None:  # type: ignore[no-untyped-def]

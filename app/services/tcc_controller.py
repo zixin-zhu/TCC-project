@@ -198,6 +198,10 @@ class TccController:
         self._latest_codes: list[TrackCodingResult] = []
         self._latest_signals: list[SignalControlResult] = []
         self._latest_telegram: TelegramView | None = None
+        # 记录最近一次 LEU 默认回落的告警语义。AlarmService 按告警码和
+        # 来源去重，但同一 LEU 可能先因启动锁闭、后因无匹配报文回落；
+        # 语义变化时必须替换旧记录，不能把过期的 CRITICAL 文本留在界面。
+        self._leu_alarm_signature: tuple[str, str, str] | None = None
         self._operation_logs: list[OperationLogEntry] = []
         self._network_received = 0
         self._network_sent = 0
@@ -786,17 +790,37 @@ class TccController:
         )
 
     def _update_leu_alarm(self, selection: TelegramSelectionResult, now_ms: int) -> None:
+        source = selection.telegram.balise_id
         if selection.alarm_level is None:
-            self.alarms.clear_alarm("LEU_DEFAULT", selection.telegram.balise_id, now_ms=now_ms)
+            self.alarms.clear_alarm("LEU_DEFAULT", source, now_ms=now_ms)
+            self._leu_alarm_signature = None
+            return
+        # 控制器刚创建时方向状态按 fail-safe 进入安全锁闭，但此时还没有
+        # 对端全量状态基线。默认报文是预期的启动保护动作，不应在每次正常
+        # 启动时留下持续的 LEU 严重告警；网络告警和全局安全锁闭仍会显示。
+        # 一旦已有对端基线，后续断链、进路占用或方向事务触发的默认回落
+        # 必须继续按真实故障告警处理。
+        if (
+            selection.reason_code == "OPERATION_LOCKED"
+            and self.peer_snapshot is None
+        ):
+            self.alarms.clear_alarm("LEU_DEFAULT", source, now_ms=now_ms)
+            self._leu_alarm_signature = None
             return
         level = AlarmLevel(selection.alarm_level)
+        signature = (source, level.value, selection.reason)
+        if signature == self._leu_alarm_signature:
+            return
+        # 同一来源的回落原因或等级改变时，先结束旧语义，再登记当前语义。
+        self.alarms.clear_alarm("LEU_DEFAULT", source, now_ms=now_ms)
         self.alarms.raise_alarm(
             "LEU_DEFAULT",
             level,
             selection.reason,
-            selection.telegram.balise_id,
+            source,
             now_ms=now_ms,
         )
+        self._leu_alarm_signature = signature
 
     def _build_snapshot(self) -> TccSnapshot:
         if self._latest_telegram is None:

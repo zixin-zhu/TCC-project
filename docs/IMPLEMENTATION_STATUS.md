@@ -2,6 +2,19 @@
 
 > 此文件随代码提交并在每个阶段更新。重新连接后，先读取本文件、总控方案、当前阶段子方案和 `git log --oneline --decorate -10`，从“下一步”继续，不重复已完成阶段。
 
+## 2026-09-27 启动自检/LEU 告警 bugfix
+
+- 状态：实现完成，待提交推送。
+- 启动自检：`DualStationApplication` 消费 A/B `state_changed`，两站协议健康
+  后按 `StartupStep` 顺序完成聚合自检；运行中 U 断链显示“接口断开”，不再
+  与“启动自检中”混淆。
+- LEU 告警：没有对端状态基线的初始 fail-safe 锁闭默认报文不留下持续
+  `LEU_DEFAULT` CRITICAL；已有基线后的真实安全回落继续告警；同一 LEU
+  来源的原因/等级改变时替换旧活动记录。
+- 验证：`325 passed`；真实 TCP 双站握手、断链恢复和 UI 回归均通过。
+- 重新连接后的下一步：读取 `docs/HANDOFF_交接说明.md` 同名章节，检查工作区，
+  查看最新 bugfix 提交，再继续新的用户需求。
+
 ## 仓库状态
 
 - 仓库：`git@github.com:zixin-zhu/TCC-project.git`
