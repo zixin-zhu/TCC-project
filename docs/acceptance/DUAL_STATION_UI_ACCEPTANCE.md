@@ -1,6 +1,6 @@
 # 双站同屏 UI 视觉验收记录
 
-验收日期：2026-09-26
+验收日期：2026-09-27
 
 分支：`codex/dual-station-dashboard`
 
@@ -29,6 +29,7 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python scripts/capture_dual_dashboard.py
 | 区间改方 | [图片](dual-dashboard/synthetic_ui_direction_1280x800.png) | [图片](dual-dashboard/synthetic_ui_direction_1440x900.png) | [图片](dual-dashboard/synthetic_ui_direction_1920x1080.png) |
 | 通信状态 | [图片](dual-dashboard/synthetic_ui_network_1280x800.png) | [图片](dual-dashboard/synthetic_ui_network_1440x900.png) | [图片](dual-dashboard/synthetic_ui_network_1920x1080.png) |
 | 列车演示 | [图片](dual-dashboard/synthetic_ui_train_1280x800.png) | [图片](dual-dashboard/synthetic_ui_train_1440x900.png) | [图片](dual-dashboard/synthetic_ui_train_1920x1080.png) |
+| 日志告警（A上B下） | [图片](dual-dashboard/synthetic_ui_logs_1280x800.png) | [图片](dual-dashboard/synthetic_ui_logs_1440x900.png) | [图片](dual-dashboard/synthetic_ui_logs_1920x1080.png) |
 
 ## 目视检查结果
 
@@ -40,6 +41,8 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python scripts/capture_dual_dashboard.py
   最终显示、一致性和判定依据，高分辨率空间用于有效信息。
 - 区间改方页同时显示权威/投影角色、方向、通信、版本、事务阶段、锁闭状态和
   四项安全前置条件；故障演练按钮有明确措辞。
+- 列车演示页显示稳定列车下拉框、2D 拓扑线路、区段/位置/速度/应答器和安全状态，
+  日志告警页固定 A 站上方、B 站下方并逐条列出操作、活动告警和恢复事件。
 - 轨道状态使用深灰/红/棕/黄黑语义色，通信和告警同时给出文字；整体保持
   浅灰白背景、蓝色导航、白色细边框面板和紧凑表格。
 

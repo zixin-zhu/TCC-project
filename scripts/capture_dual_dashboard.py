@@ -72,6 +72,7 @@ def main() -> int:
             (8, "direction"),
             (9, "network"),
             (10, "train"),
+            (11, "logs"),
         )
         for width, height in ((1280, 800), (1440, 900), (1920, 1080)):
             window.resize(width, height)

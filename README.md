@@ -40,10 +40,11 @@ python3.12 -m venv .venv
 .venv/bin/python run_dual.py
 ```
 
-该进程内装配两套相互独立的控制器、SQLite 仓库和网络线程；A 仍作为
-Server 完成 `bind + listen`，B 仍作为 Client 通过真实 `127.0.0.1` TCP
-握手、同步和重连，并非用内存调用伪造站间通信。窗口提供 12 个页面：双站
-总览、联合站场图、A/B 站控制、轨道电路、信号机、应答器/LEU、临时限速、
+该进程内装配两套相互独立的控制器、SQLite 仓库和网络线程；A 作为
+Server 完成 `bind + listen`，B 作为 Client 通过真实 `127.0.0.1` TCP
+握手、同步和重连，这只是通信启动顺序，并不代表 A 永久拥有 B 的业务真值。
+A、B 各自维护本站轨道、信号、进路和 LEU 的本地权威状态，区间方向/闭塞等
+共享条件须经双方事务确认。窗口提供 12 个页面：双站总览、联合站场图、A/B 站控制、轨道电路、信号机、应答器/LEU、临时限速、
 区间改方、通信状态、列车演示和日志告警。
 
 需要分站诊断时可分别启动单站：
@@ -82,12 +83,16 @@ PYTHONPYCACHEPREFIX=/tmp/tcc-pycache \
 视觉证据见
 [`docs/acceptance/DUAL_STATION_FINAL_ACCEPTANCE.md`](docs/acceptance/DUAL_STATION_FINAL_ACCEPTANCE.md)。
 
+CTCS-2 规范要求追踪与阶段场景验收见
+[`docs/acceptance/CTCS2_SPEC_ACCEPTANCE.md`](docs/acceptance/CTCS2_SPEC_ACCEPTANCE.md)。
+
 列车页是教学动画：必须先建立当前方向的发车进路，再创建并发送列车。列车
 占用只写 `TRAIN` 来源，复位或跨区出清不会清除人工占用、故障占用或分路不良。
 
 ## 关键安全降级规则
 
-- A Server 是唯一区间方向权威；B 只保存投影。
+- A/B 各自维护本站局部权威；A Server/B Client 只表示教学仿真的 TCP 建链顺序，
+  不能把 B 站当作 A 站投影。区间方向和闭塞使用双方确认的共享事务。
 - 启动、断线、快照过期、改方未确认或恢复未完成时，进路锁闭且信号保持红灯。
 - A 的新权威方向必须先持久化，再在内存 APPLY 并发送 COMMIT。
 - 数据库权威方向读取失败时阻止启动，不能用默认方向覆盖未知历史真值。

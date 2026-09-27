@@ -1,16 +1,19 @@
 # 双站同屏最终验收记录
 
-验收日期：2026-09-26
+验收日期：2026-09-27
 
 分支：`codex/dual-station-dashboard`
 
 推荐入口：`run_dual.py`
 
+CTCS-2 规范补充矩阵与阶段 0～8 证据见
+[`CTCS2_SPEC_ACCEPTANCE.md`](CTCS2_SPEC_ACCEPTANCE.md)。
+
 ## 自动化与真实运行证据
 
 | 验收项 | 结果 | 可重建证据 |
 |---|---|---|
-| 全量回归 | 通过，`264 passed` | `QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -p no:cacheprovider -q` |
+| 全量回归 | 通过，`321 passed` | `QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -p no:cacheprovider -q` |
 | 真实双站握手/同步 | 通过 | `test_real_window_handshake_sync_fault_and_reconnect` |
 | 真实故障断开/自动重连 | 通过 | 同上；验证通信非健康、锁闭、恢复 HEALTHY、计数增长和双向全量快照 |
 | 正向列车/正常改方/反向列车 | 通过 | `test_real_tcp_runtime_runs_forward_changes_direction_and_runs_reverse` |
@@ -69,6 +72,7 @@
 - 单进程双站同屏仍由两个独立运行时通过真实 TCP 交换信息；单站与多进程入口
   仅保留用于诊断。
 
-结论：第五阶段自动化、真实运行、生命周期、工程故障和视觉验收通过；最终
-独立复审无 Critical/Important，配置、编译、差异和正式包边界检查均通过，
-待 Git 提交推送后形成交付检查点。
+结论：既有双站自动化、真实运行、生命周期、工程故障和视觉验收通过；阶段 0～7
+的 CTCS-2 规范对齐、2D 列车、A/B 日志告警和交互一致性已追加完成。阶段 8 的
+规范矩阵与交付边界见 [`CTCS2_SPEC_ACCEPTANCE.md`](CTCS2_SPEC_ACCEPTANCE.md)；
+所有能力仍限定为课程教学仿真，不得用于真实铁路控制。
