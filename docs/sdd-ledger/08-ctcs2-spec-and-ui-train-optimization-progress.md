@@ -13,7 +13,7 @@
 - 阶段 1：已完成（`ed405ec`，已推送）
 - 阶段 2：已完成（`5b6abb3`，已推送）
 - 阶段 3：已完成（`de8cdd7`，已推送）
-- 阶段 4：未开始
+- 阶段 4：已完成（`87cf2eb`，已推送）
 - 阶段 5：未开始
 - 阶段 6：未开始
 - 阶段 7：未开始
@@ -83,3 +83,22 @@
   `git diff --check` 待提交前再次执行。
 - 交接下一步：阶段 4 接口状态、启动自检和诊断教学模型；阶段 3 全量
   `303 passed in 7.93s`，提交 `de8cdd7` 已推送到远端。
+
+## 阶段 4 完成记录
+
+- 新增 `InterfaceId`、`InterfaceHealth`、`StartupStep`、`InterfaceStatus` 和
+  `DualComputeDiagnostic`，统一表达 P/Q/R/S/T/U/V/W 接口状态与教学主备诊断；
+  不把诊断模型描述为 SIL4 或现场安全设备。
+- 新增 `InterfaceStatusService`，启动自检顺序固定为逻辑运算单元、安全输入/输出、
+  程序/数据存储、轨道电路、联锁/CTC、相邻 TCC、LEU；未完成或失败时维持
+  `INITIALIZING/FAILED`，不会自动标记健康；失败后禁止继续执行后续自检。
+- `ApplicationRuntime` 将相邻 TCC 连接状态映射到 U 接口并支持故障恢复；
+  `DualStationApplication` 启动时进入自检态，A 站启动失败写入诊断故障。
+- 全局状态条新增接口汇总显示，明确“自检中/降级/故障/全部健康”，并保留双站
+  锁闭和通信状态；新增界面测试验证文字与语义色。
+- 阶段定向测试 `9 passed`；允许本机回环端口的全量回归 `309 passed in 7.11s`；
+  普通沙箱运行真实 TCP 用例会因禁止绑定临时端口失败，不能作为业务失败证据。
+- `git diff --check` 与 `compileall` 通过；代码提交 `87cf2eb` 已推送到
+  `origin/codex/dual-station-dashboard`。
+- 交接下一步：阶段 5 列车 2D 场景和可重复生命周期；保持 UI 只读快照、控制器为
+  唯一写入口，继续采用测试先行和每阶段独立提交。

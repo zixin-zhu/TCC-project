@@ -207,6 +207,29 @@
   执行 `git status --short`、`git log --oneline --decorate -5` 和最终验收文档中
   的全量测试命令，确认远端/本地一致后再继续。
 
+## CTCS-2 规范对齐与列车演示优化阶段状态
+
+执行总控方案：`docs/tcc-vibe-plans/08-ctcs2-spec-and-ui-train-optimization.md`。
+当前工作树为 `/Users/zhu/Desktop/TCC-project/.worktrees/ctcs2-rebuild`，分支为
+`codex/dual-station-dashboard`；每个阶段均独立提交并推送，断线恢复以
+`docs/HANDOFF_交接说明.md` 和 `docs/sdd-ledger/08-ctcs2-spec-and-ui-train-optimization-progress.md`
+为准。
+
+| 阶段 | 状态 | 提交 | 全量验收 |
+|---|---|---|---|
+| 0 规范追踪与账本 | 已完成 | `bc4c336` | 287 passed |
+| 1 双站本地权威与改方不变量 | 已完成 | `ed405ec` + `5de2d22` | 295 passed |
+| 2 轨道防护、编码与点灯 | 已完成 | `5b6abb3` + `3843f7c` | 299 passed |
+| 3 LEU、应答器与临时限速 | 已完成 | `de8cdd7` + `4a0d912` | 303 passed |
+| 4 接口状态、自检与诊断 | 已完成 | `87cf2eb` | 309 passed |
+| 5 列车 2D 场景与可重复生命周期 | 未开始 | — | — |
+| 6 A/B 日志告警页 | 未开始 | — | — |
+| 7 集成与交付验收 | 未开始 | — | — |
+
+阶段 4 产物包括 P/Q/R/S/T/U/V/W 接口状态模型、启动自检服务、教学主备诊断模型、
+相邻 TCC U 接口故障恢复映射和全局状态栏汇总。下一步只执行阶段 5，不跨阶段修改
+列车或日志功能。
+
 ## UX 一致性修复（2026-09-26，六处）
 
 > 依据《软件使用说明书与bug排查报告》确定的问题清单，全部采用测试先行修复。
