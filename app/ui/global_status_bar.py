@@ -2,6 +2,7 @@
 
 from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel
 
+from app.core.interface_models import InterfaceHealth, InterfaceStatus
 from app.ui.dual_snapshot import DualStationSnapshot
 from app.ui.styles import set_semantic_state
 
@@ -15,12 +16,14 @@ class GlobalStatusBar(QFrame):
         layout = QHBoxLayout(self)
         self.lifecycle_label = QLabel("系统：启动中")
         self.communication_label = QLabel("站间通信：等待双站")
+        self.interface_label = QLabel("接口：--")
         self.direction_label = QLabel("当前方向：--")
         self.lock_label = QLabel("作业状态：安全锁闭")
         self.alarm_label = QLabel("活动告警：--")
         for label in (
             self.lifecycle_label,
             self.communication_label,
+            self.interface_label,
             self.direction_label,
             self.lock_label,
             self.alarm_label,
@@ -75,3 +78,35 @@ class GlobalStatusBar(QFrame):
             "severity",
             "critical" if snapshot.critical_alarm_count else "info",
         )
+
+    def set_interface_status(
+        self, statuses: tuple[InterfaceStatus, ...] | list[InterfaceStatus]
+    ) -> None:
+        """展示 P/Q/R/S/T/U/V/W 接口汇总，不用颜色替代具体状态文字。"""
+        if not statuses:
+            self.interface_label.setText("接口：未接入诊断")
+            set_semantic_state(self.interface_label, "severity", "warning")
+            return
+        failed = sum(item.health is InterfaceHealth.FAILED for item in statuses)
+        degraded = sum(item.health is InterfaceHealth.DEGRADED for item in statuses)
+        initializing = sum(
+            item.health is InterfaceHealth.INITIALIZING for item in statuses
+        )
+        disconnected = sum(
+            item.health is InterfaceHealth.DISCONNECTED for item in statuses
+        )
+        if failed:
+            text = f"接口：{failed} 项故障"
+            severity = "critical"
+        elif degraded:
+            text = f"接口：{degraded} 项降级"
+            severity = "warning"
+        elif initializing or disconnected:
+            pending = initializing + disconnected
+            text = f"接口：启动自检中（待检查 {pending} 项）"
+            severity = "warning"
+        else:
+            text = f"接口：全部健康（{len(statuses)} 项）"
+            severity = "info"
+        self.interface_label.setText(text)
+        set_semantic_state(self.interface_label, "severity", severity)

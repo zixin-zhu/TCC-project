@@ -7,6 +7,7 @@ from PyQt5.QtTest import QSignalSpy
 from PyQt5.QtWidgets import QLabel
 
 from app.core.enums import ConnectionState, RunningDirection
+from app.core.interface_models import InterfaceHealth, InterfaceId, InterfaceStatus
 from app.infrastructure.config_loader import load_project_config
 from app.ui.dual_snapshot import DualStationSnapshotAggregator
 from app.ui.global_status_bar import GlobalStatusBar
@@ -80,3 +81,27 @@ def test_global_status_bar_exposes_text_and_semantic_state(qtbot) -> None:  # ty
     assert "作业允许" in status.lock_label.text()
     assert "活动告警" in status.alarm_label.text()
     assert status.communication_label.property("connectionState") == "HEALTHY"
+
+    status.set_interface_status(
+        (
+            InterfaceStatus(
+                InterfaceId.S,
+                InterfaceHealth.INITIALIZING,
+                changed_at_ms=1,
+                message="启动自检中",
+            ),
+        )
+    )
+    assert "启动自检中" in status.interface_label.text()
+
+    status.set_interface_status(
+        (
+            InterfaceStatus(
+                InterfaceId.S,
+                InterfaceHealth.FAILED,
+                changed_at_ms=2,
+                message="LEU 发送失败",
+            ),
+        )
+    )
+    assert "故障" in status.interface_label.text()

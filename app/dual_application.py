@@ -17,7 +17,9 @@ from app.core.enums import NetworkRole
 from app.core.exceptions import ConfigError
 from app.core.models import ProjectConfig
 from app.core.models import OperationResult
+from app.core.interface_models import InterfaceHealth, InterfaceId
 from app.infrastructure.config_loader import load_project_config
+from app.services.interface_status_service import InterfaceStatusService
 
 
 def validate_dual_station_config(
@@ -85,6 +87,7 @@ class DualStationApplication(QObject):
         self._b_started = False
         self._station_a_stopped = False
         self._station_b_stopped = False
+        self.interface_status = InterfaceStatusService()
         station_a.worker.server_ready.connect(self._on_server_ready)
         station_a.worker.error_occurred.connect(self._on_station_a_error)
 
@@ -112,6 +115,7 @@ class DualStationApplication(QObject):
         """只启动 A；B 必须等待本次 A 的监听就绪信号。"""
         if self.state is not DualLifecycleState.IDLE:
             return
+        self.interface_status.begin_startup(now_ms=0)
         self._set_state(DualLifecycleState.STARTING_A)
         self.station_a.start()
 
@@ -128,6 +132,12 @@ class DualStationApplication(QObject):
         if self.state is not DualLifecycleState.STARTING_A:
             return
         self.failure_reason = f"A站启动失败：{message}"
+        self.interface_status.set_state(
+            InterfaceId.R,
+            InterfaceHealth.FAILED,
+            now_ms=0,
+            message=self.failure_reason,
+        )
         self._set_state(DualLifecycleState.FAILED)
         self.startup_failed.emit(self.failure_reason)
 

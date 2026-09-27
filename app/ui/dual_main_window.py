@@ -330,6 +330,11 @@ class DualStationMainWindow(QMainWindow):
 
     def refresh(self, model: DualStationSnapshot) -> None:
         self.global_status.set_snapshot(model)
+        interface_service = getattr(self.runtime, "interface_status", None)
+        if interface_service is None:
+            self.global_status.set_interface_status(())
+        else:
+            self.global_status.set_interface_status(interface_service.snapshot())
         # 用聚合器给出的具体锁闭原因（如“共享区段状态不一致、站间通信异常”）
         # 替换笼统文案，让用户在页面操作结果栏直接看到被拒/锁闭的真实原因。
         lock_reason = model.lock_reason or "双站条件未满足"

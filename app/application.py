@@ -11,6 +11,7 @@ from typing import Any, Callable, Mapping
 from PyQt5.QtCore import QObject, QTimer, pyqtSlot
 
 from app.core.enums import ConnectionState, RunningDirection
+from app.core.interface_models import InterfaceHealth, InterfaceId
 from app.core.exceptions import ProtocolError
 from app.core.models import OperationResult
 from app.infrastructure.config_loader import (
@@ -30,6 +31,7 @@ from app.services.direction_change_protocol import DirectionProtocolAdapter
 from app.services.peer_sync_service import PeerSyncService
 from app.services.persistence_service import PersistenceService
 from app.services.tcc_controller import TccController
+from app.services.interface_status_service import InterfaceStatusService
 
 
 class ThreadSafeStateProvider:
@@ -68,6 +70,8 @@ class ApplicationRuntime(QObject):
         self.network_thread = network_thread
         self.peer_sync = peer_sync
         self.state_provider = state_provider
+        # 接口健康度独立于 TCC 业务快照；U 接口跟随相邻 TCC TCP 状态更新。
+        self.interface_status = InterfaceStatusService()
         self._received_count = 0
         self._sent_count = 0
         self._business_received = 0
@@ -202,6 +206,19 @@ class ApplicationRuntime(QObject):
             return
         if state is ConnectionState.DISCONNECTED:
             self.peer_sync.reset()
+        interface_health = {
+            ConnectionState.HEALTHY: InterfaceHealth.HEALTHY,
+            ConnectionState.DEGRADED: InterfaceHealth.DEGRADED,
+            ConnectionState.DISCONNECTED: InterfaceHealth.DISCONNECTED,
+            ConnectionState.CONNECTING: InterfaceHealth.INITIALIZING,
+            ConnectionState.HANDSHAKING: InterfaceHealth.INITIALIZING,
+        }[state]
+        self.interface_status.set_state(
+            InterfaceId.U,
+            interface_health,
+            now_ms=int(time.monotonic() * 1000),
+            message=f"相邻 TCC 通信：{state.value}",
+        )
         self.controller.set_connection_state(state)
 
     @pyqtSlot(object)
