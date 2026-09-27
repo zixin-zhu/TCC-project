@@ -146,7 +146,7 @@ _REASONS: Mapping[DirectionRejectCode, str] = {
     DirectionRejectCode.DISCONNECTED: "改方期间站间通信中断",
     DirectionRejectCode.PEER_REJECTED: "对站拒绝改方",
     DirectionRejectCode.NO_ACTIVE_TRANSACTION: "当前没有活动改方事务",
-    DirectionRejectCode.NOT_AUTHORITY: "只有 A 站方向权威可以发起改方",
+    DirectionRejectCode.NOT_AUTHORITY: "当前站不是本次改方事务允许的请求方",
     DirectionRejectCode.RECOVERY_PENDING: "方向处于安全锁闭，必须先完成权威同步恢复",
 }
 
@@ -172,7 +172,7 @@ class DirectionChangeMachine:
         current_direction: RunningDirection,
         *,
         timeout_ms: int = 5000,
-        authority_station_id: str = "A",
+        authority_station_id: str | None = "A",
     ) -> None:
         if timeout_ms <= 0:
             raise ValueError("timeout_ms 必须为正数")
@@ -199,7 +199,11 @@ class DirectionChangeMachine:
         now_ms: int,
         transaction_id: str | None = None,
     ) -> DirectionOutcome:
-        if self.station_id != self.authority_station_id:
+        # 兼容旧版 A 权威模式；新控制器传入 None，按事务请求方对称办理。
+        if (
+            self.authority_station_id is not None
+            and self.station_id != self.authority_station_id
+        ):
             return self._reject(DirectionRejectCode.NOT_AUTHORITY)
         if self.operation_locked:
             return self._reject(DirectionRejectCode.RECOVERY_PENDING)
@@ -356,7 +360,8 @@ class DirectionChangeMachine:
                 (DirectionAction(DirectionActionType.LOCK, reason=_REASONS[unsafe]),),
             )
         if (
-            self.station_id == self.authority_station_id
+            self.authority_station_id is not None
+            and self.station_id == self.authority_station_id
             and authoritative_direction is not self.current_direction
         ):
             self.phase = DirectionPhase.FAULT_LOCKED
@@ -400,6 +405,23 @@ class DirectionChangeMachine:
             None,
             tuple(actions),
         )
+
+    def reconcile_peer_direction(
+        self,
+        peer_direction: RunningDirection,
+        guard: DirectionGuard,
+    ) -> DirectionOutcome:
+        """重连后复核对端方向，不把对端快照直接写成本地方向。
+
+        双站均为本站权威时，方向不一致只能进入安全锁闭；只有双方方向
+        已经一致且守卫通过，才能完成重连恢复。
+        """
+        unsafe = self._guard_failure(guard)
+        if unsafe is not None:
+            return self._fault_lock(unsafe)
+        if peer_direction is not self.current_direction:
+            return self._fault_lock(DirectionRejectCode.DIRECTION_MISMATCH)
+        return self.restore_from_authority(peer_direction, guard)
 
     def export_recovery_record(self) -> DirectionRecoveryRecord:
         """导出应用层事务证据；阶段 6 将其持久化并随全量同步交换。"""
@@ -488,7 +510,10 @@ class DirectionChangeMachine:
     def _handle_prepare(
         self, message: DirectionWireMessage, guard: DirectionGuard, now_ms: int
     ) -> DirectionOutcome:
-        if message.requester_station_id != self.authority_station_id:
+        if (
+            self.authority_station_id is not None
+            and message.requester_station_id != self.authority_station_id
+        ):
             return self._reject_for_message(message, DirectionRejectCode.NOT_AUTHORITY)
         if self.operation_locked and self._transaction is None:
             return self._reject_for_message(

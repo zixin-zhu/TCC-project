@@ -129,6 +129,9 @@ class PeerSnapshot:
     boundary_states: Mapping[str, TrackState]
     state_version: int
     received_at_ms: int
+    # 以下字段用于站间安全复核，均为可选扩展，保持旧报文构造兼容。
+    active_route_ids: Tuple[str, ...] = ()
+    direction_operation_locked: bool = False
 
     def is_fresh(self, now_ms: int, timeout_ms: int) -> bool:
         return 0 <= now_ms - self.received_at_ms <= timeout_ms
@@ -163,6 +166,47 @@ class SignalControlResult:
     protected: bool
     state_version: int
     alarm_level: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class LocalAuthorityState:
+    """本站控制器维护的权威状态快照。
+
+    该对象只描述本站可以写入的状态；对端状态必须通过
+    :class:`PeerSnapshot` 进入安全校核，不能直接覆盖本对象。
+    """
+
+    station_id: str
+    tracks: Mapping[str, TrackState]
+    signals: Mapping[str, SignalControlResult]
+    active_route_ids: Tuple[str, ...]
+    telegram_version: int
+    state_version: int
+
+    @classmethod
+    def from_runtime(
+        cls,
+        runtime: "StationRuntimeState",
+        *,
+        signals: Mapping[str, SignalControlResult] | None = None,
+        telegram_version: int = 0,
+    ) -> "LocalAuthorityState":
+        """从可变运行态复制出不可变语义快照。
+
+        UI 和网络层只应接收本快照，避免把控制器内部可变字典泄露出去。
+        """
+
+        return cls(
+            station_id=runtime.station_id,
+            tracks={
+                section_id: runtime.effective_track_state(section_id)
+                for section_id in runtime.track_inputs
+            },
+            signals=dict(signals or {}),
+            active_route_ids=tuple(sorted(runtime.active_route_ids)),
+            telegram_version=telegram_version,
+            state_version=runtime.state_version,
+        )
 
 
 @dataclass(frozen=True)

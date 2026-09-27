@@ -136,8 +136,6 @@ class TccController:
             persistence.load_direction_authority(
                 config.station.station_id, now_ms=self._clock_ms()
             )
-            if config.station.station_id == "A"
-            else None
         )
         self.runtime = StationRuntimeState.create(
             config.station.station_id,
@@ -160,6 +158,8 @@ class TccController:
                 config.station.station_id,
                 config.station.network.peer_station_id,
                 self.runtime.running_direction,
+                # A/B 都维护本站权威状态；A Server/B Client 只表示建链角色。
+                authority_station_id=None,
             ),
             self.runtime,
             send_message=self._send_direction,
@@ -193,7 +193,7 @@ class TccController:
         self._business_sent = 0
         self._heartbeat_received = 0
         self._heartbeat_sent = 0
-        if config.station.station_id == "A" and restored_authority is None:
+        if restored_authority is None:
             self._save_authoritative_direction(recovery=None)
         self.snapshot = self._recalculate_and_publish(
             operation=None, include_state_stage=False
@@ -378,9 +378,10 @@ class TccController:
             self._deferred_state_sync = True
         if (
             result.success
-            and self.config.station.station_id == "A"
             and self._pending_recovery is not None
             and self._direction_confirmation_sender is not None
+            and self._pending_recovery.requester_station_id
+            == self.config.station.station_id
         ):
             try:
                 self._direction_confirmation_sender(self._pending_recovery)
@@ -394,6 +395,29 @@ class TccController:
             operation=("恢复权威方向同步", result, {"direction": authoritative_direction.value}),
             publish_peer_state=False,
         )
+        return result
+
+    def reconcile_peer_direction(
+        self, peer_direction: RunningDirection
+    ) -> OperationResult:
+        """重连全量同步时复核方向；不把对端状态当作本站写入命令。"""
+        self._ensure_open()
+        coordinated = self._direction.reconcile_peer_direction(
+            peer_direction, self._direction_guard()
+        )
+        result = OperationResult(coordinated.outcome.accepted, coordinated.outcome.reason)
+        self._recalculate_and_publish(
+            operation=("复核对端运行方向", result, {"direction": peer_direction.value}),
+            publish_peer_state=False,
+        )
+        if not result.success:
+            self.alarms.raise_alarm(
+                "PEER_DIRECTION_MISMATCH",
+                AlarmLevel.CRITICAL,
+                result.reason,
+                "peer",
+                now_ms=self._clock_ms(),
+            )
         return result
 
     def expire_direction_change(self) -> OperationResult | None:
@@ -732,6 +756,7 @@ class TccController:
             "state_version": self.runtime.state_version,
             "running_direction": self.runtime.running_direction.value,
             "direction_operation_locked": self.runtime.direction_operation_locked,
+            "active_route_ids": sorted(self.runtime.active_route_ids),
             "boundary_states": {
                 section.id: self.runtime.effective_track_state(section.id).value
                 for section in self.config.topology.sections
@@ -802,10 +827,9 @@ class TccController:
     def _persist_authority_before_direction_apply(
         self, target_direction: RunningDirection
     ) -> None:
-        """A 在内存 APPLY 和发送 COMMIT 前先落盘目标权威方向。"""
+        """本站在内存 APPLY 和发送 COMMIT 前先落盘目标方向。"""
         if (
-            self.config.station.station_id == "A"
-            and target_direction is not self._persisted_authoritative_direction
+            target_direction is not self._persisted_authoritative_direction
             and not self._save_authoritative_direction(
                 recovery=None,
                 direction=target_direction,
@@ -821,8 +845,6 @@ class TccController:
         direction: RunningDirection | None = None,
         state_version: int | None = None,
     ) -> bool:
-        if self.config.station.station_id != "A":
-            return True
         recovery_payload = None
         if recovery is not None:
             recovery_payload = {
@@ -841,7 +863,7 @@ class TccController:
         )
         saved = self.persistence.save_direction_authority(
             DirectionAuthorityEntry(
-                station_id="A",
+                station_id=self.config.station.station_id,
                 direction=saved_direction,
                 updated_at_ms=self._clock_ms(),
                 state_version=saved_version,
@@ -856,7 +878,7 @@ class TccController:
     def _parse_recovery_record(
         payload: Mapping[str, Any]
     ) -> DirectionRecoveryRecord:
-        """严格恢复 A 站证据；损坏数据必须阻止启动而不能静默忽略。"""
+        """严格恢复本站证据；损坏数据必须阻止启动而不能静默忽略。"""
         try:
             return DirectionRecoveryRecord(
                 transaction_id=str(payload["transaction_id"]),

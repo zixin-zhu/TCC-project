@@ -176,6 +176,16 @@ class DirectionChangeCoordinator:
             self.machine.restore_from_authority(authoritative_direction, guard)
         )
 
+    def reconcile_peer_direction(
+        self,
+        peer_direction: RunningDirection,
+        guard: DirectionGuard,
+    ) -> CoordinatedDirectionResult:
+        """重连时复核对端方向；不允许快照覆盖本站方向。"""
+        return self._execute(
+            self.machine.reconcile_peer_direction(peer_direction, guard)
+        )
+
     def confirm_authority_applied(
         self,
         record: DirectionRecoveryRecord,

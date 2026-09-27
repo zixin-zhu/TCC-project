@@ -295,6 +295,38 @@ def test_only_authority_station_can_start_direction_change() -> None:
     assert projection.operation_locked is False
 
 
+def test_symmetric_mode_allows_either_station_to_start_direction_change() -> None:
+    """新 CTCS-2 模型按事务角色决定请求方，不把 A 固定成永久权威。"""
+    requester = DirectionChangeMachine(
+        "B", "A", RunningDirection.A_TO_B, authority_station_id=None
+    )
+
+    outcome = requester.start_request(
+        RunningDirection.B_TO_A,
+        _safe_guard(local_version=20, peer_version=10),
+        now_ms=1000,
+        transaction_id=_tx("symmetric-b-requester"),
+    )
+
+    assert outcome.accepted
+    assert requester.has_active_transaction
+
+
+def test_symmetric_resync_does_not_overwrite_local_direction_on_peer_mismatch() -> None:
+    machine = DirectionChangeMachine(
+        "B", "A", RunningDirection.A_TO_B, authority_station_id=None
+    )
+
+    outcome = machine.reconcile_peer_direction(
+        RunningDirection.B_TO_A, _safe_guard(local_version=20, peer_version=10)
+    )
+
+    assert not outcome.accepted
+    assert outcome.reject_code is DirectionRejectCode.DIRECTION_MISMATCH
+    assert machine.current_direction is RunningDirection.A_TO_B
+    assert machine.operation_locked is True
+
+
 def test_ack_delivery_failure_keeps_authority_projection_and_locks_operation() -> None:
     requester = DirectionChangeMachine("A", "B", RunningDirection.A_TO_B)
     responder = DirectionChangeMachine("B", "A", RunningDirection.A_TO_B)

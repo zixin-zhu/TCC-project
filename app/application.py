@@ -305,12 +305,7 @@ class ApplicationRuntime(QObject):
                 return
             if peer_direction is None:
                 return
-            authoritative = (
-                self.controller.runtime.running_direction
-                if self.controller.config.station.station_id == "A"
-                else peer_direction
-            )
-            self.controller.restore_authoritative_direction(authoritative)
+            self.controller.reconcile_peer_direction(peer_direction)
 
     @pyqtSlot(object)
     def _on_message_sent(self, _message: object) -> None:

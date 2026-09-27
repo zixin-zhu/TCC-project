@@ -23,6 +23,23 @@ def test_full_sync_creates_peer_snapshot_with_receive_time() -> None:
     assert snapshot.received_at_ms == 1234
 
 
+def test_full_sync_preserves_peer_route_and_lock_metadata() -> None:
+    service = PeerSyncService(peer_station_id="B", allowed_boundary_ids={"AB"})
+
+    snapshot = service.apply_full_sync(
+        {
+            "boundary_states": {"AB": "CLEAR"},
+            "state_version": 7,
+            "active_route_ids": ["B_DEPART"],
+            "direction_operation_locked": True,
+        },
+        received_at_ms=1234,
+    )
+
+    assert snapshot.active_route_ids == ("B_DEPART",)
+    assert snapshot.direction_operation_locked is True
+
+
 def test_heartbeat_refreshes_snapshot_liveness_without_changing_version() -> None:
     """心跳只能刷新活性时间，不能伪造状态版本或轨道状态变化。"""
     service = PeerSyncService(peer_station_id="B", allowed_boundary_ids={"AB"})

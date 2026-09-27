@@ -58,6 +58,10 @@ class PeerSyncService:
             boundary_states=validated,
             state_version=version,
             received_at_ms=received_at_ms,
+            active_route_ids=self._parse_route_ids(payload.get("active_route_ids", ())),
+            direction_operation_locked=self._parse_lock_flag(
+                payload.get("direction_operation_locked", False)
+            ),
         )
         return self._snapshot
 
@@ -101,8 +105,25 @@ class PeerSyncService:
             boundary_states=states,
             state_version=version,
             received_at_ms=received_at_ms,
+            active_route_ids=self._snapshot.active_route_ids,
+            direction_operation_locked=self._snapshot.direction_operation_locked,
         )
         return self._snapshot
+
+    @staticmethod
+    def _parse_route_ids(raw_routes: object) -> tuple[str, ...]:
+        """严格解析活动进路列表，避免把任意 JSON 值当成安全状态。"""
+        if not isinstance(raw_routes, (list, tuple)):
+            raise ProtocolError("active_route_ids 必须是列表")
+        if any(not isinstance(route_id, str) or not route_id for route_id in raw_routes):
+            raise ProtocolError("active_route_ids 包含非法进路编号")
+        return tuple(sorted(set(raw_routes)))
+
+    @staticmethod
+    def _parse_lock_flag(raw_locked: object) -> bool:
+        if type(raw_locked) is not bool:
+            raise ProtocolError("direction_operation_locked 必须是布尔值")
+        return raw_locked
 
     def _validate_states(self, raw_states: Mapping[object, object]) -> dict[str, TrackState]:
         states: dict[str, TrackState] = {}

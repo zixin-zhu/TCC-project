@@ -13,6 +13,7 @@ class TrackInputSource(str, Enum):
     TRAIN = "TRAIN"
     OPERATOR = "OPERATOR"
     FAULT = "FAULT"
+    SHUNT = "SHUNT"
 
 
 class TrackState(str, Enum):
