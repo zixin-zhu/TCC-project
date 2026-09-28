@@ -190,8 +190,41 @@ def test_train_reaches_other_station_and_reports_last_balise(qapp) -> None:  # t
     )
 
 
-def test_train_stops_before_destination_without_arrival_route(qapp) -> None:  # type: ignore[no-untyped-def]
-    """目的站未建立接车进路时停车，但不应进入方向安全锁闭。"""
+def test_route_creation_combinations_do_not_lock_direction(qapp) -> None:  # type: ignore[no-untyped-def]
+    """出发/到达进路可分别或同时建立，建立动作本身不触发安全联锁。"""
+    for direction, departure_station, departure_route, arrival_station, arrival_route in (
+        (
+            RunningDirection.A_TO_B,
+            "A",
+            "A_DEPART",
+            "B",
+            "B_ARRIVE",
+        ),
+        (
+            RunningDirection.B_TO_A,
+            "B",
+            "B_DEPART",
+            "A",
+            "A_ARRIVE",
+        ),
+    ):
+        for create_departure, create_arrival in (
+            (True, False),
+            (False, True),
+            (True, True),
+        ):
+            station_a, station_b = _pair(direction)
+            stations = {"A": station_a, "B": station_b}
+            if create_departure:
+                assert stations[departure_station].establish_route(departure_route).success
+            if create_arrival:
+                assert stations[arrival_station].establish_route(arrival_route).success
+            assert station_a.snapshot.direction_operation_locked is False
+            assert station_b.snapshot.direction_operation_locked is False
+
+
+def test_train_triggers_bilateral_safety_lock_without_arrival_route(qapp) -> None:  # type: ignore[no-untyped-def]
+    """列车将进入 B_T2 但无 B_ARRIVE 时，必须触发双站安全联锁。"""
     station_a, station_b = _pair()
     assert station_a.establish_route("A_DEPART").success
     coordinator = DualTrainCoordinator(station_a, station_b)
@@ -204,8 +237,10 @@ def test_train_stops_before_destination_without_arrival_route(qapp) -> None:  # 
     assert train.status is DualTrainStatus.STOPPED
     assert train.section_id == "Q4"
     assert "B_ARRIVE 未建立" in train.safety_state
-    assert station_a.snapshot.direction_operation_locked is False
-    assert station_b.snapshot.direction_operation_locked is False
+    assert station_a.snapshot.direction_operation_locked is True
+    assert station_b.snapshot.direction_operation_locked is True
+    assert "B站接车进路 B_ARRIVE 未建立" in station_a.snapshot.safety_lock_reason
+    assert "B_T2" in station_b.snapshot.safety_lock_reason
 
 
 class _FailCurrentClearAdapter(SharedTrackInputAdapter):

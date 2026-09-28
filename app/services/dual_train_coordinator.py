@@ -317,23 +317,29 @@ class DualTrainCoordinator(QObject):
                 return
 
             next_section = order[next_index]
+            arrival_route = self._arrival_route_for(train.direction, next_section)
+            if arrival_route is not None:
+                destination_controller, route_id = arrival_route
+                if route_id not in destination_controller.snapshot.active_route_ids:
+                    destination_station = destination_controller.config.station.station_id
+                    reason = (
+                        f"{destination_station}站接车进路 {route_id} 未建立，"
+                        f"列车将进入 {next_section} 接近区段"
+                    )
+                    train.position_m = length
+                    train.distance_ahead_m = 0.0
+                    # 这是运行期安全条件被破坏，不是普通前方占用停车。
+                    # A/B 两端同时进入故障锁闭，后续解除必须由双方复核。
+                    self._station_a.enter_safety_lock(reason)
+                    self._station_b.enter_safety_lock(reason)
+                    self._stop_train(train, f"{reason}，触发安全联锁，列车安全停车")
+                    return
+
             if not self._section_is_clear(next_section):
                 train.position_m = length
                 train.distance_ahead_m = 0.0
                 self._stop_train(train, f"前方区段 {next_section} 非空闲")
                 return
-
-            arrival_route = self._arrival_route_for(train.direction, next_section)
-            if arrival_route is not None:
-                destination_controller, route_id = arrival_route
-                if route_id not in destination_controller.snapshot.active_route_ids:
-                    train.position_m = length
-                    train.distance_ahead_m = 0.0
-                    self._stop_train(
-                        train,
-                        f"目的站接车进路 {route_id} 未建立，列车安全停车",
-                    )
-                    return
 
             # 安全关键顺序：先确认下一段占用成功，再尝试清除当前段。
             occupied = self._track_input.set_state(

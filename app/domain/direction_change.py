@@ -410,6 +410,28 @@ class DirectionChangeMachine:
             )
         return self._abort(DirectionRejectCode.DISCONNECTED)
 
+    def force_safety_lock(self, reason: str) -> DirectionOutcome:
+        """处理列车运行期发现的安全条件破坏，进入故障锁闭。
+
+        该入口只允许置为锁闭，不修改方向、不清除轨道状态，也不生成网络
+        改方报文。它用于列车即将进入目的站但未建立接车进路等运行期联锁
+        事件；解除仍必须经过既有的双方快照和安全守卫复核。
+        """
+        if not reason.strip():
+            raise ValueError("安全联锁原因不能为空")
+        self.phase = DirectionPhase.FAULT_LOCKED
+        self.operation_locked = True
+        return DirectionOutcome(
+            False,
+            self.phase,
+            reason,
+            None,
+            (
+                DirectionAction(DirectionActionType.LOCK, reason=reason),
+                DirectionAction(DirectionActionType.LOG, reason=reason),
+            ),
+        )
+
     def restore_from_authority(
         self,
         authoritative_direction: RunningDirection,

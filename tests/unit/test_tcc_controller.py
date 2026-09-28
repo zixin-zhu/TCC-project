@@ -231,6 +231,31 @@ def test_peer_direction_observation_does_not_lock_for_active_route() -> None:
     assert controller.snapshot.direction_operation_locked is False
 
 
+def test_train_safety_lock_preserves_specific_reason_for_recovery() -> None:
+    controller = _controller()
+    assert controller.reconcile_peer_direction(RunningDirection.A_TO_B).success
+
+    result = controller.enter_safety_lock(
+        "B站接车进路 B_ARRIVE 未建立，列车将进入 B_T2 接近区段"
+    )
+
+    assert result.success is False
+    assert controller.snapshot.direction_operation_locked is True
+    assert controller.snapshot.safety_lock_reason == result.reason
+    assert any(
+        item.code == "SAFETY_INTERLOCK" and item.active
+        for item in controller.snapshot.alarms
+    )
+
+    recovered = controller.recover_safety_lock()
+
+    assert recovered.success
+    assert not any(
+        item.code == "SAFETY_INTERLOCK" and item.active
+        for item in controller.snapshot.alarms
+    )
+
+
 def test_controller_close_closes_persistence_once() -> None:
     controller = _controller()
     controller.close()

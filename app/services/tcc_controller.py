@@ -98,6 +98,9 @@ class TccSnapshot:
     heartbeat_sent: int
     # 保留默认值，兼容阶段 1~5 的测试替身和外部只读快照构造。
     alarm_history: tuple[AlarmRecord, ...] = ()
+    # 最近一次导致本站进入安全锁闭的具体原因；启动初始锁闭可能为空，
+    # 由双站聚合器补充通信、方向和快照等基础条件提示。
+    safety_lock_reason: str = ""
 
 
 class TccController:
@@ -139,6 +142,9 @@ class TccController:
         self._peer_direction: RunningDirection | None = None
         self._peer_snapshot_was_fresh = False
         self._deferred_state_sync = False
+        # 与布尔锁闭状态并列保存可审计的具体原因，供双站聚合器和安全
+        # 复核弹窗直接展示，避免只显示“车站安全锁闭”这类笼统文案。
+        self._safety_lock_reason = ""
         restored_authority = (
             persistence.load_direction_authority(
                 config.station.station_id, now_ms=self._clock_ms()
@@ -427,14 +433,57 @@ class TccController:
 
         self._ensure_open()
         if self._direction.machine.has_active_transaction:
-            result = OperationResult(False, "改方事务仍在处理中，不能人工解除安全锁闭")
+            reason = "改方事务仍在处理中，不能人工解除安全锁闭"
+            if self._safety_lock_reason:
+                reason = f"锁闭原因：{self._safety_lock_reason}；{reason}"
+            result = OperationResult(False, reason)
             self._save_operation("安全锁闭复核", result, {})
             return result
         if self._peer_direction is None:
-            result = OperationResult(False, "尚无双方确认的对站方向，不能解除安全锁闭")
+            reason = "尚无双方确认的对站方向，不能解除安全锁闭"
+            if self._safety_lock_reason:
+                reason = f"锁闭原因：{self._safety_lock_reason}；{reason}"
+            result = OperationResult(False, reason)
             self._save_operation("安全锁闭复核", result, {})
             return result
-        return self.reconcile_peer_direction(self._peer_direction)
+        result = self.reconcile_peer_direction(self._peer_direction)
+        if result.success:
+            self._safety_lock_reason = ""
+            self.alarms.clear_alarm(
+                "SAFETY_INTERLOCK", "interlocking", now_ms=self._clock_ms()
+            )
+            self._refresh_snapshot_only()
+            return OperationResult(True, "安全复核通过，本站安全锁闭已解除")
+        detail = result.reason
+        if self._safety_lock_reason and self._safety_lock_reason not in detail:
+            detail = f"锁闭原因：{self._safety_lock_reason}；当前复核：{detail}"
+        return OperationResult(False, f"安全复核失败：{detail}")
+
+    def enter_safety_lock(self, reason: str) -> OperationResult:
+        """记录运行期安全事件并置本站方向作业为故障锁闭。
+
+        这是列车协调器等安全事件入口，不是 UI 强制解锁接口。调用后所有
+        进路、信号和 LEU 计算均读取同一锁闭态；解除只能调用
+        :meth:`recover_safety_lock` 完成真实守卫复核。
+        """
+        self._ensure_open()
+        if not reason.strip():
+            raise ValueError("安全联锁原因不能为空")
+        self._safety_lock_reason = reason
+        self._direction.force_safety_lock(reason)
+        now = self._clock_ms()
+        self.alarms.raise_alarm(
+            "SAFETY_INTERLOCK",
+            AlarmLevel.CRITICAL,
+            reason,
+            "interlocking",
+            now_ms=now,
+        )
+        result = OperationResult(False, reason)
+        self._recalculate_and_publish(
+            operation=("触发安全联锁", result, {"reason": reason})
+        )
+        return result
 
     def review_direction_request(self) -> OperationResult:
         """展示/复核本站收到的改方请求；不允许界面直接批准或写方向。"""
@@ -630,6 +679,7 @@ class TccController:
         self._peer_snapshot_was_fresh = fresh
         if not fresh:
             self._direction.on_connection_state(ConnectionState.DEGRADED)
+            self._safety_lock_reason = "对站状态快照已过期，相关行车作业安全锁闭"
             self.alarms.raise_alarm(
                 "PEER_SNAPSHOT_STALE",
                 AlarmLevel.CRITICAL,
@@ -656,6 +706,7 @@ class TccController:
         if state is ConnectionState.HEALTHY:
             self.alarms.clear_alarm("NETWORK_UNHEALTHY", "peer", now_ms=now)
         else:
+            self._safety_lock_reason = f"站间通信状态为 {state.value}，相关行车作业安全锁闭"
             self.alarms.raise_alarm(
                 "NETWORK_UNHEALTHY",
                 AlarmLevel.WARNING,
@@ -701,6 +752,15 @@ class TccController:
         publish_peer_state: bool = True,
     ) -> TccSnapshot:
         now = self._clock_ms()
+        if (
+            operation is not None
+            and not operation[1].success
+            and self.runtime.direction_operation_locked
+            and not self._safety_lock_reason
+        ):
+            # 任何业务操作把本站置为故障锁闭时，都把本次拒绝原因保存在
+            # 快照中；后续顶部安全复核可以直接说明触发源，而非只显示锁闭。
+            self._safety_lock_reason = operation[1].reason
         if include_state_stage:
             self._stage_listener("state")
         self._latest_codes = self._coding.recalculate_all(
@@ -909,6 +969,7 @@ class TccController:
             heartbeat_received=self._heartbeat_received,
             heartbeat_sent=self._heartbeat_sent,
             alarm_history=self.alarms.history()[-200:],
+            safety_lock_reason=self._safety_lock_reason,
         )
 
     def _state_payload(self) -> Mapping[str, Any]:
@@ -1066,6 +1127,7 @@ class TccController:
         """把同步网络提交失败转换成可见拒绝，并立即维持安全锁闭。"""
         self.connection_state = ConnectionState.DEGRADED
         self._direction.on_connection_state(ConnectionState.DEGRADED)
+        self._safety_lock_reason = f"{operation}：{error}"
         now = self._clock_ms()
         self.alarms.raise_alarm(
             "DIRECTION_TRANSPORT_FAILURE",

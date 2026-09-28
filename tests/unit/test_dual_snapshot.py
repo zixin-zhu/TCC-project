@@ -18,6 +18,7 @@ class SnapshotStub:
     connection_state: ConnectionState
     tracks: dict[str, TrackState]
     alarms: tuple[AlarmRecord, ...] = ()
+    safety_lock_reason: str = ""
 
 
 def _snapshot(
@@ -29,6 +30,7 @@ def _snapshot(
     locked: bool = False,
     q1: TrackState = TrackState.CLEAR,
     alarms: tuple[AlarmRecord, ...] = (),
+    safety_lock_reason: str = "",
 ) -> SnapshotStub:
     return SnapshotStub(
         station_id=station_id,
@@ -42,6 +44,7 @@ def _snapshot(
             "B_T1": TrackState.OCCUPIED if station_id == "B" else TrackState.CLEAR,
         },
         alarms=alarms,
+        safety_lock_reason=safety_lock_reason,
     )
 
 
@@ -186,3 +189,19 @@ def test_lock_reason_empty_when_unlocked() -> None:
     assert model is not None
     assert model.operation_locked is False
     assert model.lock_reason == ""
+
+
+def test_lock_reason_keeps_specific_station_safety_cause() -> None:
+    aggregator = DualStationSnapshotAggregator()
+    aggregator.update_a(
+        _snapshot(
+            "A",
+            locked=True,
+            safety_lock_reason="B站接车进路 B_ARRIVE 未建立，列车将进入 B_T2 接近区段",
+        )
+    )
+    aggregator.update_b(_snapshot("B", locked=True))
+
+    model = aggregator.snapshot
+    assert model is not None
+    assert "B站接车进路 B_ARRIVE 未建立" in model.lock_reason

@@ -186,6 +186,10 @@ class DirectionChangeCoordinator:
             self.machine.reconcile_peer_direction(peer_direction, guard)
         )
 
+    def force_safety_lock(self, reason: str) -> CoordinatedDirectionResult:
+        """把运行期安全事件转换为统一运行态的故障锁闭。"""
+        return self._execute(self.machine.force_safety_lock(reason))
+
     def confirm_authority_applied(
         self,
         record: DirectionRecoveryRecord,

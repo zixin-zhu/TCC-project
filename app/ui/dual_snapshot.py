@@ -125,6 +125,8 @@ class DualStationSnapshotAggregator(QObject):
                 station_a_locked=station_a.direction_operation_locked,
                 station_b_locked=station_b.direction_operation_locked,
                 shared_inconsistent=shared_inconsistent,
+                station_a_reason=getattr(station_a, "safety_lock_reason", ""),
+                station_b_reason=getattr(station_b, "safety_lock_reason", ""),
             ),
             sections=sections,
             active_alarm_count=len(active_alarms),
@@ -145,6 +147,8 @@ class DualStationSnapshotAggregator(QObject):
         station_a_locked: bool,
         station_b_locked: bool,
         shared_inconsistent: bool,
+        station_a_reason: str,
+        station_b_reason: str,
     ) -> str:
         """汇总导致安全锁闭的具体原因，供界面预警提示。
 
@@ -152,6 +156,10 @@ class DualStationSnapshotAggregator(QObject):
         逐步归因，并用顿号拼接。作业允许时返回空字符串。
         """
         reasons: list[str] = []
+        if station_a_reason:
+            reasons.append(f"A站：{station_a_reason}")
+        if station_b_reason and station_b_reason != station_a_reason:
+            reasons.append(f"B站：{station_b_reason}")
         if shared_inconsistent:
             reasons.append("共享区段状态不一致")
         if not communication_healthy:
