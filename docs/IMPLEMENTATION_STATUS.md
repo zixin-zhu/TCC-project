@@ -606,8 +606,9 @@ sed -n '1,240p' docs/IMPLEMENTATION_STATUS.md
 
 - 修复普通 `STATE_SYNC` 误触发方向恢复守卫的问题：新鲜且同方向的健康同步不再因正常活动进路或列车占用而锁闭；
   真正锁闭、改方事务、快照过期和恢复证据仍走完整安全复核。
-- 规定列车演示的互补进路组合：A→B 为 `A_DEPART + B_ARRIVE`，B→A 为 `B_DEPART + A_ARRIVE`；
-  缺少目的站接车进路时在进入 `B_T2/A_T2` 前安全停车并给出明确原因。
+- 规定列车演示的进路职责：出发进路只负责发车前置条件，到达进路只负责进入目的站接近区段前置条件；
+  两类进路可分别建立，建立动作本身不触发联锁。缺少目的站接车进路时在进入 `B_T2/A_T2` 前安全停车，
+  并由 A/B 两端统一进入故障锁闭。
 - 增加仿真倍速 API 和 UI 下拉框，支持 0.1×～20×（界面预置 0.5×、1×、2×、5×、10×、20×）；
   倍速只影响时间推进，列车速度字段和安全规则不变。
 - 补充控制器、列车协调器、双站 TCP 和 Qt 页面回归测试。
@@ -618,4 +619,17 @@ sed -n '1,240p' docs/IMPLEMENTATION_STATUS.md
 - 全量测试：`347 passed in 8.65s`。
 - 代码检查：`git diff --check`、离屏 `compileall` 均通过。
 - 代码提交：`31829c1 fix(train): enforce paired arrival routes and simulation speed`。
+- 状态：上一阶段代码已提交；本次安全联锁逻辑修正待提交，提交后在下方新阶段记录 hash。
+
+## 进行中：列车运行期安全联锁逻辑修正（2026-09-28）
+
+- A→B/B→A 均允许出发进路、到达进路分别建立或同时建立；进路操作本身不会触发方向锁闭。
+- 添加待发列车不依赖进路；发送时只检查发车站 `X_DEPART`，目的站 `X_ARRIVE` 在列车即将进入
+  `B_T2/A_T2` 时检查。
+- 缺少目的站接车进路时，列车保留在当前公共闭塞区段末端并停止；A/B 控制器通过统一安全联锁入口
+  同时置为 `FAULT_LOCKED`，不把该事件降级为普通停车。
+- 具体原因保存到 `TccSnapshot.safety_lock_reason`，双站聚合器和安全复核弹窗显示原始原因及复核失败条件；
+  复核成功后清理 `SAFETY_INTERLOCK` 严重告警。
+- 定向测试 71 项通过；全量测试 `350 passed in 7.90s`；`git diff --check`、离屏 `compileall` 通过。
+- 代码提交：`f888ca3 fix(train): lock both stations when arrival route is missing`。
 - 状态：代码提交已完成，文档提交并推送后本阶段闭环；远程分支为 `origin/codex/dual-station-dashboard`。

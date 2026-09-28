@@ -174,9 +174,10 @@ PYTHONPYCACHEPREFIX=/tmp/tcc-pycache QT_QPA_PLATFORM=offscreen \
 - `TccController.reconcile_peer_direction()` 增加普通同步快速路径：当通信健康、对站快照新鲜、双方方向一致、
   本站未锁闭、无改方事务且无待恢复证据时，只记录对站方向，不重新执行恢复守卫；真正锁闭、事务中断、
   快照过期或恢复场景仍执行原有安全检查。
-- 列车演示明确进路组合：A→B 必须同时具备 `A_DEPART + B_ARRIVE`，B→A 必须同时具备
-  `B_DEPART + A_ARRIVE`。列车进入 `B_T2/A_T2` 前检查目的站接车进路；缺失时停在当前区段末端，
-  显示“目的站接车进路 XXX 未建立，列车安全停车”，不会伪造方向安全锁闭。
+- 列车演示明确进路职责：创建 `A_DEPART/B_DEPART` 是发车条件，创建 `B_ARRIVE/A_ARRIVE`
+  是目的站接车条件；四种进路可以分别建立，建立动作本身不触发安全联锁。列车进入
+  `B_T2/A_T2` 前检查目的站接车进路；缺失时停在当前区段末端，并由 A/B 两端同时进入
+  故障锁闭，显示具体的“哪一站哪一进路未建立”原因。
 - 仿真定时器改为 100 ms；新增 `DualTrainCoordinator.set_speed_multiplier()`，支持 0.1×～20×，
   UI 提供 0.5×、1×、2×、5×、10×、20×选项。倍速只缩放仿真时间推进，列车物理速度仍保持 120 km/h。
 - 增加普通同步、互补进路、缺失接车进路、倍速边界和 UI 下拉框回归测试；保留共享区段写入失败时的
@@ -189,6 +190,15 @@ PYTHONPYCACHEPREFIX=/tmp/tcc-pycache QT_QPA_PLATFORM=offscreen \
 - 质量检查：`git diff --check`、离屏 `compileall` 均通过。
 - 阶段提交：`31829c1 fix(train): enforce paired arrival routes and simulation speed`；文档提交后推送到
   `origin/codex/dual-station-dashboard`。重新连接后先读取本节和最新 `git log`。
+
+## 2026-09-28 列车运行期安全联锁逻辑修正（当前阶段）
+
+- A→B 和 B→A 均允许只建立出发进路、只建立到达进路或两者同时建立；建立/取消进路不会因为对站存在活动进路而触发方向安全联锁。
+- 任意方向都可以先添加待发列车；真正发送列车时只校验当前发车站的 `X_DEPART` 进路，未建立时拒绝发送，不锁闭双站。
+- 列车运行到公共区段末端、即将进入目的站接近区段 `B_T2/A_T2` 时，才校验 `X_ARRIVE`。缺失时保留当前闭塞区段占用、停止列车，并由 A/B 两端同时进入 `FAULT_LOCKED`。
+- 安全联锁原因写入两站 `TccSnapshot.safety_lock_reason`，聚合器和顶部安全复核弹窗展示“站点、进路、接近区段、当前复核失败条件”；复核成功后清除对应 `SAFETY_INTERLOCK` 严重告警。
+- 新增双向三种进路组合测试、缺失到达进路触发双站联锁测试、具体原因聚合测试和告警清理测试；定向回归 71 项、全量回归 `350 passed in 7.90s`。
+- `git diff --check` 与离屏 `compileall` 均通过；代码提交为 `f888ca3 fix(train): lock both stations when arrival route is missing`，文档提交后推送到 `origin/codex/dual-station-dashboard`。
 
 ## 阶段完成记录模板
 
