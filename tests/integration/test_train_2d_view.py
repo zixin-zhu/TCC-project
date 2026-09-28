@@ -59,3 +59,20 @@ def test_train_selector_drives_scene_and_table_selection(qtbot) -> None:  # type
     assert page.train_table.currentRow() == 1
 
     qtbot.mouseClick(page.train_table.viewport(), Qt.LeftButton)
+
+
+def test_train_page_exposes_simulation_speed_selector(qtbot) -> None:  # type: ignore[no-untyped-def]
+    station_a, station_b = _controller("A"), _controller("B")
+    coordinator = DualTrainCoordinator(station_a, station_b)
+    page = TrainOperationsPage(station_a, station_b, coordinator)
+    qtbot.addWidget(page)
+
+    assert page.speed_selector.objectName() == "simulationSpeedSelector"
+    assert [page.speed_selector.itemData(index) for index in range(page.speed_selector.count())] == [
+        0.5, 1.0, 2.0, 5.0, 10.0, 20.0
+    ]
+
+    page.speed_selector.setCurrentIndex(page.speed_selector.findData(5.0))
+
+    assert coordinator.speed_multiplier == 5.0
+    assert "5×" in page.result_label.text()

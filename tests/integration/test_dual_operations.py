@@ -395,6 +395,7 @@ def test_real_tcp_runtime_runs_forward_changes_direction_and_runs_reverse(
             timeout=4000,
         )
         assert runtime.station_a.controller.establish_route("A_DEPART").success
+        assert runtime.station_b.controller.establish_route("B_ARRIVE").success
         forward = window.train_coordinator.create_train()
         assert window.train_coordinator.dispatch(forward.train_id).success
         assert window.train_coordinator.start().success
@@ -403,6 +404,7 @@ def test_real_tcp_runtime_runs_forward_changes_direction_and_runs_reverse(
 
         assert window.train_coordinator.reset().success
         assert runtime.station_a.controller.cancel_route("A_DEPART").success
+        assert runtime.station_b.controller.cancel_route("B_ARRIVE").success
         # 列车快速步进会连续产生多份状态同步；改方前等待两站都看到对方
         # 最终空闲版本，模拟操作员确认改方前置条件的真实停顿。
         qtbot.waitUntil(
@@ -431,6 +433,7 @@ def test_real_tcp_runtime_runs_forward_changes_direction_and_runs_reverse(
         )
 
         assert runtime.station_b.controller.establish_route("B_DEPART").success
+        assert runtime.station_a.controller.establish_route("A_ARRIVE").success
         reverse = window.train_coordinator.create_train()
         assert window.train_coordinator.dispatch(reverse.train_id).success
         assert window.train_coordinator.start().success
@@ -439,6 +442,7 @@ def test_real_tcp_runtime_runs_forward_changes_direction_and_runs_reverse(
 
         assert window.train_coordinator.reset().success
         assert runtime.station_b.controller.cancel_route("B_DEPART").success
+        assert runtime.station_a.controller.cancel_route("A_ARRIVE").success
         qtbot.waitUntil(
             lambda: (
                 runtime.station_a.controller.peer_snapshot is not None
@@ -490,3 +494,36 @@ def test_real_tcp_runtime_runs_forward_changes_direction_and_runs_reverse(
 
     assert not runtime.station_a.network_thread.thread.isRunning()
     assert not runtime.station_b.network_thread.thread.isRunning()
+
+
+def test_complementary_departure_and_arrival_routes_do_not_lock_direction(
+    tmp_path, qtbot
+) -> None:  # type: ignore[no-untyped-def]
+    """A→B 的出发/到达进路组合不应被普通状态同步误判为改方失败。"""
+    config_dir = tmp_path / "configs"
+    _copy_configs_with_port(config_dir, _free_port())
+    runtime = DualStationApplication.build(
+        config_dir=config_dir, data_root=tmp_path / "data"
+    )
+    window = DualStationMainWindow(runtime)
+    qtbot.addWidget(window)
+    runtime.start()
+    try:
+        qtbot.waitUntil(
+            lambda: (
+                window.aggregator.snapshot is not None
+                and window.aggregator.snapshot.communication_healthy
+                and not window.aggregator.snapshot.operation_locked
+            ),
+            timeout=5000,
+        )
+        assert runtime.station_a.controller.establish_route("A_DEPART").success
+        assert runtime.station_b.controller.establish_route("B_ARRIVE").success
+        qtbot.wait(100)
+
+        assert runtime.station_a.controller.snapshot.direction_operation_locked is False
+        assert runtime.station_b.controller.snapshot.direction_operation_locked is False
+        assert window.aggregator.snapshot is not None
+        assert window.aggregator.snapshot.operation_locked is False
+    finally:
+        assert window.close()

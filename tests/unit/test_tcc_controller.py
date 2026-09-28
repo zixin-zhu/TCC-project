@@ -220,6 +220,17 @@ def test_route_command_recalculates_signal_and_is_logged() -> None:
     assert controller.persistence.operations[-1].operation == "建立进路 A_DEPART"
 
 
+def test_peer_direction_observation_does_not_lock_for_active_route() -> None:
+    """普通状态同步不能把已建立的发车进路误判为方向恢复失败。"""
+    controller = _controller()
+    assert controller.establish_route("A_DEPART").success
+
+    result = controller.reconcile_peer_direction(RunningDirection.A_TO_B)
+
+    assert result.success
+    assert controller.snapshot.direction_operation_locked is False
+
+
 def test_controller_close_closes_persistence_once() -> None:
     controller = _controller()
     controller.close()

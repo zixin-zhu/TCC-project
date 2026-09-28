@@ -149,6 +149,7 @@ COMBO_ROLE_MIN_WIDTHS = {
     "tsr": 170,
     "shared": 150,
     "train": 220,
+    "simulation-speed": 120,
 }
 
 

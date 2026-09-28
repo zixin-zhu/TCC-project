@@ -807,6 +807,13 @@ class TrainOperationsPage(_OperationPage):
         self.pause_button = QPushButton("暂停仿真")
         self.reset_button = QPushButton("复位选中列车")
         self.reset_all_button = QPushButton("全部复位")
+        self.speed_label = QLabel("仿真倍速")
+        self.speed_selector = QComboBox()
+        self.speed_selector.setObjectName("simulationSpeedSelector")
+        configure_combo_box(self.speed_selector, "simulation-speed")
+        for multiplier in (0.5, 1.0, 2.0, 5.0, 10.0, 20.0):
+            self.speed_selector.addItem(f"{multiplier:g}×", multiplier)
+        self.speed_selector.setCurrentIndex(self.speed_selector.findData(1.0))
         for name, button in (
             ("createTrainButton", self.create_button),
             ("dispatchTrainButton", self.dispatch_button),
@@ -818,6 +825,8 @@ class TrainOperationsPage(_OperationPage):
             button.setObjectName(name)
             controls.addWidget(button)
         controls.insertWidget(0, self.train_selector)
+        controls.addWidget(self.speed_label)
+        controls.addWidget(self.speed_selector)
         controls.addStretch(1)
         layout.addLayout(controls)
         self.train_scene = TrainSceneWidget(station_a.config.topology)
@@ -836,6 +845,7 @@ class TrainOperationsPage(_OperationPage):
         self.pause_button.clicked.connect(self._pause)
         self.reset_button.clicked.connect(self._reset)
         self.reset_all_button.clicked.connect(self._reset_all)
+        self.speed_selector.currentIndexChanged.connect(self._on_speed_changed)
         self.train_selector.currentIndexChanged.connect(self._on_selector_changed)
         self.train_table.currentCellChanged.connect(self._on_table_changed)
         self.train_scene.train_selected.connect(self._select_train)
@@ -895,6 +905,15 @@ class TrainOperationsPage(_OperationPage):
         ) is not QMessageBox.Yes:
             return
         self._show_result("联合列车", self.coordinator.reset())
+
+    def _on_speed_changed(self, _index: int) -> None:
+        multiplier = self.speed_selector.currentData()
+        if multiplier is None:
+            return
+        self._show_result(
+            "联合列车",
+            self.coordinator.set_speed_multiplier(float(multiplier)),
+        )
 
     def _on_selector_changed(self, _index: int) -> None:
         self._sync_selection(self.train_selector.currentData())

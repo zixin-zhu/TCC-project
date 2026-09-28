@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import math
 
 from PyQt5.QtCore import QObject, QTimer, pyqtSignal
 
@@ -64,14 +65,31 @@ class DualTrainCoordinator(QObject):
         self.trains: dict[str, DualTrainState] = {}
         self._next_number = 1
         self._manually_paused = False
+        self._speed_multiplier = 1.0
         self._sections = tuple(item.id for item in station_a.config.topology.sections)
         self._lengths = {
             item.id: item.length_m for item in station_a.config.topology.sections
         }
         self._balises_by_section = self._build_balise_index()
         self.timer = QTimer(self)
-        self.timer.setInterval(500)
-        self.timer.timeout.connect(lambda: self.tick(0.5))
+        self.timer.setInterval(100)
+        self.timer.timeout.connect(
+            lambda: self.tick(self.timer.interval() / 1000.0)
+        )
+
+    @property
+    def speed_multiplier(self) -> float:
+        """返回课程仿真的时间倍速，不改变列车的物理速度字段。"""
+        return self._speed_multiplier
+
+    def set_speed_multiplier(self, multiplier: float) -> OperationResult:
+        """设置仿真时间倍速；倍速只作用于 ``tick`` 的时间推进。"""
+        if isinstance(multiplier, bool) or not isinstance(multiplier, (int, float)):
+            return self._failure("仿真倍速必须是数字")
+        if not math.isfinite(float(multiplier)) or not 0.1 <= float(multiplier) <= 20.0:
+            return self._failure("仿真倍速必须在 0.1×～20× 范围内")
+        self._speed_multiplier = float(multiplier)
+        return OperationResult(True, f"仿真倍速已设置为 {self._speed_multiplier:g}×")
 
     def create_train(self) -> DualTrainState:
         """按当前方向创建待发列车；允许同时维护多列待发演示列车。"""
@@ -236,6 +254,7 @@ class DualTrainCoordinator(QObject):
     def tick(self, elapsed_s: float) -> None:
         if elapsed_s <= 0:
             raise ValueError("列车演示步长必须为正数")
+        simulated_elapsed_s = elapsed_s * self._speed_multiplier
         changed = False
         for train in self.trains.values():
             if train.status not in {DualTrainStatus.RUNNING, DualTrainStatus.STOPPED}:
@@ -253,7 +272,7 @@ class DualTrainCoordinator(QObject):
             train.target_speed_kmh = 120.0
             train.current_speed_kmh = train.target_speed_kmh
             train.safety_state = "正常运行"
-            train.position_m += train.current_speed_kmh / 3.6 * elapsed_s
+            train.position_m += train.current_speed_kmh / 3.6 * simulated_elapsed_s
             self._advance(train)
             changed = True
         if changed:
@@ -304,6 +323,18 @@ class DualTrainCoordinator(QObject):
                 self._stop_train(train, f"前方区段 {next_section} 非空闲")
                 return
 
+            arrival_route = self._arrival_route_for(train.direction, next_section)
+            if arrival_route is not None:
+                destination_controller, route_id = arrival_route
+                if route_id not in destination_controller.snapshot.active_route_ids:
+                    train.position_m = length
+                    train.distance_ahead_m = 0.0
+                    self._stop_train(
+                        train,
+                        f"目的站接车进路 {route_id} 未建立，列车安全停车",
+                    )
+                    return
+
             # 安全关键顺序：先确认下一段占用成功，再尝试清除当前段。
             occupied = self._track_input.set_state(
                 next_section, TrackInputSource.TRAIN, TrackState.OCCUPIED
@@ -353,6 +384,18 @@ class DualTrainCoordinator(QObject):
             self._station_a.snapshot.tracks[section_id] is TrackState.CLEAR
             and self._station_b.snapshot.tracks[section_id] is TrackState.CLEAR
         )
+
+    def _arrival_route_for(
+        self,
+        direction: RunningDirection,
+        next_section: str,
+    ) -> tuple[TccController, str] | None:
+        """在列车进入目的站接近区段前检查对应的接车进路。"""
+        if direction is RunningDirection.A_TO_B and next_section == "B_T2":
+            return self._station_b, "B_ARRIVE"
+        if direction is RunningDirection.B_TO_A and next_section == "A_T2":
+            return self._station_a, "A_ARRIVE"
+        return None
 
     def _build_balise_index(self) -> dict[tuple[RunningDirection, str], tuple[object, ...]]:
         result: dict[tuple[RunningDirection, str], tuple[object, ...]] = {}

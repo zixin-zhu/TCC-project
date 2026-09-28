@@ -81,8 +81,12 @@ def _dispatched(
 ) -> tuple[DualTrainCoordinator, TccController, TccController]:
     station_a, station_b = _pair(direction)
     origin = station_a if direction is RunningDirection.A_TO_B else station_b
+    destination = station_b if direction is RunningDirection.A_TO_B else station_a
     assert origin.establish_route(
         "A_DEPART" if direction is RunningDirection.A_TO_B else "B_DEPART"
+    ).success
+    assert destination.establish_route(
+        "B_ARRIVE" if direction is RunningDirection.A_TO_B else "A_ARRIVE"
     ).success
     coordinator = DualTrainCoordinator(station_a, station_b)
     train = coordinator.create_train()
@@ -91,11 +95,11 @@ def _dispatched(
     return coordinator, station_a, station_b
 
 
-def test_has_one_parented_500_ms_timer(qapp) -> None:  # type: ignore[no-untyped-def]
+def test_has_one_parented_100_ms_timer(qapp) -> None:  # type: ignore[no-untyped-def]
     station_a, station_b = _pair()
     coordinator = DualTrainCoordinator(station_a, station_b)
 
-    assert coordinator.timer.interval() == 500
+    assert coordinator.timer.interval() == 100
     assert coordinator.timer.parent() is coordinator
     assert len(coordinator.findChildren(type(coordinator.timer))) == 1
 
@@ -184,6 +188,24 @@ def test_train_reaches_other_station_and_reports_last_balise(qapp) -> None:  # t
         and station_b.snapshot.tracks[f"Q{index}"] is TrackState.CLEAR
         for index in range(1, 5)
     )
+
+
+def test_train_stops_before_destination_without_arrival_route(qapp) -> None:  # type: ignore[no-untyped-def]
+    """目的站未建立接车进路时停车，但不应进入方向安全锁闭。"""
+    station_a, station_b = _pair()
+    assert station_a.establish_route("A_DEPART").success
+    coordinator = DualTrainCoordinator(station_a, station_b)
+    train = coordinator.create_train()
+    assert coordinator.dispatch(train.train_id).success
+    assert coordinator.start(train.train_id).success
+
+    coordinator.tick(300.0)
+
+    assert train.status is DualTrainStatus.STOPPED
+    assert train.section_id == "Q4"
+    assert "B_ARRIVE 未建立" in train.safety_state
+    assert station_a.snapshot.direction_operation_locked is False
+    assert station_b.snapshot.direction_operation_locked is False
 
 
 class _FailCurrentClearAdapter(SharedTrackInputAdapter):
@@ -280,3 +302,30 @@ def test_start_accepts_a_specific_train_id(qapp) -> None:  # type: ignore[no-unt
 
     assert result.success
     assert train.status is DualTrainStatus.RUNNING
+
+
+def test_speed_multiplier_scales_simulation_time_without_changing_physical_speed(
+    qapp,
+) -> None:  # type: ignore[no-untyped-def]
+    station_a, station_b = _pair()
+    assert station_a.establish_route("A_DEPART").success
+    coordinator = DualTrainCoordinator(station_a, station_b)
+    train = coordinator.create_train()
+    assert coordinator.dispatch(train.train_id).success
+    assert coordinator.start(train.train_id).success
+
+    assert coordinator.set_speed_multiplier(5.0).success
+    coordinator.tick(1.0)
+
+    assert train.current_speed_kmh == 120.0
+    assert train.position_m == 120.0 / 3.6 * 5.0
+
+
+def test_speed_multiplier_rejects_invalid_values_without_changing_setting(qapp) -> None:  # type: ignore[no-untyped-def]
+    station_a, station_b = _pair()
+    coordinator = DualTrainCoordinator(station_a, station_b)
+
+    result = coordinator.set_speed_multiplier(0.0)
+
+    assert result.success is False
+    assert coordinator.speed_multiplier == 1.0

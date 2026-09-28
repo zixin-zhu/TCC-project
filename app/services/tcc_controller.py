@@ -459,6 +459,24 @@ class TccController:
         """重连全量同步时复核方向；不把对端状态当作本站写入命令。"""
         self._ensure_open()
         self._peer_direction = peer_direction
+        # 普通状态同步只是在报告双方仍然使用同一方向，不能把本站已有的
+        # 正常进路或列车占用再次当作“恢复条件不满足”。完整守卫只用于
+        # 已经锁闭、仍有改方事务或存在持久化恢复证据的安全恢复流程。
+        peer_fresh = (
+            self.peer_snapshot is not None
+            and self.peer_snapshot.is_fresh(
+                self._clock_ms(), self._peer_timeout_ms
+            )
+        )
+        if (
+            self.connection_state is ConnectionState.HEALTHY
+            and peer_fresh
+            and peer_direction is self.runtime.running_direction
+            and not self.runtime.direction_operation_locked
+            and not self._direction.machine.has_active_transaction
+            and self._pending_recovery is None
+        ):
+            return OperationResult(True, "对站方向一致，无需恢复复核")
         coordinated = self._direction.reconcile_peer_direction(
             peer_direction, self._direction_guard()
         )
