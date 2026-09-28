@@ -159,6 +159,37 @@ PYTHONPYCACHEPREFIX=/tmp/tcc-pycache QT_QPA_PLATFORM=offscreen \
 - 验证证据：定向 3 项通过；相关集成 37 项通过；完整回归 `341 passed in 7.63s`；`git diff --check` 与 `compileall` 通过。
 - 本阶段状态：已完成并推送；阶段提交为 `2fdffa9 fix(ui): stabilize pending requests and recovery feedback`。重新连接后先运行 `git status --short`，再查看本节和最新提交，不要重复修复上述问题。
 
+## 2026-09-28 列车进路约束、普通同步解锁和仿真倍速（当前阶段）
+
+### 用户问题与根因
+
+- A 站建立发车进路后，B 站建立对应到达进路，列车进入公共区段时被误判为方向恢复失败。
+  根因是每次 `STATE_SYNC` 都无条件调用完整的方向恢复守卫；正常同方向同步也被当作“恢复条件检查”，
+  于是活动进路或正常列车占用触发了安全锁闭。
+- 目的站接车进路没有参与列车演示的运行约束，列车可以在未建立接车进路时继续驶入目的站接近区段。
+- 原有 500 ms 仿真定时器只能固定步进，缺少演示用倍速控制。
+
+### 实施内容
+
+- `TccController.reconcile_peer_direction()` 增加普通同步快速路径：当通信健康、对站快照新鲜、双方方向一致、
+  本站未锁闭、无改方事务且无待恢复证据时，只记录对站方向，不重新执行恢复守卫；真正锁闭、事务中断、
+  快照过期或恢复场景仍执行原有安全检查。
+- 列车演示明确进路组合：A→B 必须同时具备 `A_DEPART + B_ARRIVE`，B→A 必须同时具备
+  `B_DEPART + A_ARRIVE`。列车进入 `B_T2/A_T2` 前检查目的站接车进路；缺失时停在当前区段末端，
+  显示“目的站接车进路 XXX 未建立，列车安全停车”，不会伪造方向安全锁闭。
+- 仿真定时器改为 100 ms；新增 `DualTrainCoordinator.set_speed_multiplier()`，支持 0.1×～20×，
+  UI 提供 0.5×、1×、2×、5×、10×、20×选项。倍速只缩放仿真时间推进，列车物理速度仍保持 120 km/h。
+- 增加普通同步、互补进路、缺失接车进路、倍速边界和 UI 下拉框回归测试；保留共享区段写入失败时的
+  双端安全降级逻辑，不把安全关键写入改为无校验强制覆盖。
+
+### 验证与交接
+
+- 定向回归：65 项通过（含真实本机 TCP 双站握手与互补进路场景）。
+- 全量回归：`347 passed in 8.65s`。
+- 质量检查：`git diff --check`、离屏 `compileall` 均通过。
+- 阶段提交：`31829c1 fix(train): enforce paired arrival routes and simulation speed`；文档提交后推送到
+  `origin/codex/dual-station-dashboard`。重新连接后先读取本节和最新 `git log`。
+
 ## 阶段完成记录模板
 
 ```text

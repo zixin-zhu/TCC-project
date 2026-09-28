@@ -599,3 +599,23 @@ sed -n '1,240p' docs/IMPLEMENTATION_STATUS.md
 - 全量测试：`341 passed in 7.63s`。
 - 代码质量：`git diff --check`、`PYTHONPYCACHEPREFIX=/tmp/tcc-pyc ... compileall -q app tests` 通过。
 - 状态：已完成并推送；阶段提交为 `2fdffa9 fix(ui): stabilize pending requests and recovery feedback`，分支为 `origin/codex/dual-station-dashboard`。
+
+## 进行中：列车进路约束、普通同步解锁和仿真倍速（2026-09-28）
+
+### 实施内容
+
+- 修复普通 `STATE_SYNC` 误触发方向恢复守卫的问题：新鲜且同方向的健康同步不再因正常活动进路或列车占用而锁闭；
+  真正锁闭、改方事务、快照过期和恢复证据仍走完整安全复核。
+- 规定列车演示的互补进路组合：A→B 为 `A_DEPART + B_ARRIVE`，B→A 为 `B_DEPART + A_ARRIVE`；
+  缺少目的站接车进路时在进入 `B_T2/A_T2` 前安全停车并给出明确原因。
+- 增加仿真倍速 API 和 UI 下拉框，支持 0.1×～20×（界面预置 0.5×、1×、2×、5×、10×、20×）；
+  倍速只影响时间推进，列车速度字段和安全规则不变。
+- 补充控制器、列车协调器、双站 TCP 和 Qt 页面回归测试。
+
+### 验证与恢复点
+
+- 定向测试：65 项通过。
+- 全量测试：`347 passed in 8.65s`。
+- 代码检查：`git diff --check`、离屏 `compileall` 均通过。
+- 代码提交：`31829c1 fix(train): enforce paired arrival routes and simulation speed`。
+- 状态：代码提交已完成，文档提交并推送后本阶段闭环；远程分支为 `origin/codex/dual-station-dashboard`。
