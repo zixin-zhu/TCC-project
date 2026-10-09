@@ -7,6 +7,8 @@ from models.route import RouteState, RouteType
 from services.route_service import RouteService
 from services.simulation_service import SimulationService
 from services.train_service import TrainService
+from services.direction_manager import DirectionManager
+from network.message_protocol import MessageProtocol
 from ui.main_window import MainWindow
 
 
@@ -149,6 +151,77 @@ class RouteSignalIntegrationTest(unittest.TestCase):
             restricted_info = window.get_balise_information("B站X口_JZ")
             self.assertIn("ETCS-44(CTCS-2)", restricted_info["packets"])
         window.close()
+
+
+class RouteDirectionIntegrationTest(unittest.TestCase):
+    def make_manager(self, station, routes):
+        simulation = SimulationService(station, routes)
+        manager = DirectionManager(
+            simulation,
+            f"TCC_{station}",
+            station,
+            routes,
+        )
+        return simulation, manager
+
+    def test_direction_request_requires_local_departure_route(self):
+        routes = RouteService()
+        simulation, manager = self.make_manager("B", routes)
+
+        message, reason = manager.create_request()
+
+        self.assertIsNone(message)
+        self.assertEqual(reason, "本站未建立发车进路")
+        self.assertEqual(simulation.get_direction(), "A_TO_B")
+
+    def test_direction_request_is_denied_when_remote_departure_route_exists(self):
+        routes = RouteService()
+        routes.establish_route("A", RouteType.MAIN_DEPART)
+        simulation, manager = self.make_manager("A", routes)
+
+        approved, reason = manager.evaluate_request("B_TO_A")
+
+        self.assertFalse(approved)
+        self.assertEqual(reason, "被申请站存在发车进路")
+        self.assertEqual(simulation.get_direction(), "A_TO_B")
+
+    def test_failed_direction_change_preserves_established_route(self):
+        routes = RouteService()
+        route = routes.establish_route("B", RouteType.SIDE_DEPART)
+        simulation, manager = self.make_manager("B", routes)
+        simulation.track_circuits["G20"].occupy()
+
+        message, reason = manager.create_request()
+
+        self.assertIsNone(message)
+        self.assertEqual(reason, "区间未清空")
+        self.assertIn(route, routes.active_routes())
+        self.assertEqual(simulation.get_direction(), "A_TO_B")
+
+    def test_valid_route_and_empty_interval_allow_direction_change(self):
+        routes = RouteService()
+        route = routes.establish_route("B", RouteType.MAIN_DEPART)
+        simulation_a, manager_a = self.make_manager("A", routes)
+        simulation_b, manager_b = self.make_manager("B", routes)
+
+        request, reason = manager_b.create_request()
+        self.assertIsNotNone(request)
+        self.assertIsNone(reason)
+
+        approved, reason = manager_a.evaluate_request("B_TO_A")
+        self.assertTrue(approved)
+        self.assertIsNone(reason)
+
+        text, success = manager_b.apply_reply(
+            MessageProtocol.DIRECTION_APPROVE,
+            {"target_direction": "B_TO_A"},
+        )
+
+        self.assertTrue(success)
+        self.assertEqual(text, DirectionManager.APPROVED)
+        self.assertEqual(simulation_a.get_direction(), "B_TO_A")
+        self.assertEqual(simulation_b.get_direction(), "B_TO_A")
+        self.assertIn(route, routes.active_routes())
 
 
 if __name__ == "__main__":

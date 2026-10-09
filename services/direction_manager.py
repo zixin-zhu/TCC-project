@@ -22,11 +22,13 @@ class DirectionManager:
             self,
             simulation_service,
             tcc_code,
-            station_type
+            station_type,
+            route_service=None,
     ):
         self.simulation = simulation_service
         self.tcc_code = tcc_code
         self.station_type = station_type
+        self.route_service = route_service
 
         # 当前改方状态
         self.status = self.IDLE
@@ -74,6 +76,14 @@ class DirectionManager:
         (报文, None) 表示可以发送申请；
         (None, 原因) 表示本站不满足条件。
         """
+
+        if (
+            self.route_service is not None
+            and not self.route_service.has_departure_route(self.station_type)
+        ):
+            self.status = self.DENIED
+            self.reason = "本站未建立发车进路"
+            return None, self.reason
 
         if not self.simulation.can_change_direction():
 
@@ -123,6 +133,16 @@ class DirectionManager:
             self.status = self.DENIED
             self.reason = "区间未清空"
 
+            return False, self.reason
+
+        requesting_station = "A" if target_direction == "A_TO_B" else "B"
+        requested_station = "B" if requesting_station == "A" else "A"
+        if (
+            self.route_service is not None
+            and self.route_service.has_departure_route(requested_station)
+        ):
+            self.status = self.DENIED
+            self.reason = "被申请站存在发车进路"
             return False, self.reason
 
         # 条件满足，本站先切到目标方向

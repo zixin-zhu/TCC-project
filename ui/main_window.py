@@ -105,13 +105,15 @@ class MainWindow(QMainWindow):
         self.direction_manager_a = DirectionManager(
             self.simulation_a,
             "TCC_A",
-            "A"
+            "A",
+            self.route_service,
         )
 
         self.direction_manager_b = DirectionManager(
             self.simulation_b,
             "TCC_B",
-            "B"
+            "B",
+            self.route_service,
         )
 
         # 站间通信端点：{站别: worker}
@@ -1807,11 +1809,8 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(
                     self,
                     "无法改方",
-                    "区间未清空。\n\n"
-                    "请确认：\n"
-                    "1. G01～G38全部空闲；\n"
-                    "2. 区间内没有列车；\n"
-                    "3. 出站信号机处于红灯。"
+                    f"{reason}\n\n"
+                    "请确认区间空闲、信号关闭，且申请站已建立发车进路。"
                 )
 
             else:
