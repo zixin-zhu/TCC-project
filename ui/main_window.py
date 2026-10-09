@@ -20,6 +20,7 @@ from services.temporary_speed_service import TemporarySpeedService
 
 from network.message_protocol import MessageProtocol
 from network.network_worker import (
+    ClientNetworkWorker,
     ServerNetworkWorker
 )
 
@@ -35,13 +36,13 @@ class MainWindow(QMainWindow):
     窗口里同时存在两个相互独立的TCC对象：
 
     TCC_A（simulation_a）
-        通信角色 Server，信号机 S01，自有38个轨道区段
+        信号机 S01，自有38个轨道区段
 
     TCC_B（simulation_b）
-        通信角色 Server，信号机 S02，自有38个轨道区段
+        信号机 S02，自有38个轨道区段
 
-    两者分别监听本机9000和9001端口，
-    对等通信协议将在通信阶段实现。
+    两站完全对等：先启动者内部作为Server监听9000，
+    后启动者内部作为Client连接9000，界面不显示角色。
 
     列车仿真（TrainService）挂在A侧，
     B侧通过报文镜像区间占用后自行重算。
@@ -65,10 +66,10 @@ class MainWindow(QMainWindow):
         # 双TCC后台服务
         # ==========================
 
-        # A站TCC，通信角色Server
+        # A站TCC
         self.simulation_a = SimulationService("A")
 
-        # B站TCC，通信角色Server
+        # B站TCC
         self.simulation_b = SimulationService("B")
 
         # 列车仿真始终挂在A侧
@@ -110,6 +111,9 @@ class MainWindow(QMainWindow):
 
         # 站间通信端点：{站别: worker}
         self.network_workers = {}
+        self.network_modes = {}
+        self.network_server_station = None
+        self._network_resetting = False
 
         # 站间同步节拍计数
         self.network_tick = 0
@@ -1145,14 +1149,14 @@ class MainWindow(QMainWindow):
         """
         配置两站控制中心的按钮。
 
-        A、B面板均为独立Server，分别监听不同端口。
+        A、B面板完全对等，启动顺序决定内部通信角色。
 
         两侧各有独立的TCC与改方管理器，
         因此两站的改方按钮都可以使用。
         """
 
         # --------------------------
-        # A站：Server
+        # A站：动态角色
         # --------------------------
 
         self.panel_a.network_button.setEnabled(
@@ -1160,7 +1164,7 @@ class MainWindow(QMainWindow):
         )
 
         self.panel_a.network_button.setToolTip(
-            "启动TCC_A服务器，监听127.0.0.1:9000"
+            "启动A站通信；若先启动则等待对端，后启动则自动建立连接"
         )
 
         self.panel_a.network_button.clicked.connect(
@@ -1188,7 +1192,7 @@ class MainWindow(QMainWindow):
         )
 
         # --------------------------
-        # B站：Server
+        # B站：动态角色
         # --------------------------
 
         self.panel_b.network_button.setEnabled(
@@ -1196,7 +1200,7 @@ class MainWindow(QMainWindow):
         )
 
         self.panel_b.network_button.setToolTip(
-            "启动TCC_B服务器，监听127.0.0.1:9001"
+            "启动B站通信；若先启动则等待对端，后启动则自动建立连接"
         )
 
         self.panel_b.network_button.clicked.connect(
@@ -1268,7 +1272,8 @@ class MainWindow(QMainWindow):
         """
         开启站间通信。
 
-        A、B站分别创建服务器，使用独立端口避免冲突。
+        首个启动的站建立监听，后启动的站自动连接先启动站。
+        角色只用于内部通信，不显示在界面中。
         """
 
         if role is None:
@@ -1280,8 +1285,16 @@ class MainWindow(QMainWindow):
 
         panel = self.get_panel_by_role(role)
 
-        host, port = self.network_endpoint(role)
-        panel.set_network_status(f"通信状态：服务器已启动，监听{port}")
+        if self.network_server_station is None:
+            self.network_server_station = role
+            mode = "SERVER"
+            panel.set_network_status("通信状态：等待对端启动")
+        else:
+            mode = "CLIENT"
+            panel.set_network_status("通信状态：正在建立连接")
+
+        self.network_modes[role] = mode
+        host, port = self.network_endpoint()
 
         worker = self.network_worker_class(role)(host, port)
 
@@ -1306,25 +1319,36 @@ class MainWindow(QMainWindow):
         panel.disconnect_button.setEnabled(True)
         worker.start()
 
-    @staticmethod
-    def network_worker_class(role):
-        return ServerNetworkWorker
+    def network_worker_class(self, role):
+        if role == self.network_server_station:
+            return ServerNetworkWorker
+        return ClientNetworkWorker
 
     @staticmethod
-    def network_endpoint(role):
-        return ("127.0.0.1", 9000 if role == "A" else 9001)
+    def network_endpoint():
+        return ("127.0.0.1", 9000)
 
     def disconnect_network(self, role):
-        worker = self.network_workers.pop(role, None)
-        if worker is not None:
-            worker.stop()
-            worker.wait(1000)
-        panel = self.get_panel_by_role(role)
-        panel.network_button.setEnabled(True)
-        panel.disconnect_button.setEnabled(False)
-        panel.set_network_status(
-            "通信状态：未启动"
-        )
+        if self._network_resetting:
+            return
+
+        self._network_resetting = True
+        workers = list(self.network_workers.values())
+        self.network_workers.clear()
+        self.network_modes.clear()
+        self.network_server_station = None
+
+        try:
+            for worker in workers:
+                worker.stop()
+            for worker in workers:
+                worker.wait(1000)
+            for panel in (self.panel_a, self.panel_b):
+                panel.network_button.setEnabled(True)
+                panel.disconnect_button.setEnabled(False)
+                panel.set_network_status("通信状态：未启动")
+        finally:
+            self._network_resetting = False
 
     def on_connected(self, role):
 
@@ -1338,15 +1362,14 @@ class MainWindow(QMainWindow):
         self.send_signal_status(role)
 
     def on_disconnected(self, role):
-        panel = self.get_panel_by_role(role)
-        panel.set_network_status("通信状态：连接已断开")
-        panel.network_button.setEnabled(True)
-        panel.disconnect_button.setEnabled(False)
-        worker = self.network_workers.get(role)
-        if worker is not None and not worker.running:
-            self.network_workers.pop(role, None)
+        self.disconnect_network(role)
 
     def on_network_error(self, role, error_message):
+
+        # 主动断开时端点已从活动表移除，随后到达的socket关闭错误
+        # 属于预期线程收尾，不应覆盖已经复位的界面状态。
+        if role not in self.network_workers:
+            return
 
         self.get_panel_by_role(role).set_network_status(
             "通信状态：网络错误"

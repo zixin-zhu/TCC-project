@@ -26,8 +26,6 @@ class StationPanel(QGroupBox):
             self.signal_code = "S02"
             self.balise_code = "BA-B"
 
-        self.network_role = "Server"
-
         self.init_ui()
 
     def init_ui(self):
@@ -38,15 +36,10 @@ class StationPanel(QGroupBox):
             f"TCC节点：TCC_{self.station_type}"
         )
 
-        self.role_label = QLabel(
-            f"通信角色：{self.network_role}"
-        )
-
         layout.addWidget(self.tcc_label)
-        layout.addWidget(self.role_label)
 
         self.network_status_label = QLabel("通信状态：● 未启动")
-        self.network_button = QPushButton("开启服务器")
+        self.network_button = QPushButton("启动通信")
 
         layout.addWidget(
             self.network_status_label

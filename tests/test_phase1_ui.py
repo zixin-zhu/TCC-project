@@ -1,10 +1,12 @@
 import os
 import sys
 import unittest
+from unittest.mock import patch
 
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PyQt5.QtCore import QObject, pyqtSignal
 from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (
     QApplication,
@@ -20,7 +22,39 @@ from PyQt5.QtWidgets import (
 
 from ui.main_window import MainWindow
 from ui.tcc_overview import TccOverviewWidget
-from network.network_worker import ServerNetworkWorker
+class FakeNetworkWorker(QObject):
+    connected = pyqtSignal()
+    disconnected = pyqtSignal()
+    message_received = pyqtSignal(dict)
+    error = pyqtSignal(str)
+
+    def __init__(self, host, port):
+        super().__init__()
+        self.host = host
+        self.port = port
+        self.running = False
+        self.started = False
+
+    def start(self):
+        self.started = True
+        self.running = True
+
+    def stop(self):
+        self.running = False
+
+    def wait(self, timeout):
+        return True
+
+    def send_message(self, message):
+        pass
+
+
+class FakeServerWorker(FakeNetworkWorker):
+    pass
+
+
+class FakeClientWorker(FakeNetworkWorker):
+    pass
 
 
 class PhaseOneUiContractTest(unittest.TestCase):
@@ -108,12 +142,15 @@ class PhaseOneUiContractTest(unittest.TestCase):
     def test_station_roles_disconnect_and_operation_controls(self):
         window = MainWindow()
 
-        self.assertEqual(window.panel_a.network_role, "Server")
-        self.assertEqual(window.panel_b.network_role, "Server")
-        self.assertEqual(window.panel_a.network_button.text(), "开启服务器")
-        self.assertEqual(window.panel_b.network_button.text(), "开启服务器")
+        self.assertFalse(hasattr(window.panel_a, "role_label"))
+        self.assertFalse(hasattr(window.panel_b, "role_label"))
+        self.assertEqual(window.panel_a.network_button.text(), "启动通信")
+        self.assertEqual(window.panel_b.network_button.text(), "启动通信")
         self.assertEqual(window.panel_a.disconnect_button.text(), "断开连接")
         self.assertEqual(window.panel_b.disconnect_button.text(), "断开连接")
+
+        visible_labels = [label.text() for label in window.findChildren(QLabel)]
+        self.assertFalse(any("通信角色" in text for text in visible_labels))
 
         self.assertEqual(window.departure_mode_combo.count(), 2)
         self.assertEqual(window.departure_mode_combo.itemText(0), "正线发车")
@@ -136,11 +173,6 @@ class PhaseOneUiContractTest(unittest.TestCase):
     def test_network_roles_and_tsr_actions_are_wired_to_services(self):
         window = MainWindow()
 
-        self.assertIs(window.network_worker_class("A"), ServerNetworkWorker)
-        self.assertIs(window.network_worker_class("B"), ServerNetworkWorker)
-        self.assertEqual(window.network_endpoint("A"), ("127.0.0.1", 9000))
-        self.assertEqual(window.network_endpoint("B"), ("127.0.0.1", 9001))
-
         window.tsr_start_combo.setCurrentText("G05")
         window.tsr_end_combo.setCurrentText("G08")
         window.tsr_speed_combo.setCurrentText("80 km/h")
@@ -156,6 +188,62 @@ class PhaseOneUiContractTest(unittest.TestCase):
         balise_info = window.get_balise_information("A站SN口_JZ")
         self.assertIn("ETCS-254", balise_info["packets"])
         self.assertGreater(window.simulation_view.receivers(window.simulation_view.balise_clicked), 0)
+        window.close()
+
+    def test_first_started_station_becomes_server_and_second_becomes_client(self):
+        for first, second in (("A", "B"), ("B", "A")):
+            with self.subTest(first=first):
+                window = MainWindow()
+                with patch("ui.main_window.ServerNetworkWorker", FakeServerWorker), patch(
+                    "ui.main_window.ClientNetworkWorker", FakeClientWorker, create=True
+                ):
+                    window.start_network(first)
+                    window.start_network(second)
+
+                self.assertIsInstance(window.network_workers[first], FakeServerWorker)
+                self.assertIsInstance(window.network_workers[second], FakeClientWorker)
+                self.assertEqual(window.network_workers[first].port, 9000)
+                self.assertEqual(window.network_workers[second].port, 9000)
+                self.assertEqual(window.network_server_station, first)
+                self.assertEqual(window.network_modes[first], "SERVER")
+                self.assertEqual(window.network_modes[second], "CLIENT")
+                for station in ("A", "B"):
+                    status = window.get_panel_by_role(station).network_status_label.text()
+                    self.assertNotIn("Server", status)
+                    self.assertNotIn("Client", status)
+                    self.assertNotIn("服务器", status)
+                    self.assertNotIn("客户端", status)
+                window.disconnect_network(first)
+                window.close()
+
+    def test_disconnecting_either_station_resets_both_sides_and_next_election(self):
+        window = MainWindow()
+        with patch("ui.main_window.ServerNetworkWorker", FakeServerWorker), patch(
+            "ui.main_window.ClientNetworkWorker", FakeClientWorker, create=True
+        ):
+            window.start_network("A")
+            window.start_network("B")
+            workers = list(window.network_workers.values())
+            window.disconnect_network("B")
+
+        self.assertEqual(window.network_workers, {})
+        self.assertEqual(window.network_modes, {})
+        self.assertIsNone(window.network_server_station)
+        self.assertTrue(all(not worker.running for worker in workers))
+        for panel in (window.panel_a, window.panel_b):
+            self.assertTrue(panel.network_button.isEnabled())
+            self.assertFalse(panel.disconnect_button.isEnabled())
+            self.assertEqual(panel.network_status_label.text(), "通信状态：未启动")
+        window.close()
+
+    def test_expected_socket_close_does_not_replace_idle_status_with_error(self):
+        window = MainWindow()
+        window.panel_b.set_network_status("通信状态：未启动")
+
+        with patch("ui.main_window.QMessageBox.warning"):
+            window.on_network_error("B", "[Errno 9] Bad file descriptor")
+
+        self.assertEqual(window.panel_b.network_status_label.text(), "通信状态：未启动")
         window.close()
 
     def test_disconnect_and_clear_train_actions(self):
