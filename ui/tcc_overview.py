@@ -22,7 +22,8 @@ class TccOverviewWidget(QWidget):
     BLOCK_COUNT = 19
     SECTIONS_PER_BLOCK = 2
     SECTION_WIDTH = 66
-    STATION_WIDTH = 470
+    STATION_WIDTH = 390
+    APPROACH_SECTION_WIDTH = 34
     SIDE_MARGIN = 28
 
     background_color = QColor("#05070a")
@@ -76,7 +77,33 @@ class TccOverviewWidget(QWidget):
             "track_sections_per_block": 2,
             "display_direction": "下行",
             "continuous_layout": True,
+            "interval_signal_direction": "RIGHT_FIXED",
             "active_balise_groups": ["A站SN口_JZ", "区间_JZ", "B站X口_JZ"],
+        }
+
+    @staticmethod
+    def station_layout_contract(station):
+        common_signals = {
+            "X": "RIGHT",
+            "S3": "LEFT",
+            "S1": "LEFT",
+            "X3": "RIGHT",
+            "X1": "RIGHT",
+        }
+        if station == "A":
+            return {
+                "signals": {**common_signals, "SN": "LEFT"},
+                "approach_sections": ["X1LQ", "X2LQ", "X3LQ"],
+                "approach_side": "AFTER_SN",
+                "active_balise_count": 3,
+                "passive_balise_count": 2,
+            }
+        return {
+            "signals": {**common_signals, "S": "LEFT"},
+            "approach_sections": ["X1JG", "X2JG", "X3JG"],
+            "approach_side": "BEFORE_X",
+            "active_balise_count": 3,
+            "passive_balise_count": 2,
         }
 
     def set_state(
@@ -128,48 +155,99 @@ class TccOverviewWidget(QWidget):
         self._draw_train_markers(painter, interval_left, rail_y)
 
     def _draw_station(self, painter, left, right, rail_y, station):
-        station_center = (left + right) / 2
+        contract = self.station_layout_contract(station)
+        approach_width = self.APPROACH_SECTION_WIDTH * 3
+        if station == "A":
+            core_left = left + 10
+            core_right = right - approach_width - 8
+        else:
+            core_left = left + approach_width + 8
+            core_right = right - 10
+
+        station_center = (core_left + core_right) / 2
         side_y = rail_y - 68
-        throat = 72
-        siding_left = left + 82
-        siding_right = right - 82
+        siding_left = core_left + 78
+        siding_right = core_right - 78
+        main_left_throat = core_left + 48
+        main_right_throat = core_right - 48
 
         painter.setPen(QPen(self.rail_color, 2))
         painter.drawLine(int(siding_left), side_y, int(siding_right), side_y)
-        painter.drawLine(int(siding_left - throat), rail_y, int(siding_left), side_y)
-        painter.drawLine(int(siding_right), side_y, int(siding_right + throat), rail_y)
+        painter.drawLine(int(main_left_throat), rail_y, int(siding_left), side_y)
+        painter.drawLine(int(siding_right), side_y, int(main_right_throat), rail_y)
 
         painter.setPen(self.foreground_color)
-        painter.setFont(QFont("PingFang SC", 9, QFont.Bold))
+        painter.setFont(QFont("PingFang SC", 8, QFont.Bold))
         painter.drawText(int(station_center - 13), rail_y - 10, "1G")
         painter.drawText(int(station_center - 13), side_y - 10, "3G")
-        painter.drawText(int(left + 18), 82, f"{station}站站场")
+        painter.drawText(int(core_left + 4), 82, f"{station}站站场")
+
+        outer_left_x = core_left + 22
+        inner_left_x = core_left + 98
+        inner_right_x = core_right - 98
+        outer_right_x = core_right - 22
+        outer_right_name = "SN" if station == "A" else "S"
+
+        signal_specs = [
+            (outer_left_x, rail_y, "X", "RIGHT"),
+            (inner_left_x, side_y, "S3", "LEFT"),
+            (inner_left_x, rail_y, "S1", "LEFT"),
+            (inner_right_x, side_y, "X3", "RIGHT"),
+            (inner_right_x, rail_y, "X1", "RIGHT"),
+            (outer_right_x, rail_y, outer_right_name, "LEFT"),
+        ]
+        for signal_x, track_y, signal_name, signal_direction in signal_specs:
+            signal_status = "红灯"
+            if station == "A" and signal_name == "SN":
+                signal_status = self.signal_a
+            elif station == "B" and signal_name == "X":
+                signal_status = self.signal_b
+            self._draw_signal(
+                painter,
+                signal_x,
+                track_y,
+                signal_name,
+                signal_status,
+                direction=signal_direction,
+            )
 
         if station == "A":
-            signal_x = right - 22
-            signal_name = "SN"
-            signal_status = self.signal_a
-            balise_x = signal_x - 28
+            approach_left = outer_right_x + 13
+            approach_right = right
+            active_balise_id = "A站SN口_JZ"
         else:
-            signal_x = left + 22
-            signal_name = "X"
-            signal_status = self.signal_b
-            balise_x = signal_x + 28
+            approach_left = left
+            approach_right = outer_left_x - 13
+            active_balise_id = "B站X口_JZ"
 
-        self._draw_signal(painter, signal_x, rail_y, signal_name, signal_status)
+        section_width = (approach_right - approach_left) / 3
+        for index, section_name in enumerate(contract["approach_sections"]):
+            x1 = approach_left + index * section_width
+            x2 = approach_left + (index + 1) * section_width
+            painter.setPen(QPen(QColor("#536b7f"), 1))
+            painter.drawLine(int(x1), rail_y - 7, int(x1), rail_y + 7)
+            if index == 2:
+                painter.drawLine(int(x2), rail_y - 7, int(x2), rail_y + 7)
+            painter.setPen(QColor("#8fa2b4"))
+            painter.setFont(QFont("PingFang SC", 6, QFont.Bold))
+            painter.drawText(int(x1 + 2), rail_y + 17, section_name)
+
         self._draw_balise_group(
             painter,
-            balise_x,
-            rail_y + 60,
-            f"{station}站{signal_name}口_JZ",
+            (approach_left + approach_right) / 2,
+            rail_y + 36,
+            active_balise_id,
             active=True,
+            count=contract["active_balise_count"],
+            spacing=section_width,
         )
         self._draw_balise_group(
             painter,
             station_center,
-            side_y + 29,
-            f"{station}站_DD",
+            side_y + 24,
+            f"{station}站3G_DD",
             active=False,
+            count=contract["passive_balise_count"],
         )
 
     def _draw_interval(self, painter, left, rail_y, code_y):
@@ -211,7 +289,15 @@ class TccOverviewWidget(QWidget):
             if (index + 1) % self.SECTIONS_PER_BLOCK == 0 and index < self.SECTION_COUNT - 1:
                 block_no = (index + 1) // self.SECTIONS_PER_BLOCK
                 boundary_x = x2
-                self._draw_signal(painter, boundary_x, rail_y, f"S{block_no:02d}", "绿灯", compact=True)
+                self._draw_signal(
+                    painter,
+                    boundary_x,
+                    rail_y,
+                    f"S{block_no:02d}",
+                    "绿灯",
+                    compact=True,
+                    direction="RIGHT",
+                )
                 painter.setPen(QColor("#60798e"))
                 painter.setFont(QFont("PingFang SC", 6))
                 painter.drawText(int(x1 - self.SECTION_WIDTH + 4), code_y + 38, f"闭塞{block_no:02d}")
@@ -237,11 +323,30 @@ class TccOverviewWidget(QWidget):
             painter.setFont(QFont("PingFang SC", 7, QFont.Bold))
             painter.drawText(int(x + 5), code_y - 9, f"限速 {restriction.get('speed_kmh', '--')} km/h")
 
-    def _draw_signal(self, painter, x, rail_y, name, status, compact=False):
+    def _draw_signal(
+        self,
+        painter,
+        x,
+        rail_y,
+        name,
+        status,
+        compact=False,
+        direction="RIGHT",
+    ):
         stem_height = 26 if compact else 34
         radius = 4 if compact else 5
+        direction_sign = 1 if direction == "RIGHT" else -1
+        arm_length = 9 if compact else 12
+        lamp_center_x = x + direction_sign * (arm_length + radius)
+        lamp_center_y = rail_y - stem_height
         painter.setPen(QPen(QColor("#aebdca"), 1))
-        painter.drawLine(int(x), rail_y, int(x), rail_y - stem_height)
+        painter.drawLine(int(x), rail_y + 5, int(x), rail_y - stem_height)
+        painter.drawLine(
+            int(x),
+            int(lamp_center_y),
+            int(x + direction_sign * arm_length),
+            int(lamp_center_y),
+        )
         colors = {
             "绿灯": [QColor("#35e463")],
             "黄灯": [QColor("#ffd930")],
@@ -250,13 +355,21 @@ class TccOverviewWidget(QWidget):
         for index, color in enumerate(colors):
             painter.setBrush(color)
             painter.setPen(QPen(QColor("#dbe6ef"), 1))
-            painter.drawEllipse(int(x - radius + index * 10), rail_y - stem_height - radius * 2, radius * 2, radius * 2)
+            center_x = lamp_center_x + direction_sign * index * (radius * 2 + 2)
+            painter.drawEllipse(
+                int(center_x - radius),
+                int(lamp_center_y - radius),
+                radius * 2,
+                radius * 2,
+            )
         painter.setPen(QColor("#8fa2b4"))
         painter.setFont(QFont("PingFang SC", 6 if compact else 7))
-        painter.drawText(int(x - 9), rail_y - stem_height - radius * 2 - 3, name)
+        label_x = x - 9 if direction == "RIGHT" else x - 22
+        painter.drawText(int(label_x), int(lamp_center_y - radius - 4), name)
 
-    def _draw_balise_group(self, painter, x, y, name, active):
-        for offset in (-7, 7):
+    def _draw_balise_group(self, painter, x, y, name, active, count=2, spacing=14):
+        offsets = [(index - (count - 1) / 2) * spacing for index in range(count)]
+        for offset in offsets:
             points = QPolygon(
                 [
                     QPoint(int(x + offset), int(y - 6)),
@@ -269,9 +382,15 @@ class TccOverviewWidget(QWidget):
             painter.drawPolygon(points)
         painter.setPen(QColor("#83a2ba"))
         painter.setFont(QFont("PingFang SC", 6))
-        painter.drawText(int(x - 28), int(y + 18), name)
+        painter.drawText(int(x - 30), int(y + 18), name)
         if active:
-            self._active_balise_hitboxes[name] = QRectF(x - 20, y - 13, 40, 38)
+            hit_width = max(40, (count - 1) * spacing + 24)
+            self._active_balise_hitboxes[name] = QRectF(
+                x - hit_width / 2,
+                y - 13,
+                hit_width,
+                38,
+            )
 
     def _draw_train_markers(self, painter, interval_left, rail_y):
         for train in self.trains:

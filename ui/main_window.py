@@ -20,7 +20,6 @@ from services.temporary_speed_service import TemporarySpeedService
 
 from network.message_protocol import MessageProtocol
 from network.network_worker import (
-    ClientNetworkWorker,
     ServerNetworkWorker
 )
 
@@ -39,10 +38,10 @@ class MainWindow(QMainWindow):
         通信角色 Server，信号机 S01，自有38个轨道区段
 
     TCC_B（simulation_b）
-        通信角色 Client，信号机 S02，自有38个轨道区段
+        通信角色 Server，信号机 S02，自有38个轨道区段
 
-    两者通过本机TCP（127.0.0.1）互联，
-    各自用自己的自动闭塞算法计算码序。
+    两者分别监听本机9000和9001端口，
+    对等通信协议将在通信阶段实现。
 
     列车仿真（TrainService）挂在A侧，
     B侧通过报文镜像区间占用后自行重算。
@@ -69,7 +68,7 @@ class MainWindow(QMainWindow):
         # A站TCC，通信角色Server
         self.simulation_a = SimulationService("A")
 
-        # B站TCC，通信角色Client
+        # B站TCC，通信角色Server
         self.simulation_b = SimulationService("B")
 
         # 列车仿真始终挂在A侧
@@ -1146,8 +1145,7 @@ class MainWindow(QMainWindow):
         """
         配置两站控制中心的按钮。
 
-        A面板：TCC_A，通信角色Server，可开启服务器
-        B面板：TCC_B，通信角色Client，可连接A站
+        A、B面板均为独立Server，分别监听不同端口。
 
         两侧各有独立的TCC与改方管理器，
         因此两站的改方按钮都可以使用。
@@ -1162,7 +1160,7 @@ class MainWindow(QMainWindow):
         )
 
         self.panel_a.network_button.setToolTip(
-            "以TCC_A的Server身份监听B站连接"
+            "启动TCC_A服务器，监听127.0.0.1:9000"
         )
 
         self.panel_a.network_button.clicked.connect(
@@ -1190,7 +1188,7 @@ class MainWindow(QMainWindow):
         )
 
         # --------------------------
-        # B站：Client
+        # B站：Server
         # --------------------------
 
         self.panel_b.network_button.setEnabled(
@@ -1198,7 +1196,7 @@ class MainWindow(QMainWindow):
         )
 
         self.panel_b.network_button.setToolTip(
-            "以TCC_B的Client身份连接A站服务器"
+            "启动TCC_B服务器，监听127.0.0.1:9001"
         )
 
         self.panel_b.network_button.clicked.connect(
@@ -1210,7 +1208,7 @@ class MainWindow(QMainWindow):
         )
 
         self.panel_b.set_network_status(
-            "通信状态：未连接"
+            "通信状态：未启动"
         )
 
         self.panel_b.direction_button.setEnabled(
@@ -1270,10 +1268,7 @@ class MainWindow(QMainWindow):
         """
         开启站间通信。
 
-        A站创建服务器等待B站连接，
-        B站创建客户端连接TCC_A。
-
-        两个端点在同一个窗口里通过本机TCP互联。
+        A、B站分别创建服务器，使用独立端口避免冲突。
         """
 
         if role is None:
@@ -1285,12 +1280,10 @@ class MainWindow(QMainWindow):
 
         panel = self.get_panel_by_role(role)
 
-        if role == "A":
-            panel.set_network_status("通信状态：服务器已启动，等待B站")
-        else:
-            panel.set_network_status("通信状态：正在连接A站")
+        host, port = self.network_endpoint(role)
+        panel.set_network_status(f"通信状态：服务器已启动，监听{port}")
 
-        worker = self.network_worker_class(role)()
+        worker = self.network_worker_class(role)(host, port)
 
         worker.connected.connect(
             lambda r=role: self.on_connected(r)
@@ -1315,7 +1308,11 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def network_worker_class(role):
-        return ServerNetworkWorker if role == "A" else ClientNetworkWorker
+        return ServerNetworkWorker
+
+    @staticmethod
+    def network_endpoint(role):
+        return ("127.0.0.1", 9000 if role == "A" else 9001)
 
     def disconnect_network(self, role):
         worker = self.network_workers.pop(role, None)
@@ -1326,7 +1323,7 @@ class MainWindow(QMainWindow):
         panel.network_button.setEnabled(True)
         panel.disconnect_button.setEnabled(False)
         panel.set_network_status(
-            "通信状态：未启动" if role == "A" else "通信状态：未连接"
+            "通信状态：未启动"
         )
 
     def on_connected(self, role):

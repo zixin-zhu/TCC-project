@@ -20,7 +20,7 @@ from PyQt5.QtWidgets import (
 
 from ui.main_window import MainWindow
 from ui.tcc_overview import TccOverviewWidget
-from network.network_worker import ClientNetworkWorker, ServerNetworkWorker
+from network.network_worker import ServerNetworkWorker
 
 
 class PhaseOneUiContractTest(unittest.TestCase):
@@ -41,6 +41,43 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertTrue(contract["continuous_layout"])
         self.assertEqual(contract["display_direction"], "下行")
         self.assertGreaterEqual(len(contract["active_balise_groups"]), 2)
+
+    def test_station_yards_follow_word_signal_and_balise_layout(self):
+        view = TccOverviewWidget()
+
+        station_a = view.station_layout_contract("A")
+        station_b = view.station_layout_contract("B")
+
+        expected_common_signals = {
+            "X": "RIGHT",
+            "S3": "LEFT",
+            "S1": "LEFT",
+            "X3": "RIGHT",
+            "X1": "RIGHT",
+        }
+        self.assertEqual(
+            station_a["signals"],
+            {**expected_common_signals, "SN": "LEFT"},
+        )
+        self.assertEqual(
+            station_b["signals"],
+            {**expected_common_signals, "S": "LEFT"},
+        )
+        self.assertEqual(
+            station_a["approach_sections"],
+            ["X1LQ", "X2LQ", "X3LQ"],
+        )
+        self.assertEqual(
+            station_b["approach_sections"],
+            ["X1JG", "X2JG", "X3JG"],
+        )
+        self.assertEqual(station_a["approach_side"], "AFTER_SN")
+        self.assertEqual(station_b["approach_side"], "BEFORE_X")
+        self.assertEqual(station_a["active_balise_count"], 3)
+        self.assertEqual(station_b["active_balise_count"], 3)
+        self.assertEqual(station_a["passive_balise_count"], 2)
+        self.assertEqual(station_b["passive_balise_count"], 2)
+        self.assertEqual(view.layout_contract()["interval_signal_direction"], "RIGHT_FIXED")
 
     def test_overview_uses_black_background(self):
         view = TccOverviewWidget()
@@ -72,7 +109,9 @@ class PhaseOneUiContractTest(unittest.TestCase):
         window = MainWindow()
 
         self.assertEqual(window.panel_a.network_role, "Server")
-        self.assertEqual(window.panel_b.network_role, "Client")
+        self.assertEqual(window.panel_b.network_role, "Server")
+        self.assertEqual(window.panel_a.network_button.text(), "开启服务器")
+        self.assertEqual(window.panel_b.network_button.text(), "开启服务器")
         self.assertEqual(window.panel_a.disconnect_button.text(), "断开连接")
         self.assertEqual(window.panel_b.disconnect_button.text(), "断开连接")
 
@@ -98,7 +137,9 @@ class PhaseOneUiContractTest(unittest.TestCase):
         window = MainWindow()
 
         self.assertIs(window.network_worker_class("A"), ServerNetworkWorker)
-        self.assertIs(window.network_worker_class("B"), ClientNetworkWorker)
+        self.assertIs(window.network_worker_class("B"), ServerNetworkWorker)
+        self.assertEqual(window.network_endpoint("A"), ("127.0.0.1", 9000))
+        self.assertEqual(window.network_endpoint("B"), ("127.0.0.1", 9001))
 
         window.tsr_start_combo.setCurrentText("G05")
         window.tsr_end_combo.setCurrentText("G08")
