@@ -8,7 +8,8 @@ from PyQt5.QtWidgets import (
     QPushButton,
     QLabel,
     QComboBox,
-    QMessageBox
+    QMessageBox,
+    QSizePolicy
 )
 
 from services.simulation_service import SimulationService
@@ -23,7 +24,8 @@ from network.network_worker import (
 )
 
 from ui.station_panel import StationPanel
-from ui.simulation_view import SimulationView
+from ui.tcc_overview import TccOverviewWidget
+from ui.theme import APP_STYLESHEET
 
 
 class MainWindow(QMainWindow):
@@ -53,9 +55,11 @@ class MainWindow(QMainWindow):
         )
 
         self.resize(
-            1280,
-            820
+            1440,
+            900
         )
+        self.setMinimumSize(1180, 760)
+        self.setStyleSheet(APP_STYLESHEET)
 
         # ==========================
         # 双TCC后台服务
@@ -115,6 +119,7 @@ class MainWindow(QMainWindow):
     def init_ui(self):
 
         central = QWidget()
+        central.setObjectName("app_root")
 
         self.setCentralWidget(
             central
@@ -123,12 +128,37 @@ class MainWindow(QMainWindow):
         main_layout = QVBoxLayout(
             central
         )
+        main_layout.setContentsMargins(16, 12, 16, 16)
+        main_layout.setSpacing(10)
+
+        self.visualization_area = QGroupBox()
+        self.visualization_area.setObjectName(
+            "visualization_area"
+        )
+
+        visualization_layout = QVBoxLayout(
+            self.visualization_area
+        )
+        visualization_layout.setContentsMargins(5, 5, 5, 5)
 
         # ==========================
         # A/B站控制中心
         # ==========================
 
-        station_layout = QHBoxLayout()
+        self.communication_area = QGroupBox(
+            "站间通信"
+        )
+        self.communication_area.setObjectName(
+            "communication_area"
+        )
+        self.communication_area.setMinimumWidth(270)
+        self.communication_area.setMaximumWidth(320)
+
+        station_layout = QVBoxLayout(
+            self.communication_area
+        )
+        station_layout.setContentsMargins(9, 10, 9, 9)
+        station_layout.setSpacing(8)
 
         self.panel_a = StationPanel("A")
         self.panel_b = StationPanel("B")
@@ -141,26 +171,76 @@ class MainWindow(QMainWindow):
             self.panel_b
         )
 
-        main_layout.addLayout(
-            station_layout
-        )
-
         # ==========================
         # 动态线路
         # ==========================
 
         self.simulation_view = (
-            SimulationView()
+            TccOverviewWidget()
+        )
+
+        visualization_layout.addWidget(
+            self.simulation_view
         )
 
         main_layout.addWidget(
-            self.simulation_view,
-            1
+            self.visualization_area,
+            7
         )
 
         # ==========================================
         # 列车实时状态面板
         # ==========================================
+
+        self.operation_area = QGroupBox(
+            "仿真操作"
+        )
+        self.operation_area.setObjectName(
+            "operation_area"
+        )
+        operation_layout = QVBoxLayout(
+            self.operation_area
+        )
+        operation_layout.setContentsMargins(10, 10, 10, 10)
+        operation_layout.setSpacing(8)
+
+        equipment_group = QGroupBox(
+            "线路与设备操作"
+        )
+        equipment_layout = QHBoxLayout(
+            equipment_group
+        )
+
+        self.panel_a.direction_button.setText(
+            "A站申请区间改方"
+        )
+        self.panel_b.direction_button.setText(
+            "B站申请区间改方"
+        )
+        self.panel_a.balise_button.setText(
+            "查看A站应答器"
+        )
+        self.panel_b.balise_button.setText(
+            "查看B站应答器"
+        )
+
+        equipment_layout.addWidget(
+            self.panel_a.direction_button
+        )
+        equipment_layout.addWidget(
+            self.panel_b.direction_button
+        )
+        equipment_layout.addWidget(
+            self.panel_a.balise_button
+        )
+        equipment_layout.addWidget(
+            self.panel_b.balise_button
+        )
+        equipment_layout.addStretch()
+
+        operation_layout.addWidget(
+            equipment_group
+        )
 
         train_info_group = QGroupBox(
             "列车实时运行状态"
@@ -288,7 +368,7 @@ class MainWindow(QMainWindow):
             1
         )
 
-        main_layout.addWidget(
+        operation_layout.addWidget(
             train_info_group
         )
 
@@ -367,21 +447,29 @@ class MainWindow(QMainWindow):
 
         control_layout.addStretch()
 
-        control_layout.addWidget(
-            self.running_label
-        )
-
-        control_layout.addWidget(
-            self.queue_label
-        )
-
-        control_layout.addWidget(
-            self.time_label
-        )
-
-        main_layout.addLayout(
+        operation_layout.addLayout(
             control_layout
         )
+
+        metrics_layout = QHBoxLayout()
+        metrics_layout.addWidget(self.running_label)
+        metrics_layout.addWidget(self.queue_label)
+        metrics_layout.addWidget(self.time_label)
+        metrics_layout.addStretch()
+        operation_layout.addLayout(metrics_layout)
+
+        bottom_widget = QWidget()
+        bottom_widget.setSizePolicy(
+            QSizePolicy.Expanding,
+            QSizePolicy.Preferred
+        )
+        bottom_layout = QHBoxLayout(bottom_widget)
+        bottom_layout.setContentsMargins(0, 0, 0, 0)
+        bottom_layout.setSpacing(10)
+        bottom_layout.addWidget(self.communication_area)
+        bottom_layout.addWidget(self.operation_area, 1)
+
+        main_layout.addWidget(bottom_widget, 4)
 
         # ==========================
         # 绑定

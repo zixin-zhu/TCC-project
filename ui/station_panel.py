@@ -13,14 +13,15 @@ class StationPanel(QGroupBox):
         super().__init__(parent)
 
         self.station_type = station_type
+        self.setObjectName(f"station_panel_{station_type.lower()}")
 
         if station_type == "A":
-            self.setTitle("A站控制中心 · TCC-A")
+            self.setTitle("A站通信")
             self.network_role = "Client"
             self.signal_code = "S01"
             self.balise_code = "BA-A"
         else:
-            self.setTitle("B站控制中心 · TCC-B")
+            self.setTitle("B站通信")
             self.network_role = "Server"
             self.signal_code = "S02"
             self.balise_code = "BA-B"
@@ -74,28 +75,14 @@ class StationPanel(QGroupBox):
             f"{self.signal_code}：🔴 红灯"
         )
 
-        layout.addWidget(
-            self.signal_label
-        )
-
         # 当前区间运行方向（只读显示）
         self.direction_label = QLabel(
             "当前区间方向：A站 → B站"
         )
 
-        layout.addWidget(
-            self.direction_label
-        )
-
         self.balise_label = QLabel(
             f"有源应答器：{self.balise_code}"
         )
-
-        layout.addWidget(
-            self.balise_label
-        )
-
-        button_layout = QHBoxLayout()
 
         self.direction_button = QPushButton(
             "申请区间改方"
@@ -110,18 +97,6 @@ class StationPanel(QGroupBox):
 
         self.balise_button = QPushButton(
             "查看应答器报文"
-        )
-
-        button_layout.addWidget(
-            self.direction_button
-        )
-
-        button_layout.addWidget(
-            self.balise_button
-        )
-
-        layout.addLayout(
-            button_layout
         )
 
         layout.addStretch()
