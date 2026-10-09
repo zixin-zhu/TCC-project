@@ -190,33 +190,28 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertGreater(window.simulation_view.receivers(window.simulation_view.balise_clicked), 0)
         window.close()
 
-    def test_first_started_station_becomes_server_and_second_becomes_client(self):
-        for first, second in (("A", "B"), ("B", "A")):
-            with self.subTest(first=first):
-                window = MainWindow()
-                with patch("ui.main_window.ServerNetworkWorker", FakeServerWorker), patch(
-                    "ui.main_window.ClientNetworkWorker", FakeClientWorker, create=True
-                ):
-                    window.start_network(first)
-                    window.start_network(second)
+    def test_a_is_server_and_b_is_client_regardless_of_start_order(self):
+        window = MainWindow()
+        with patch("ui.main_window.ServerNetworkWorker", FakeServerWorker), patch(
+            "ui.main_window.ClientNetworkWorker", FakeClientWorker, create=True
+        ):
+            window.start_network("B")
+            window.start_network("A")
 
-                self.assertIsInstance(window.network_workers[first], FakeServerWorker)
-                self.assertIsInstance(window.network_workers[second], FakeClientWorker)
-                self.assertEqual(window.network_workers[first].port, 9000)
-                self.assertEqual(window.network_workers[second].port, 9000)
-                self.assertEqual(window.network_server_station, first)
-                self.assertEqual(window.network_modes[first], "SERVER")
-                self.assertEqual(window.network_modes[second], "CLIENT")
-                for station in ("A", "B"):
-                    status = window.get_panel_by_role(station).network_status_label.text()
-                    self.assertNotIn("Server", status)
-                    self.assertNotIn("Client", status)
-                    self.assertNotIn("服务器", status)
-                    self.assertNotIn("客户端", status)
-                window.disconnect_network(first)
-                window.close()
+        self.assertIsInstance(window.network_workers["A"], FakeServerWorker)
+        self.assertIsInstance(window.network_workers["B"], FakeClientWorker)
+        self.assertEqual(window.network_workers["A"].port, 9000)
+        self.assertEqual(window.network_workers["B"].port, 9000)
+        for station in ("A", "B"):
+            status = window.get_panel_by_role(station).network_status_label.text()
+            self.assertNotIn("Server", status)
+            self.assertNotIn("Client", status)
+            self.assertNotIn("服务器", status)
+            self.assertNotIn("客户端", status)
+        window.disconnect_network("A")
+        window.close()
 
-    def test_disconnecting_either_station_resets_both_sides_and_next_election(self):
+    def test_disconnecting_either_station_resets_both_sides(self):
         window = MainWindow()
         with patch("ui.main_window.ServerNetworkWorker", FakeServerWorker), patch(
             "ui.main_window.ClientNetworkWorker", FakeClientWorker, create=True
@@ -227,8 +222,6 @@ class PhaseOneUiContractTest(unittest.TestCase):
             window.disconnect_network("B")
 
         self.assertEqual(window.network_workers, {})
-        self.assertEqual(window.network_modes, {})
-        self.assertIsNone(window.network_server_station)
         self.assertTrue(all(not worker.running for worker in workers))
         for panel in (window.panel_a, window.panel_b):
             self.assertTrue(panel.network_button.isEnabled())

@@ -41,8 +41,8 @@ class MainWindow(QMainWindow):
     TCC_B（simulation_b）
         信号机 S02，自有38个轨道区段
 
-    两站完全对等：先启动者内部作为Server监听9000，
-    后启动者内部作为Client连接9000，界面不显示角色。
+    TCC_A固定作为Server监听9000，TCC_B固定作为Client连接9000，
+    通信角色仅用于内部实现，界面不显示角色。
 
     列车仿真（TrainService）挂在A侧，
     B侧通过报文镜像区间占用后自行重算。
@@ -111,8 +111,6 @@ class MainWindow(QMainWindow):
 
         # 站间通信端点：{站别: worker}
         self.network_workers = {}
-        self.network_modes = {}
-        self.network_server_station = None
         self._network_resetting = False
 
         # 站间同步节拍计数
@@ -1149,14 +1147,14 @@ class MainWindow(QMainWindow):
         """
         配置两站控制中心的按钮。
 
-        A、B面板完全对等，启动顺序决定内部通信角色。
+        A站固定监听，B站固定连接A站；界面不显示内部通信角色。
 
         两侧各有独立的TCC与改方管理器，
         因此两站的改方按钮都可以使用。
         """
 
         # --------------------------
-        # A站：动态角色
+        # A站：固定监听端
         # --------------------------
 
         self.panel_a.network_button.setEnabled(
@@ -1164,7 +1162,7 @@ class MainWindow(QMainWindow):
         )
 
         self.panel_a.network_button.setToolTip(
-            "启动A站通信；若先启动则等待对端，后启动则自动建立连接"
+            "启动A站通信，等待B站建立连接"
         )
 
         self.panel_a.network_button.clicked.connect(
@@ -1192,7 +1190,7 @@ class MainWindow(QMainWindow):
         )
 
         # --------------------------
-        # B站：动态角色
+        # B站：固定连接端
         # --------------------------
 
         self.panel_b.network_button.setEnabled(
@@ -1200,7 +1198,7 @@ class MainWindow(QMainWindow):
         )
 
         self.panel_b.network_button.setToolTip(
-            "启动B站通信；若先启动则等待对端，后启动则自动建立连接"
+            "启动B站通信，连接A站通信端点"
         )
 
         self.panel_b.network_button.clicked.connect(
@@ -1272,8 +1270,8 @@ class MainWindow(QMainWindow):
         """
         开启站间通信。
 
-        首个启动的站建立监听，后启动的站自动连接先启动站。
-        角色只用于内部通信，不显示在界面中。
+        A站固定建立监听，B站固定连接A站。
+        角色只用于内部通信，不显示在界面中；正常操作顺序为先A后B。
         """
 
         if role is None:
@@ -1285,15 +1283,11 @@ class MainWindow(QMainWindow):
 
         panel = self.get_panel_by_role(role)
 
-        if self.network_server_station is None:
-            self.network_server_station = role
-            mode = "SERVER"
-            panel.set_network_status("通信状态：等待对端启动")
+        if role == "A":
+            panel.set_network_status("通信状态：等待B站连接")
         else:
-            mode = "CLIENT"
-            panel.set_network_status("通信状态：正在建立连接")
+            panel.set_network_status("通信状态：正在连接A站")
 
-        self.network_modes[role] = mode
         host, port = self.network_endpoint()
 
         worker = self.network_worker_class(role)(host, port)
@@ -1320,7 +1314,7 @@ class MainWindow(QMainWindow):
         worker.start()
 
     def network_worker_class(self, role):
-        if role == self.network_server_station:
+        if role == "A":
             return ServerNetworkWorker
         return ClientNetworkWorker
 
@@ -1335,8 +1329,6 @@ class MainWindow(QMainWindow):
         self._network_resetting = True
         workers = list(self.network_workers.values())
         self.network_workers.clear()
-        self.network_modes.clear()
-        self.network_server_station = None
 
         try:
             for worker in workers:
