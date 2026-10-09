@@ -266,11 +266,39 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertFalse(window.panel_a.disconnect_button.isEnabled())
 
         window.engine.simulation_time = 12.5
+        window.route_service.establish_route("A", RouteType.MAIN_DEPART)
         window.train_service.add_waiting_train()
         window.clear_all_trains()
         self.assertEqual(window.train_service.trains, {})
         self.assertEqual(window.train_service.waiting_queue, [])
+        self.assertEqual(window.route_service.active_routes(), [])
+        self.assertEqual(window.active_route_combo.currentData(), None)
         self.assertEqual(window.engine.simulation_time, 12.5)
+        window.close()
+
+    def test_reset_clears_routes_and_preserves_route_service_binding(self):
+        window = MainWindow()
+        window.route_service.establish_route("A", RouteType.MAIN_DEPART)
+
+        window.reset_simulation()
+
+        self.assertEqual(window.route_service.active_routes(), [])
+        self.assertIs(window.train_service.route_service, window.route_service)
+        self.assertEqual(window.active_route_combo.currentData(), None)
+        window.close()
+
+    def test_train_keeps_selected_departure_and_arrival_modes(self):
+        window = MainWindow()
+        window.departure_mode_combo.setCurrentText("侧线发车")
+        window.arrival_mode_combo.setCurrentText("正线接车")
+
+        window.add_waiting_train()
+
+        train = window.train_service.trains["T001"]
+        self.assertEqual(train.departure_mode, "SIDE")
+        self.assertEqual(train.station_track, "3G")
+        self.assertEqual(train.arrival_mode, "MAIN")
+        self.assertEqual(train.arrival_track, "1G")
         window.close()
 
     def test_compact_operation_layout_contract(self):

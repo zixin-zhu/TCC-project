@@ -3,11 +3,19 @@ class Train:
     def __init__(
         self,
         train_id,
-        direction="A_TO_B"
+        direction="A_TO_B",
+        departure_mode="MAIN",
+        arrival_mode=None,
     ):
         self.train_id = train_id
 
         self.direction = direction
+
+        self.departure_mode = departure_mode
+        self.arrival_mode = arrival_mode or departure_mode
+        self.station_track = "1G" if departure_mode == "MAIN" else "3G"
+        self.arrival_track = "1G" if self.arrival_mode == "MAIN" else "3G"
+        self.route_id = None
 
         self.current_track = None
 
@@ -97,6 +105,11 @@ class Train:
         return {
             "train_id": self.train_id,
             "direction": self.direction,
+            "departure_mode": self.departure_mode,
+            "arrival_mode": self.arrival_mode,
+            "station_track": self.station_track,
+            "arrival_track": self.arrival_track,
+            "route_id": self.route_id,
             "current_track": self.current_track,
 
             "position": round(

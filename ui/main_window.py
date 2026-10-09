@@ -74,16 +74,17 @@ class MainWindow(QMainWindow):
         # B站TCC
         self.simulation_b = SimulationService("B")
 
+        self.route_service = RouteService()
+
         # 列车仿真始终挂在A侧
         self.train_service = TrainService(
-            self.simulation_a
+            self.simulation_a,
+            self.route_service,
         )
 
         self.temporary_speed_service = TemporarySpeedService(
             list(self.simulation_a.track_circuits.keys())
         )
-
-        self.route_service = RouteService()
 
         self.engine = SimulationEngine(
             self.train_service
@@ -661,8 +662,19 @@ class MainWindow(QMainWindow):
 
     def add_waiting_train(self):
 
-        train = (
-            self.train_service.add_waiting_train()
+        departure_mode = (
+            "MAIN"
+            if self.departure_mode_combo.currentText() == "正线发车"
+            else "SIDE"
+        )
+        arrival_mode = (
+            "MAIN"
+            if self.arrival_mode_combo.currentText() == "正线接车"
+            else "SIDE"
+        )
+        train = self.train_service.add_waiting_train(
+            departure_mode,
+            arrival_mode,
         )
 
         print(
@@ -828,6 +840,7 @@ class MainWindow(QMainWindow):
     def clear_all_trains(self):
         self.engine.pause()
         self.train_service.clear_all_trains()
+        self.route_service.clear_all()
         for simulation in (self.simulation_a, self.simulation_b):
             simulation.train_position = None
             for track in simulation.track_circuits.values():
@@ -835,6 +848,7 @@ class MainWindow(QMainWindow):
             simulation.close_signal()
             simulation.update_all_track_codes()
         self.start_button.setEnabled(True)
+        self.refresh_route_controls()
         self.refresh_view()
 
     def get_balise_information(self, balise_id):
@@ -881,9 +895,12 @@ class MainWindow(QMainWindow):
 
         self.engine.pause()
 
+        self.route_service.clear_all()
+
         # 重新创建列车服务（列车仿真始终挂A侧）
         self.train_service = TrainService(
-            self.simulation_a
+            self.simulation_a,
+            self.route_service,
         )
 
         # Engine改为使用新的服务
@@ -912,6 +929,7 @@ class MainWindow(QMainWindow):
             True
         )
 
+        self.refresh_route_controls()
         self.refresh_view()
 
     # ==============================
@@ -919,6 +937,8 @@ class MainWindow(QMainWindow):
     # ==============================
 
     def refresh_view(self):
+
+        self.refresh_route_controls()
 
         # 线路占用以A侧（列车仿真侧）为准
         tracks = (

@@ -1,4 +1,5 @@
 from models.train import Train
+from models.route import RouteState
 from services.passive_balise_service import PassiveBaliseService
 
 class TrainService:
@@ -19,11 +20,12 @@ class TrainService:
         "HU": 0.0
     }
 
-    def __init__(self, simulation_service):
+    def __init__(self, simulation_service, route_service=None):
         self.passive_balise_service = (
             PassiveBaliseService()
         )
         self.simulation = simulation_service
+        self.route_service = route_service
 
         # 当前系统中的全部列车
         # {
@@ -44,7 +46,7 @@ class TrainService:
     # 创建列车
     # ==================================================
 
-    def create_train(self):
+    def create_train(self, departure_mode="MAIN", arrival_mode=None):
 
         train_id = f"T{self.next_train_number:03d}"
 
@@ -54,7 +56,9 @@ class TrainService:
 
         train = Train(
             train_id,
-            direction
+            direction,
+            departure_mode,
+            arrival_mode,
         )
 
         self.trains[train_id] = train
@@ -108,9 +112,11 @@ class TrainService:
 
     def dispatch_train(self, train):
         if not self.can_dispatch_new_train(
-                train.direction
+                train.direction,
+                train.departure_mode,
         ):
             return False
+        departure_route = self.get_matching_departure_route(train)
         entrance_track = self.get_entrance_track(
             train.direction
         )
@@ -127,6 +133,12 @@ class TrainService:
             entrance_track
         )
         train.calculate_target_speed()
+        if departure_route is not None:
+            self.route_service.lock_route(
+                departure_route.route_id,
+                train.train_id,
+            )
+            train.route_id = departure_route.route_id
         return True
     # ==================================================
     # 获取下一闭塞分区
@@ -174,7 +186,7 @@ class TrainService:
         # 没有下一分区
         # 说明已经驶出整个区间
         if next_track is None:
-
+            self.release_train_route(train)
             train.leave_section()
 
             return
@@ -196,9 +208,15 @@ class TrainService:
             return
 
         # 正常进入下一闭塞分区
+        current_track = train.current_track
         train.current_track = next_track
 
         train.position = remaining_distance
+        order = self.get_track_order(train.direction)
+        if current_track == order[0] and next_track == order[1]:
+            self.release_train_route(train)
+        if next_track == order[-1]:
+            self.lock_matching_receive_route(train)
         self.read_passive_balise(
             train,
             train.current_track
@@ -337,7 +355,7 @@ class TrainService:
         # 重新计算L5/L3/L2/L/LU/U/HU
         self.simulation.update_all_track_codes()
 
-    def can_dispatch_new_train(self, direction):
+    def can_dispatch_new_train(self, direction, departure_mode="MAIN"):
         """
         判断当前是否满足下一列车发车条件。
 
@@ -345,6 +363,16 @@ class TrainService:
         前车至少进入第3个闭塞分区，
         才允许下一列车进入入口分区。
         """
+
+        if self.route_service is not None:
+            departure_station = self.get_departure_station(direction)
+            station_track = self.mode_to_track(departure_mode)
+            route = self.route_service.departure_route_for(
+                departure_station,
+                station_track,
+            )
+            if route is None or route.state != RouteState.ESTABLISHED:
+                return False
 
         order = self.get_track_order(
             direction
@@ -414,12 +442,12 @@ class TrainService:
             direction
         )
 
-    def add_waiting_train(self):
+    def add_waiting_train(self, departure_mode="MAIN", arrival_mode=None):
         """
         创建一辆列车，并加入待发队列。
         """
 
-        train = self.create_train()
+        train = self.create_train(departure_mode, arrival_mode)
 
         self.waiting_queue.append(
             train.train_id
@@ -450,7 +478,8 @@ class TrainService:
 
         # 判断是否满足安全发车条件
         if not self.can_dispatch_new_train(
-                train.direction
+                train.direction,
+                train.departure_mode,
         ):
             return None
 
@@ -466,6 +495,46 @@ class TrainService:
         self.waiting_queue.pop(0)
 
         return train
+
+    @staticmethod
+    def mode_to_track(mode):
+        if mode not in ("MAIN", "SIDE"):
+            raise ValueError("非法接发车方式")
+        return "1G" if mode == "MAIN" else "3G"
+
+    @staticmethod
+    def get_departure_station(direction):
+        return "A" if direction == "A_TO_B" else "B"
+
+    @staticmethod
+    def get_arrival_station(direction):
+        return "B" if direction == "A_TO_B" else "A"
+
+    def get_matching_departure_route(self, train):
+        if self.route_service is None:
+            return None
+        return self.route_service.departure_route_for(
+            self.get_departure_station(train.direction),
+            train.station_track,
+        )
+
+    def lock_matching_receive_route(self, train):
+        if self.route_service is None:
+            return None
+        route = self.route_service.receive_route_for(
+            self.get_arrival_station(train.direction),
+            train.arrival_track,
+        )
+        if route is None or route.state != RouteState.ESTABLISHED:
+            return None
+        self.route_service.lock_route(route.route_id, train.train_id)
+        train.route_id = route.route_id
+        return route
+
+    def release_train_route(self, train):
+        if self.route_service is not None and train.route_id is not None:
+            self.route_service.release_route(train.route_id)
+        train.route_id = None
 
     def get_entry_signal_status(self):
         """
