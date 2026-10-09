@@ -6,10 +6,10 @@ from network.tcp_server import TCPServer
 
 class ClientNetworkWorker(QThread):
     """
-    TCC-A客户端网络线程
+    客户端网络线程（本项目由 B站使用）
 
     专门负责：
-    1. 连接TCC-B
+    1. 连接A站服务器
     2. 后台持续接收消息
     3. 将网络事件通知给PyQt主线程
     """
@@ -39,7 +39,7 @@ class ClientNetworkWorker(QThread):
         """
 
         try:
-            # 连接TCC-B
+            # 连接A站服务器
             self.client.connect()
 
             self.running = True
@@ -96,12 +96,12 @@ class ClientNetworkWorker(QThread):
 
 class ServerNetworkWorker(QThread):
     """
-    TCC-B服务器网络线程
+    服务器网络线程（本项目由 A站使用）
 
     负责：
     1. 启动TCP服务器
-    2. 等待TCC-A连接
-    3. 持续接收TCC-A报文
+    2. 等待B站连接
+    3. 持续接收B站报文
     """
 
     connected = pyqtSignal()

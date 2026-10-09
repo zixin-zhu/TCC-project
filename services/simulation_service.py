@@ -90,12 +90,12 @@ class SimulationService:
         )
 
         # =========================
-        # 3. 创建8个闭塞分区
+        # 3. 创建38个轨道区段（每2个组成1个闭塞分区）
         # =========================
 
         self.track_circuits = {}
 
-        for i in range(1, 9):
+        for i in range(1, 39):
             code = f"G{i:02d}"
 
             track = TrackCircuit(
@@ -110,6 +110,14 @@ class SimulationService:
             self.tcc.add_track_circuit(
                 track
             )
+
+        self.block_section_pairs = {
+            f"BS{i:02d}": (
+                f"G{i * 2 - 1:02d}",
+                f"G{i * 2:02d}",
+            )
+            for i in range(1, 20)
+        }
 
         # =========================
         # 4. 暂时兼容以前的G01代码
@@ -140,6 +148,9 @@ class SimulationService:
 
         # 初始化全部闭塞分区编码
         self.update_all_track_codes()
+
+    def get_block_section_pairs(self):
+        return dict(self.block_section_pairs)
 
     # ==========================================
     # G01状态
@@ -260,7 +271,7 @@ class SimulationService:
     ):
         """
         根据邻站TCC发送的数据，
-        更新G01～G08状态和列车位置。
+        更新G01～G38状态和列车位置。
         """
 
         for item in tracks:
@@ -446,7 +457,7 @@ class SimulationService:
         if self.tcc.get_direction() == "A_TO_B":
             return "G01"
 
-        return "G08"
+        return "G38"
 
     def update_signal_status(self):
         """
@@ -687,7 +698,7 @@ class SimulationService:
         判断当前是否允许区间改方。
 
         条件：
-        1. G01～G08全部空闲
+        1. G01～G38全部空闲
         2. 区间内没有列车
         3. 本站信号机处于红灯
         """

@@ -11,18 +11,13 @@ class PassiveBaliseService:
 
     def create_default_balises(self):
 
-        data = [
-            # 应答器 当前分区 当前限速 坡度  下一分区 下一限速
-
-            ("B01", "G01", 120, 0.0, "G02", 120),
-            ("B02", "G02", 120, 0.0, "G03", 110),
-            ("B03", "G03", 110, 2.0, "G04", 100),
-            ("B04", "G04", 100, 3.0, "G05", 120),
-            ("B05", "G05", 120, 0.0, "G06", 120),
-            ("B06", "G06", 120, -2.0, "G07", 100),
-            ("B07", "G07", 100, -3.0, "G08", 80),
-            ("B08", "G08", 80, 0.0, None, None),
-        ]
+        data = []
+        for index in range(1, 39):
+            next_track = f"G{index + 1:02d}" if index < 38 else None
+            next_speed = 120 if next_track is not None else None
+            data.append(
+                (f"B{index:02d}", f"G{index:02d}", 120, 0.0, next_track, next_speed)
+            )
 
         for (
                 balise_id,

@@ -16,6 +16,7 @@ from services.simulation_service import SimulationService
 from services.train_service import TrainService
 from services.simulation_engine import SimulationEngine
 from services.direction_manager import DirectionManager
+from services.temporary_speed_service import TemporarySpeedService
 
 from network.message_protocol import MessageProtocol
 from network.network_worker import (
@@ -24,7 +25,7 @@ from network.network_worker import (
 )
 
 from ui.station_panel import StationPanel
-from ui.tcc_overview import TccOverviewWidget
+from ui.tcc_overview import HorizontalWheelScrollArea, TccOverviewWidget
 from ui.theme import APP_STYLESHEET
 
 
@@ -35,10 +36,10 @@ class MainWindow(QMainWindow):
     窗口里同时存在两个相互独立的TCC对象：
 
     TCC_A（simulation_a）
-        通信角色 Client，信号机 S01，自有8个闭塞分区
+        通信角色 Server，信号机 S01，自有38个轨道区段
 
     TCC_B（simulation_b）
-        通信角色 Server，信号机 S02，自有8个闭塞分区
+        通信角色 Client，信号机 S02，自有38个轨道区段
 
     两者通过本机TCP（127.0.0.1）互联，
     各自用自己的自动闭塞算法计算码序。
@@ -65,15 +66,19 @@ class MainWindow(QMainWindow):
         # 双TCC后台服务
         # ==========================
 
-        # A站TCC，通信角色Client
+        # A站TCC，通信角色Server
         self.simulation_a = SimulationService("A")
 
-        # B站TCC，通信角色Server
+        # B站TCC，通信角色Client
         self.simulation_b = SimulationService("B")
 
         # 列车仿真始终挂在A侧
         self.train_service = TrainService(
             self.simulation_a
+        )
+
+        self.temporary_speed_service = TemporarySpeedService(
+            list(self.simulation_a.track_circuits.keys())
         )
 
         self.engine = SimulationEngine(
@@ -179,8 +184,20 @@ class MainWindow(QMainWindow):
             TccOverviewWidget()
         )
 
-        visualization_layout.addWidget(
+        self.visualization_scroll_area = HorizontalWheelScrollArea()
+        self.visualization_scroll_area.setObjectName(
+            "visualization_scroll_area"
+        )
+        self.visualization_scroll_area.setWidgetResizable(True)
+        self.visualization_scroll_area.setVerticalScrollBarPolicy(
+            1
+        )
+        self.visualization_scroll_area.setWidget(
             self.simulation_view
+        )
+
+        visualization_layout.addWidget(
+            self.visualization_scroll_area
         )
 
         main_layout.addWidget(
@@ -205,38 +222,42 @@ class MainWindow(QMainWindow):
         operation_layout.setSpacing(8)
 
         equipment_group = QGroupBox(
-            "线路与设备操作"
+            "临时限速"
         )
-        equipment_layout = QHBoxLayout(
+        equipment_layout = QGridLayout(
             equipment_group
         )
 
-        self.panel_a.direction_button.setText(
-            "A站申请区间改方"
-        )
-        self.panel_b.direction_button.setText(
-            "B站申请区间改方"
-        )
-        self.panel_a.balise_button.setText(
-            "查看A站应答器"
-        )
-        self.panel_b.balise_button.setText(
-            "查看B站应答器"
-        )
+        equipment_layout.addWidget(QLabel("起始区段："), 0, 0)
+        self.tsr_start_combo = QComboBox()
+        self.tsr_start_combo.setObjectName("tsr_start_section")
+        self.tsr_start_combo.addItems([f"G{i:02d}" for i in range(1, 39)])
+        equipment_layout.addWidget(self.tsr_start_combo, 0, 1)
 
-        equipment_layout.addWidget(
-            self.panel_a.direction_button
-        )
-        equipment_layout.addWidget(
-            self.panel_b.direction_button
-        )
-        equipment_layout.addWidget(
-            self.panel_a.balise_button
-        )
-        equipment_layout.addWidget(
-            self.panel_b.balise_button
-        )
-        equipment_layout.addStretch()
+        equipment_layout.addWidget(QLabel("终止区段："), 0, 2)
+        self.tsr_end_combo = QComboBox()
+        self.tsr_end_combo.setObjectName("tsr_end_section")
+        self.tsr_end_combo.addItems([f"G{i:02d}" for i in range(1, 39)])
+        equipment_layout.addWidget(self.tsr_end_combo, 0, 3)
+
+        equipment_layout.addWidget(QLabel("限速："), 0, 4)
+        self.tsr_speed_combo = QComboBox()
+        self.tsr_speed_combo.setObjectName("tsr_speed")
+        self.tsr_speed_combo.addItems(["45 km/h", "80 km/h", "120 km/h", "160 km/h", "200 km/h", "250 km/h"])
+        equipment_layout.addWidget(self.tsr_speed_combo, 0, 5)
+
+        self.tsr_apply_button = QPushButton("设置限速")
+        self.tsr_apply_button.setObjectName("tsr_apply_button")
+        equipment_layout.addWidget(self.tsr_apply_button, 0, 6)
+
+        self.active_tsr_combo = QComboBox()
+        self.active_tsr_combo.setObjectName("active_tsr")
+        equipment_layout.addWidget(QLabel("已生效限速："), 1, 0)
+        equipment_layout.addWidget(self.active_tsr_combo, 1, 1, 1, 5)
+
+        self.tsr_cancel_button = QPushButton("取消选中限速")
+        self.tsr_cancel_button.setObjectName("tsr_cancel_button")
+        equipment_layout.addWidget(self.tsr_cancel_button, 1, 6)
 
         operation_layout.addWidget(
             equipment_group
@@ -264,6 +285,16 @@ class MainWindow(QMainWindow):
             0,
             1
         )
+
+        train_info_layout.addWidget(QLabel("发车方式："), 0, 2)
+        self.departure_mode_combo = QComboBox()
+        self.departure_mode_combo.addItems(["正线发车", "侧线发车"])
+        train_info_layout.addWidget(self.departure_mode_combo, 0, 3)
+
+        train_info_layout.addWidget(QLabel("接车方式："), 0, 4)
+        self.arrival_mode_combo = QComboBox()
+        self.arrival_mode_combo.addItems(["正线接车", "侧线接车"])
+        train_info_layout.addWidget(self.arrival_mode_combo, 0, 5)
 
         # 第一行
         self.info_track = QLabel(
@@ -394,6 +425,10 @@ class MainWindow(QMainWindow):
             "■ 复位"
         )
 
+        self.clear_trains_button = QPushButton(
+            "一键清车"
+        )
+
         self.speed_combo = QComboBox()
 
         self.speed_combo.addItems(
@@ -438,6 +473,10 @@ class MainWindow(QMainWindow):
         )
 
         control_layout.addWidget(
+            self.clear_trains_button
+        )
+
+        control_layout.addWidget(
             QLabel("仿真倍速：")
         )
 
@@ -457,6 +496,14 @@ class MainWindow(QMainWindow):
         metrics_layout.addWidget(self.time_label)
         metrics_layout.addStretch()
         operation_layout.addLayout(metrics_layout)
+
+        direction_layout = QHBoxLayout()
+        self.panel_a.direction_button.setText("A站申请区间改方")
+        self.panel_b.direction_button.setText("B站申请区间改方")
+        direction_layout.addWidget(self.panel_a.direction_button)
+        direction_layout.addWidget(self.panel_b.direction_button)
+        direction_layout.addStretch()
+        operation_layout.addLayout(direction_layout)
 
         bottom_widget = QWidget()
         bottom_widget.setSizePolicy(
@@ -491,8 +538,24 @@ class MainWindow(QMainWindow):
             self.reset_simulation
         )
 
+        self.clear_trains_button.clicked.connect(
+            self.clear_all_trains
+        )
+
         self.speed_combo.currentTextChanged.connect(
             self.change_speed
+        )
+
+        self.tsr_apply_button.clicked.connect(
+            self.apply_temporary_speed_restriction
+        )
+
+        self.tsr_cancel_button.clicked.connect(
+            self.cancel_temporary_speed_restriction
+        )
+
+        self.simulation_view.balise_clicked.connect(
+            self.show_balise_information
         )
 
     # ==============================
@@ -554,6 +617,78 @@ class MainWindow(QMainWindow):
 
         self.engine.set_speed_multiplier(
             value
+        )
+
+    def apply_temporary_speed_restriction(self):
+        try:
+            speed = int(self.tsr_speed_combo.currentText().split()[0])
+            self.temporary_speed_service.set_restriction(
+                self.tsr_start_combo.currentText(),
+                self.tsr_end_combo.currentText(),
+                speed,
+            )
+        except ValueError as error:
+            QMessageBox.warning(self, "限速设置失败", str(error))
+            return
+        self.refresh_temporary_speed_controls()
+        self.refresh_view()
+
+    def cancel_temporary_speed_restriction(self):
+        restriction_id = self.active_tsr_combo.currentData()
+        if restriction_id is None:
+            return
+        self.temporary_speed_service.cancel_restriction(restriction_id)
+        self.refresh_temporary_speed_controls()
+        self.refresh_view()
+
+    def refresh_temporary_speed_controls(self):
+        current_id = self.active_tsr_combo.currentData()
+        self.active_tsr_combo.clear()
+        for restriction in self.temporary_speed_service.active_restrictions():
+            text = (
+                f"{restriction['id']}  "
+                f"{restriction['start_section']}～{restriction['end_section']}  "
+                f"{restriction['speed_kmh']} km/h"
+            )
+            self.active_tsr_combo.addItem(text, restriction["id"])
+        if current_id is not None:
+            index = self.active_tsr_combo.findData(current_id)
+            if index >= 0:
+                self.active_tsr_combo.setCurrentIndex(index)
+
+    def clear_all_trains(self):
+        self.engine.pause()
+        self.train_service.clear_all_trains()
+        for simulation in (self.simulation_a, self.simulation_b):
+            simulation.train_position = None
+            for track in simulation.track_circuits.values():
+                track.release()
+            simulation.close_signal()
+            simulation.update_all_track_codes()
+        self.start_button.setEnabled(True)
+        self.refresh_view()
+
+    def get_balise_information(self, balise_id):
+        if not self.is_connected():
+            packets = ["ETCS-254"]
+        else:
+            packets = ["ETCS-5", "ETCS-21", "ETCS-27"]
+            if self.temporary_speed_service.active_restrictions():
+                packets.append("ETCS-44(CTCS-2)")
+        return {
+            "balise_id": balise_id,
+            "packets": packets,
+            "direction": self.simulation_a.get_direction(),
+        }
+
+    def show_balise_information(self, balise_id):
+        info = self.get_balise_information(balise_id)
+        QMessageBox.information(
+            self,
+            "有源应答器信息",
+            f"应答器组：{info['balise_id']}\n"
+            f"运行方向：{info['direction']}\n"
+            f"信息包：{', '.join(info['packets'])}",
         )
 
     # ==============================
@@ -621,9 +756,18 @@ class MainWindow(QMainWindow):
             self.simulation_a.get_all_track_status()
         )
 
-        trains = (
-            self.train_service.get_all_train_status()
-        )
+        for train in self.train_service.trains.values():
+            temporary_speed = self.temporary_speed_service.speed_for(
+                train.current_track
+            )
+            train.temporary_speed = (
+                float(temporary_speed)
+                if temporary_speed is not None
+                else train.max_speed
+            )
+            train.calculate_target_speed()
+
+        trains = self.train_service.get_all_train_status()
 
         direction = (
             self.simulation_a.get_direction()
@@ -668,8 +812,12 @@ class MainWindow(QMainWindow):
             trains=trains,
             direction=direction,
             signal_a=signal_a,
-            signal_b=signal_b
+            signal_b=signal_b,
+            restrictions=(
+                self.temporary_speed_service.active_restrictions()
+            ),
         )
+
         self.update_train_selector(
             trains
         )
@@ -980,15 +1128,15 @@ class MainWindow(QMainWindow):
         """
         配置两站控制中心的按钮。
 
-        A面板：TCC_A，通信角色Client，可连接服务器
-        B面板：TCC_B，通信角色Server，可开启服务器
+        A面板：TCC_A，通信角色Server，可开启服务器
+        B面板：TCC_B，通信角色Client，可连接A站
 
         两侧各有独立的TCC与改方管理器，
         因此两站的改方按钮都可以使用。
         """
 
         # --------------------------
-        # A站：Client
+        # A站：Server
         # --------------------------
 
         self.panel_a.network_button.setEnabled(
@@ -996,15 +1144,19 @@ class MainWindow(QMainWindow):
         )
 
         self.panel_a.network_button.setToolTip(
-            "以TCC_A的Client身份连接TCC_B服务器"
+            "以TCC_A的Server身份监听B站连接"
         )
 
         self.panel_a.network_button.clicked.connect(
             lambda: self.start_network("A")
         )
 
+        self.panel_a.disconnect_button.clicked.connect(
+            lambda: self.disconnect_network("A")
+        )
+
         self.panel_a.set_network_status(
-            "通信状态：未连接"
+            "通信状态：未启动"
         )
 
         self.panel_a.direction_button.setEnabled(
@@ -1020,7 +1172,7 @@ class MainWindow(QMainWindow):
         )
 
         # --------------------------
-        # B站：Server
+        # B站：Client
         # --------------------------
 
         self.panel_b.network_button.setEnabled(
@@ -1028,15 +1180,19 @@ class MainWindow(QMainWindow):
         )
 
         self.panel_b.network_button.setToolTip(
-            "以TCC_B的Server身份开启服务器"
+            "以TCC_B的Client身份连接A站服务器"
         )
 
         self.panel_b.network_button.clicked.connect(
             lambda: self.start_network("B")
         )
 
+        self.panel_b.disconnect_button.clicked.connect(
+            lambda: self.disconnect_network("B")
+        )
+
         self.panel_b.set_network_status(
-            "通信状态：未启动"
+            "通信状态：未连接"
         )
 
         self.panel_b.direction_button.setEnabled(
@@ -1096,8 +1252,8 @@ class MainWindow(QMainWindow):
         """
         开启站间通信。
 
-        A站角色创建客户端连接TCC_B，
-        B站角色创建服务器等待TCC_A连接。
+        A站创建服务器等待B站连接，
+        B站创建客户端连接TCC_A。
 
         两个端点在同一个窗口里通过本机TCP互联。
         """
@@ -1112,20 +1268,11 @@ class MainWindow(QMainWindow):
         panel = self.get_panel_by_role(role)
 
         if role == "A":
-
-            panel.set_network_status(
-                "通信状态：联网模式（正在连接B站）"
-            )
-
-            worker = ClientNetworkWorker()
-
+            panel.set_network_status("通信状态：服务器已启动，等待B站")
         else:
+            panel.set_network_status("通信状态：正在连接A站")
 
-            panel.set_network_status(
-                "通信状态：联网模式（等待A站连接）"
-            )
-
-            worker = ServerNetworkWorker()
+        worker = self.network_worker_class(role)()
 
         worker.connected.connect(
             lambda r=role: self.on_connected(r)
@@ -1143,25 +1290,46 @@ class MainWindow(QMainWindow):
             lambda text, r=role: self.on_network_error(r, text)
         )
 
+        self.network_workers[role] = worker
+        panel.network_button.setEnabled(False)
+        panel.disconnect_button.setEnabled(True)
         worker.start()
 
-        self.network_workers[role] = worker
+    @staticmethod
+    def network_worker_class(role):
+        return ServerNetworkWorker if role == "A" else ClientNetworkWorker
+
+    def disconnect_network(self, role):
+        worker = self.network_workers.pop(role, None)
+        if worker is not None:
+            worker.stop()
+            worker.wait(1000)
+        panel = self.get_panel_by_role(role)
+        panel.network_button.setEnabled(True)
+        panel.disconnect_button.setEnabled(False)
+        panel.set_network_status(
+            "通信状态：未启动" if role == "A" else "通信状态：未连接"
+        )
 
     def on_connected(self, role):
 
         self.get_panel_by_role(role).set_network_status(
             "通信状态：已连接"
         )
+        self.get_panel_by_role(role).disconnect_button.setEnabled(True)
 
         # 连上以后立即同步一次
         self.send_track_status()
         self.send_signal_status(role)
 
     def on_disconnected(self, role):
-
-        self.get_panel_by_role(role).set_network_status(
-            "通信状态：连接已断开"
-        )
+        panel = self.get_panel_by_role(role)
+        panel.set_network_status("通信状态：连接已断开")
+        panel.network_button.setEnabled(True)
+        panel.disconnect_button.setEnabled(False)
+        worker = self.network_workers.get(role)
+        if worker is not None and not worker.running:
+            self.network_workers.pop(role, None)
 
     def on_network_error(self, role, error_message):
 
@@ -1403,7 +1571,7 @@ class MainWindow(QMainWindow):
                     "无法改方",
                     "区间未清空。\n\n"
                     "请确认：\n"
-                    "1. G01～G08全部空闲；\n"
+                    "1. G01～G38全部空闲；\n"
                     "2. 区间内没有列车；\n"
                     "3. 出站信号机处于红灯。"
                 )

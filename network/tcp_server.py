@@ -3,12 +3,12 @@ import socket
 
 class TCPServer:
     """
-    TCC-B TCP服务器
+    A站 TCP服务器
 
     负责：
     1. 监听指定IP和端口
-    2. 等待TCC-A连接
-    3. 接收TCC-A发送的数据
+    2. 等待B站连接
+    3. 接收B站发送的数据
     """
 
     def __init__(self, host="127.0.0.1", port=9000):
@@ -34,22 +34,22 @@ class TCPServer:
         # 开始监听
         self.server_socket.listen(1)
         print(
-            f"TCC-B服务器启动成功，"
+            f"A站服务器启动成功，"
             f"正在监听 {self.host}:{self.port}"
         )
-        print("等待TCC-A连接……")
+        print("等待B站连接……")
         # 等待客户端连接
         self.client_socket, self.client_address = (
             self.server_socket.accept()
         )
         print(
-            f"TCC-A连接成功："
+            f"B站连接成功："
             f"{self.client_address}"
         )
 
     def receive(self):
         """
-        接收TCC-A发送的一条完整消息。
+        接收B站发送的一条完整消息。
         """
         if self.client_socket is None:
             return None
@@ -64,7 +64,7 @@ class TCPServer:
         return message
 
     def send(self, message):
-        """向TCC-A发送一条完整消息"""
+        """向B站发送一条完整消息"""
         if self.client_socket is not None:
             message = message + "\n"
             self.client_socket.sendall(

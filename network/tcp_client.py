@@ -3,12 +3,12 @@ import socket
 
 class TCPClient:
     """
-    TCC-A TCP客户端
+    B站 TCP客户端
 
     负责：
-    1. 连接TCC-B服务器
-    2. 向TCC-B发送数据
-    3. 接收TCC-B返回的数据
+    1. 连接A站服务器
+    2. 向A站发送数据
+    3. 接收A站返回的数据
     """
 
     def __init__(self, host="127.0.0.1", port=9000):
@@ -22,14 +22,14 @@ class TCPClient:
         self.receive_buffer = ""
 
     def connect(self):
-        """连接TCC-B"""
+        """连接A站"""
 
         self.client_socket.connect(
             (self.host, self.port)
         )
 
         print(
-            f"TCC-A已连接TCC-B："
+            f"B站已连接A站："
             f"{self.host}:{self.port}"
         )
 

@@ -17,12 +17,12 @@ class StationPanel(QGroupBox):
 
         if station_type == "A":
             self.setTitle("A站通信")
-            self.network_role = "Client"
+            self.network_role = "Server"
             self.signal_code = "S01"
             self.balise_code = "BA-A"
         else:
             self.setTitle("B站通信")
-            self.network_role = "Server"
+            self.network_role = "Client"
             self.signal_code = "S02"
             self.balise_code = "BA-B"
 
@@ -44,32 +44,22 @@ class StationPanel(QGroupBox):
         layout.addWidget(self.role_label)
 
         if self.station_type == "A":
-
-            self.network_status_label = QLabel(
-                "通信状态：● 未连接"
-            )
-
-            self.network_button = QPushButton(
-                "连接服务器"
-            )
-
+            self.network_status_label = QLabel("通信状态：● 未启动")
+            self.network_button = QPushButton("开启服务器")
         else:
-
-            self.network_status_label = QLabel(
-                "服务器状态：● 未启动"
-            )
-
-            self.network_button = QPushButton(
-                "开启服务器"
-            )
+            self.network_status_label = QLabel("通信状态：● 未连接")
+            self.network_button = QPushButton("连接A站")
 
         layout.addWidget(
             self.network_status_label
         )
 
-        layout.addWidget(
-            self.network_button
-        )
+        network_buttons = QHBoxLayout()
+        network_buttons.addWidget(self.network_button)
+        self.disconnect_button = QPushButton("断开连接")
+        self.disconnect_button.setEnabled(False)
+        network_buttons.addWidget(self.disconnect_button)
+        layout.addLayout(network_buttons)
 
         self.signal_label = QLabel(
             f"{self.signal_code}：🔴 红灯"
@@ -93,10 +83,6 @@ class StationPanel(QGroupBox):
         self.direction_button.setEnabled(False)
         self.direction_button.setToolTip(
             "本界面无站间通信，改方请在C/S界面操作"
-        )
-
-        self.balise_button = QPushButton(
-            "查看应答器报文"
         )
 
         layout.addStretch()

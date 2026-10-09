@@ -66,17 +66,8 @@ class TrainService:
     # ==================================================
 
     def get_track_order(self, direction):
-
-        if direction == "A_TO_B":
-            return [
-                "G01", "G02", "G03", "G04",
-                "G05", "G06", "G07", "G08"
-            ]
-
-        return [
-            "G08", "G07", "G06", "G05",
-            "G04", "G03", "G02", "G01"
-        ]
+        order = list(self.simulation.track_circuits.keys())
+        return order if direction == "A_TO_B" else list(reversed(order))
 
     # ==================================================
     # 判断入口分区
@@ -87,7 +78,13 @@ class TrainService:
         if direction == "A_TO_B":
             return "G01"
 
-        return "G08"
+        return "G38"
+
+    def clear_all_trains(self):
+        """清除运行及待发列车，并释放由列车造成的区段占用。"""
+        self.trains.clear()
+        self.waiting_queue.clear()
+        self.sync_track_circuits()
 
     # ==================================================
     # 判断某分区是否被列车占用
