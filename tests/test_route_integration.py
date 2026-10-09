@@ -1,9 +1,13 @@
 import unittest
+from unittest.mock import patch
+
+from PyQt5.QtWidgets import QApplication
 
 from models.route import RouteState, RouteType
 from services.route_service import RouteService
 from services.simulation_service import SimulationService
 from services.train_service import TrainService
+from ui.main_window import MainWindow
 
 
 class RouteTrainIntegrationTest(unittest.TestCase):
@@ -74,6 +78,77 @@ class RouteTrainIntegrationTest(unittest.TestCase):
         self.assertEqual(train.status, "ARRIVED")
         self.assertIsNone(train.route_id)
         self.assertNotIn(receive, self.routes.active_routes())
+
+
+class RouteSignalIntegrationTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def make_simulation(self, station="A"):
+        routes = RouteService()
+        return routes, SimulationService(station, routes)
+
+    def test_departure_signal_requires_route_direction_and_clear_entry(self):
+        cases = (
+            (None, "A_TO_B", False, "红灯"),
+            (RouteType.MAIN_DEPART, "B_TO_A", False, "红灯"),
+            (RouteType.MAIN_DEPART, "A_TO_B", True, "红灯"),
+            (RouteType.MAIN_DEPART, "A_TO_B", False, "绿灯"),
+            (RouteType.SIDE_DEPART, "A_TO_B", False, "L灯"),
+        )
+
+        for route_type, direction, occupied, expected in cases:
+            with self.subTest(
+                route_type=route_type,
+                direction=direction,
+                occupied=occupied,
+            ):
+                routes, simulation = self.make_simulation("A")
+                if route_type is not None:
+                    routes.establish_route("A", route_type)
+                simulation.set_direction(direction)
+                if occupied:
+                    simulation.track_circuits["G01"].occupy()
+
+                aspects = simulation.update_signal_status()
+
+                self.assertEqual(aspects["S01"], expected)
+
+    def test_receive_route_extends_boundary_code_target(self):
+        routes, simulation = self.make_simulation("B")
+        simulation.set_direction("A_TO_B")
+        simulation.update_all_track_codes()
+        without_route = simulation.track_circuits["G38"].signal_code
+
+        routes.establish_route("B", RouteType.MAIN_RECEIVE)
+        simulation.update_all_track_codes()
+        with_route = simulation.track_circuits["G38"].signal_code
+
+        self.assertEqual(without_route, "HU")
+        self.assertEqual(with_route, "U")
+
+    def test_balise_packets_follow_route_type(self):
+        window = MainWindow()
+        with patch.object(window, "is_connected", return_value=True):
+            default_info = window.get_balise_information("B站X口_JZ")
+            self.assertIn("ETCS-132", default_info["packets"])
+            self.assertNotIn("ETCS-68", default_info["packets"])
+
+            window.route_service.establish_route("B", RouteType.SIDE_RECEIVE)
+            side_info = window.get_balise_information("B站X口_JZ")
+            self.assertIn("ETCS-68", side_info["packets"])
+            self.assertTrue(
+                any("CTCS-1" in packet for packet in side_info["packets"])
+            )
+            self.assertFalse(
+                any("CTCS-2" in packet for packet in side_info["packets"])
+            )
+
+            window.temporary_speed_service.set_restriction("G05", "G08", 80)
+            restricted_info = window.get_balise_information("B站X口_JZ")
+            self.assertIn("ETCS-44(CTCS-2)", restricted_info["packets"])
+        window.close()
 
 
 if __name__ == "__main__":

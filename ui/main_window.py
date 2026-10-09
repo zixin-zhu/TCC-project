@@ -68,13 +68,13 @@ class MainWindow(QMainWindow):
         # 双TCC后台服务
         # ==========================
 
+        self.route_service = RouteService()
+
         # A站TCC
-        self.simulation_a = SimulationService("A")
+        self.simulation_a = SimulationService("A", self.route_service)
 
         # B站TCC
-        self.simulation_b = SimulationService("B")
-
-        self.route_service = RouteService()
+        self.simulation_b = SimulationService("B", self.route_service)
 
         # 列车仿真始终挂在A侧
         self.train_service = TrainService(
@@ -779,6 +779,7 @@ class MainWindow(QMainWindow):
         except ValueError as error:
             QMessageBox.warning(self, "进路建立失败", str(error))
             return
+        self.recalculate_route_dependent_state()
         self.refresh_route_controls()
         self.refresh_view()
 
@@ -791,8 +792,13 @@ class MainWindow(QMainWindow):
         except ValueError as error:
             QMessageBox.warning(self, "进路取消失败", str(error))
             return
+        self.recalculate_route_dependent_state()
         self.refresh_route_controls()
         self.refresh_view()
+
+    def recalculate_route_dependent_state(self):
+        for simulation in (self.simulation_a, self.simulation_b):
+            simulation.update_all_track_codes()
 
     def refresh_route_controls(self):
         current_route_id = self.active_route_combo.currentData()
@@ -855,7 +861,29 @@ class MainWindow(QMainWindow):
         if not self.is_connected():
             packets = ["ETCS-254"]
         else:
-            packets = ["ETCS-5", "ETCS-21", "ETCS-27"]
+            station = None
+            if balise_id.startswith("A站"):
+                station = "A"
+            elif balise_id.startswith("B站"):
+                station = "B"
+
+            routes = self.route_service.active_routes(station) if station else []
+            route = routes[0] if routes else None
+            if route is None:
+                packets = ["ETCS-5", "ETCS-132", "ETCS-137"]
+            elif route.route_type == RouteType.MAIN_RECEIVE:
+                packets = ["ETCS-5"]
+            elif route.route_type == RouteType.SIDE_RECEIVE:
+                packets = [
+                    "ETCS-5",
+                    "ETCS-27",
+                    "ETCS-68",
+                    "ETCS-44(CTCS-1)",
+                ]
+            elif route.route_type == RouteType.SIDE_DEPART:
+                packets = ["ETCS-5", "ETCS-27", "ETCS-68", "CTCS-1"]
+            else:
+                packets = ["ETCS-5", "ETCS-27"]
             if self.temporary_speed_service.active_restrictions():
                 packets.append("ETCS-44(CTCS-2)")
         return {

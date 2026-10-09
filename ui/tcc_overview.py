@@ -437,6 +437,7 @@ class TccOverviewWidget(QWidget):
         )
         colors = {
             "绿灯": [QColor("#35e463")],
+            "L灯": [QColor("#35e463")],
             "黄灯": [QColor("#ffd930")],
             "黄绿灯": [QColor("#35e463"), QColor("#ffd930")],
         }.get(status, [QColor("#ff3b45")])

@@ -2,6 +2,7 @@ from models.tcc import TCC
 from models.track_circuit import TrackCircuit
 from models.signal import Signal
 from models.balise import Balise
+from models.route import RouteState, RouteType
 
 
 class SimulationService:
@@ -26,9 +27,10 @@ class SimulationService:
         "HU": "红灯"
     }
 
-    def __init__(self, station_type):
+    def __init__(self, station_type, route_service=None):
 
         self.station_type = station_type
+        self.route_service = route_service
 
         # =========================
         # 1. 先创建本站TCC
@@ -383,6 +385,7 @@ class SimulationService:
         free_count = 0
 
         # 从当前分区的下一个分区开始检查
+        blocked = False
         for code in running_order[
                     current_index + 1:
                     ]:
@@ -393,8 +396,12 @@ class SimulationService:
 
             # 遇到占用立即停止
             if track.occupied:
+                blocked = True
                 break
 
+            free_count += 1
+
+        if not blocked and self.has_any_matching_receive_route():
             free_count += 1
 
         return free_count
@@ -480,7 +487,11 @@ class SimulationService:
             entry_track_code
         ]
 
-        if entry_track.occupied:
+        departure_route = self.get_matching_departure_route()
+
+        if entry_track.occupied or (
+            self.route_service is not None and departure_route is None
+        ):
 
             # 入口分区已被占用 -> 红灯
             entry_aspect = "红灯"
@@ -497,11 +508,17 @@ class SimulationService:
                     + 1
             )
 
-            entry_aspect = self.get_aspect_by_code(
-                self.calculate_track_code(
-                    free_count
+            if (
+                departure_route is not None
+                and departure_route.route_type == RouteType.SIDE_DEPART
+            ):
+                entry_aspect = "L灯"
+            else:
+                entry_aspect = self.get_aspect_by_code(
+                    self.calculate_track_code(
+                        free_count
+                    )
                 )
-            )
 
         if direction == "A_TO_B":
 
@@ -520,6 +537,38 @@ class SimulationService:
             "S01": s01_aspect,
             "S02": s02_aspect
         }
+
+    def get_matching_departure_route(self):
+        if self.route_service is None:
+            return None
+        direction = self.tcc.get_direction()
+        departure_station = "A" if direction == "A_TO_B" else "B"
+        if self.station_type != departure_station:
+            return None
+        for track in ("1G", "3G"):
+            route = self.route_service.departure_route_for(
+                departure_station,
+                track,
+            )
+            if route is not None and route.state == RouteState.ESTABLISHED:
+                return route
+        return None
+
+    def has_matching_departure_route(self):
+        return self.get_matching_departure_route() is not None
+
+    def has_matching_receive_route(self, track):
+        if self.route_service is None:
+            return False
+        direction = self.tcc.get_direction()
+        arrival_station = "B" if direction == "A_TO_B" else "A"
+        return self.route_service.receive_route_for(
+            arrival_station,
+            track,
+        ) is not None
+
+    def has_any_matching_receive_route(self):
+        return self.has_matching_receive_route("1G") or self.has_matching_receive_route("3G")
 
     def occupy_track(self, track_code):
         """

@@ -85,7 +85,7 @@ class StationPanel(QGroupBox):
 
     def set_signal_status(self, status):
 
-        if status == "绿灯":
+        if status in ("绿灯", "L灯"):
             icon = "🟢"
 
         elif status == "黄绿灯":
