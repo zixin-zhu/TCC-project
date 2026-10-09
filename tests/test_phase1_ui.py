@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (
 
 from ui.main_window import MainWindow
 from ui.tcc_overview import TccOverviewWidget
+from models.route import RouteType
 class FakeNetworkWorker(QObject):
     connected = pyqtSignal()
     disconnected = pyqtSignal()
@@ -276,11 +277,14 @@ class PhaseOneUiContractTest(unittest.TestCase):
         window = MainWindow()
 
         direction_group = window.findChild(QGroupBox, "direction_change_area")
+        route_group = window.findChild(QGroupBox, "route_management_area")
         speed_group = window.findChild(QGroupBox, "temporary_speed_area")
         self.assertIsNotNone(direction_group)
+        self.assertIsNotNone(route_group)
         self.assertIsNotNone(speed_group)
         self.assertEqual(window.operation_top_layout.stretch(0), 1)
-        self.assertEqual(window.operation_top_layout.stretch(1), 3)
+        self.assertEqual(window.operation_top_layout.stretch(1), 2)
+        self.assertEqual(window.operation_top_layout.stretch(2), 4)
 
         distance_index = window.train_status_grid.indexOf(window.info_distance)
         braking_index = window.train_status_grid.indexOf(window.info_braking)
@@ -293,6 +297,71 @@ class PhaseOneUiContractTest(unittest.TestCase):
             window.bottom_widget.sizePolicy().verticalPolicy(),
             QSizePolicy.Maximum,
         )
+        window.close()
+
+    def test_route_panel_uses_one_two_four_layout_contract(self):
+        window = MainWindow()
+
+        groups = [
+            window.operation_top_layout.itemAt(index).widget()
+            for index in range(3)
+        ]
+        self.assertEqual(
+            [group.objectName() for group in groups],
+            [
+                "direction_change_area",
+                "route_management_area",
+                "temporary_speed_area",
+            ],
+        )
+        self.assertEqual(
+            [window.operation_top_layout.stretch(index) for index in range(3)],
+            [1, 2, 4],
+        )
+        self.assertEqual(
+            [
+                window.route_station_combo.itemText(index)
+                for index in range(window.route_station_combo.count())
+            ],
+            ["A站", "B站"],
+        )
+        self.assertEqual(
+            [
+                window.route_type_combo.itemText(index)
+                for index in range(window.route_type_combo.count())
+            ],
+            ["正线接车", "侧线接车", "正线发车", "侧线发车"],
+        )
+        window.close()
+
+    def test_route_panel_establishes_and_cancels_selected_route(self):
+        window = MainWindow()
+
+        window.route_station_combo.setCurrentText("A站")
+        window.route_type_combo.setCurrentText("正线发车")
+        window.route_establish_button.click()
+
+        self.assertEqual(window.active_route_combo.count(), 1)
+        self.assertIn("A站｜正线发车｜1G｜已建立", window.active_route_combo.currentText())
+        self.assertTrue(window.route_cancel_button.isEnabled())
+
+        window.route_cancel_button.click()
+
+        self.assertEqual(window.route_service.active_routes(), [])
+        self.assertEqual(window.active_route_combo.count(), 1)
+        self.assertEqual(window.active_route_combo.currentText(), "暂无已建立进路")
+        self.assertFalse(window.route_cancel_button.isEnabled())
+        window.close()
+
+    def test_locked_route_disables_cancel_button(self):
+        window = MainWindow()
+        route = window.route_service.establish_route("A", RouteType.MAIN_DEPART)
+        window.route_service.lock_route(route.route_id, "T001")
+
+        window.refresh_route_controls()
+
+        self.assertIn("已锁闭", window.active_route_combo.currentText())
+        self.assertFalse(window.route_cancel_button.isEnabled())
         window.close()
 
 

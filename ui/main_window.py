@@ -17,6 +17,8 @@ from services.train_service import TrainService
 from services.simulation_engine import SimulationEngine
 from services.direction_manager import DirectionManager
 from services.temporary_speed_service import TemporarySpeedService
+from services.route_service import RouteService
+from models.route import RouteState, RouteType
 
 from network.message_protocol import MessageProtocol
 from network.network_worker import (
@@ -80,6 +82,8 @@ class MainWindow(QMainWindow):
         self.temporary_speed_service = TemporarySpeedService(
             list(self.simulation_a.track_circuits.keys())
         )
+
+        self.route_service = RouteService()
 
         self.engine = SimulationEngine(
             self.train_service
@@ -237,47 +241,105 @@ class MainWindow(QMainWindow):
         direction_group_layout.addWidget(self.panel_a.direction_button)
         direction_group_layout.addWidget(self.panel_b.direction_button)
 
+        route_group = QGroupBox("进路建立")
+        route_group.setObjectName("route_management_area")
+        route_layout = QGridLayout(route_group)
+        route_layout.setContentsMargins(8, 8, 8, 8)
+        route_layout.setHorizontalSpacing(5)
+        route_layout.setVerticalSpacing(5)
+
+        self.route_station_combo = QComboBox()
+        self.route_station_combo.setObjectName("route_station")
+        self.route_station_combo.addItems(["A站", "B站"])
+        self.route_station_combo.setToolTip("选择需要办理进路的车站")
+        self.route_station_combo.setFixedWidth(66)
+        route_layout.addWidget(self.route_station_combo, 0, 0)
+
+        self.route_type_combo = QComboBox()
+        self.route_type_combo.setObjectName("route_type")
+        self.route_type_combo.addItems(
+            ["正线接车", "侧线接车", "正线发车", "侧线发车"]
+        )
+        self.route_type_combo.setToolTip("选择接车或发车进路类型")
+        route_layout.addWidget(self.route_type_combo, 0, 1)
+
+        self.route_establish_button = QPushButton("建立")
+        self.route_establish_button.setObjectName("route_establish_button")
+        self.route_establish_button.setToolTip("建立所选车站进路")
+        self.route_establish_button.setFixedWidth(58)
+        route_layout.addWidget(self.route_establish_button, 0, 2)
+
+        self.active_route_combo = QComboBox()
+        self.active_route_combo.setObjectName("active_route")
+        self.active_route_combo.setToolTip("选择需要取消的已建立进路")
+        route_layout.addWidget(self.active_route_combo, 1, 0, 1, 2)
+
+        self.route_cancel_button = QPushButton("取消")
+        self.route_cancel_button.setObjectName("route_cancel_button")
+        self.route_cancel_button.setToolTip("取消列车尚未进入的所选进路")
+        self.route_cancel_button.setFixedWidth(58)
+        route_layout.addWidget(self.route_cancel_button, 1, 2)
+        route_layout.setColumnStretch(1, 1)
+
         equipment_group = QGroupBox(
             "临时限速"
         )
         equipment_group.setObjectName("temporary_speed_area")
-        equipment_layout = QGridLayout(
-            equipment_group
-        )
+        equipment_layout = QVBoxLayout(equipment_group)
+        equipment_layout.setContentsMargins(8, 8, 8, 8)
+        equipment_layout.setSpacing(5)
 
-        equipment_layout.addWidget(QLabel("起始区段："), 0, 0)
+        tsr_setting_layout = QHBoxLayout()
+        tsr_setting_layout.setSpacing(3)
+
+        tsr_setting_layout.addWidget(QLabel("起"))
         self.tsr_start_combo = QComboBox()
         self.tsr_start_combo.setObjectName("tsr_start_section")
         self.tsr_start_combo.addItems([f"G{i:02d}" for i in range(1, 39)])
-        equipment_layout.addWidget(self.tsr_start_combo, 0, 1)
+        self.tsr_start_combo.setFixedWidth(66)
+        self.tsr_start_combo.setToolTip("临时限速起始区段")
+        tsr_setting_layout.addWidget(self.tsr_start_combo)
 
-        equipment_layout.addWidget(QLabel("终止区段："), 0, 2)
+        tsr_setting_layout.addWidget(QLabel("止"))
         self.tsr_end_combo = QComboBox()
         self.tsr_end_combo.setObjectName("tsr_end_section")
         self.tsr_end_combo.addItems([f"G{i:02d}" for i in range(1, 39)])
-        equipment_layout.addWidget(self.tsr_end_combo, 0, 3)
+        self.tsr_end_combo.setFixedWidth(66)
+        self.tsr_end_combo.setToolTip("临时限速终止区段")
+        tsr_setting_layout.addWidget(self.tsr_end_combo)
 
-        equipment_layout.addWidget(QLabel("限速："), 0, 4)
+        tsr_setting_layout.addWidget(QLabel("速"))
         self.tsr_speed_combo = QComboBox()
         self.tsr_speed_combo.setObjectName("tsr_speed")
         self.tsr_speed_combo.addItems(["45 km/h", "80 km/h", "120 km/h", "160 km/h", "200 km/h", "250 km/h"])
-        equipment_layout.addWidget(self.tsr_speed_combo, 0, 5)
+        self.tsr_speed_combo.setMinimumWidth(96)
+        self.tsr_speed_combo.setToolTip("临时限速值")
+        tsr_setting_layout.addWidget(self.tsr_speed_combo, 1)
 
-        self.tsr_apply_button = QPushButton("设置限速")
+        self.tsr_apply_button = QPushButton("设置")
         self.tsr_apply_button.setObjectName("tsr_apply_button")
-        equipment_layout.addWidget(self.tsr_apply_button, 0, 6)
+        self.tsr_apply_button.setToolTip("设置所选区段范围的临时限速")
+        self.tsr_apply_button.setFixedWidth(50)
+        tsr_setting_layout.addWidget(self.tsr_apply_button)
+        equipment_layout.addLayout(tsr_setting_layout)
 
+        tsr_active_layout = QHBoxLayout()
+        tsr_active_layout.setSpacing(3)
         self.active_tsr_combo = QComboBox()
         self.active_tsr_combo.setObjectName("active_tsr")
-        equipment_layout.addWidget(QLabel("已生效限速："), 1, 0)
-        equipment_layout.addWidget(self.active_tsr_combo, 1, 1, 1, 5)
+        tsr_active_layout.addWidget(QLabel("生效"))
+        tsr_active_layout.addWidget(self.active_tsr_combo, 1)
 
-        self.tsr_cancel_button = QPushButton("取消选中限速")
+        self.tsr_cancel_button = QPushButton("取消")
         self.tsr_cancel_button.setObjectName("tsr_cancel_button")
-        equipment_layout.addWidget(self.tsr_cancel_button, 1, 6)
+        self.tsr_cancel_button.setToolTip("取消当前选中的临时限速")
+        self.tsr_cancel_button.setFixedWidth(50)
+        tsr_active_layout.addWidget(self.tsr_cancel_button)
+        equipment_layout.addLayout(tsr_active_layout)
 
         self.operation_top_layout.addWidget(direction_group, 1)
-        self.operation_top_layout.addWidget(equipment_group, 3)
+        self.operation_top_layout.addWidget(route_group, 2)
+        self.operation_top_layout.addWidget(equipment_group, 4)
         operation_layout.addLayout(self.operation_top_layout)
 
         train_info_group = QGroupBox(
@@ -575,9 +637,23 @@ class MainWindow(QMainWindow):
             self.cancel_temporary_speed_restriction
         )
 
+        self.route_establish_button.clicked.connect(
+            self.establish_selected_route
+        )
+
+        self.route_cancel_button.clicked.connect(
+            self.cancel_selected_route
+        )
+
+        self.active_route_combo.currentIndexChanged.connect(
+            self._sync_route_cancel_button
+        )
+
         self.simulation_view.balise_clicked.connect(
             self.show_balise_information
         )
+
+        self.refresh_route_controls()
 
     # ==============================
     # 添加待发列车
@@ -676,6 +752,78 @@ class MainWindow(QMainWindow):
             index = self.active_tsr_combo.findData(current_id)
             if index >= 0:
                 self.active_tsr_combo.setCurrentIndex(index)
+
+    def establish_selected_route(self):
+        route_types = {
+            "正线接车": RouteType.MAIN_RECEIVE,
+            "侧线接车": RouteType.SIDE_RECEIVE,
+            "正线发车": RouteType.MAIN_DEPART,
+            "侧线发车": RouteType.SIDE_DEPART,
+        }
+        station = self.route_station_combo.currentText().replace("站", "")
+        route_type = route_types[self.route_type_combo.currentText()]
+        try:
+            self.route_service.establish_route(station, route_type)
+        except ValueError as error:
+            QMessageBox.warning(self, "进路建立失败", str(error))
+            return
+        self.refresh_route_controls()
+        self.refresh_view()
+
+    def cancel_selected_route(self):
+        route_id = self.active_route_combo.currentData()
+        if route_id is None:
+            return
+        try:
+            self.route_service.cancel_route(route_id)
+        except ValueError as error:
+            QMessageBox.warning(self, "进路取消失败", str(error))
+            return
+        self.refresh_route_controls()
+        self.refresh_view()
+
+    def refresh_route_controls(self):
+        current_route_id = self.active_route_combo.currentData()
+        self.active_route_combo.blockSignals(True)
+        self.active_route_combo.clear()
+
+        routes = self.route_service.active_routes()
+        if not routes:
+            self.active_route_combo.addItem("暂无已建立进路", None)
+        else:
+            for route in routes:
+                state_text = (
+                    "已锁闭"
+                    if route.state == RouteState.LOCKED
+                    else "已建立"
+                )
+                self.active_route_combo.addItem(
+                    f"{route.station}站｜{route.display_name}｜"
+                    f"{route.track}｜{state_text}",
+                    route.route_id,
+                )
+
+        if current_route_id is not None:
+            index = self.active_route_combo.findData(current_route_id)
+            if index >= 0:
+                self.active_route_combo.setCurrentIndex(index)
+
+        self.active_route_combo.blockSignals(False)
+        self._sync_route_cancel_button()
+
+    def _sync_route_cancel_button(self):
+        route_id = self.active_route_combo.currentData()
+        route = next(
+            (
+                item
+                for item in self.route_service.active_routes()
+                if item.route_id == route_id
+            ),
+            None,
+        )
+        self.route_cancel_button.setEnabled(
+            route is not None and route.state == RouteState.ESTABLISHED
+        )
 
     def clear_all_trains(self):
         self.engine.pause()
