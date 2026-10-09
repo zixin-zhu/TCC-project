@@ -60,6 +60,8 @@ class RouteService:
         route = self._routes.get(route_id)
         if route is None:
             raise ValueError("进路不存在")
+        if route.state == RouteState.LOCKED and route.train_id != train_id:
+            raise ValueError("进路已被其他列车锁闭")
         route.state = RouteState.LOCKED
         route.train_id = train_id
         return route

@@ -96,6 +96,16 @@ class RouteServiceTest(unittest.TestCase):
         self.assertTrue(service.release_route(route.route_id))
         self.assertEqual(service.active_routes(), [])
 
+    def test_locked_route_cannot_be_rebound_to_another_train(self):
+        service = RouteService()
+        route = service.establish_route("A", RouteType.MAIN_DEPART)
+        service.lock_route(route.route_id, "T001")
+
+        with self.assertRaisesRegex(ValueError, "进路已被其他列车锁闭"):
+            service.lock_route(route.route_id, "T002")
+
+        self.assertEqual(route.train_id, "T001")
+
     def test_clear_all_removes_routes_and_resets_sequence(self):
         service = RouteService()
         service.establish_route("A", RouteType.MAIN_DEPART)

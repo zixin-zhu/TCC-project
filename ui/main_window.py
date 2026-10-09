@@ -275,6 +275,7 @@ class MainWindow(QMainWindow):
         self.active_route_combo = QComboBox()
         self.active_route_combo.setObjectName("active_route")
         self.active_route_combo.setToolTip("选择需要取消的已建立进路")
+        self.active_route_combo.setStyleSheet("font-size: 11px;")
         route_layout.addWidget(self.active_route_combo, 1, 0, 1, 2)
 
         self.route_cancel_button = QPushButton("取消")
@@ -843,6 +844,11 @@ class MainWindow(QMainWindow):
         )
         self.route_cancel_button.setEnabled(
             route is not None and route.state == RouteState.ESTABLISHED
+        )
+        self.active_route_combo.setToolTip(
+            self.active_route_combo.currentText()
+            if route is not None
+            else "选择需要取消的已建立进路"
         )
 
     def clear_all_trains(self):

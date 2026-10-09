@@ -99,7 +99,7 @@ class TrainService:
         for train in self.trains.values():
 
             if (
-                train.status == "RUNNING"
+                train.status in ("RUNNING", "STOPPED")
                 and train.current_track == track_code
             ):
                 return True

@@ -128,6 +128,11 @@ class DirectionManager:
         (False, 原因) 表示拒绝。
         """
 
+        if target_direction not in ("A_TO_B", "B_TO_A"):
+            self.status = self.DENIED
+            self.reason = "非法目标方向"
+            return False, self.reason
+
         if not self.simulation.can_change_direction():
 
             self.status = self.DENIED

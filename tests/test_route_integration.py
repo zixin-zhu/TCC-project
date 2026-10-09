@@ -25,6 +25,19 @@ class RouteTrainIntegrationTest(unittest.TestCase):
         self.assertEqual(train.status, "WAITING")
         self.assertIsNone(train.current_track)
 
+    def test_stopped_train_still_occupies_section_for_following_train(self):
+        leading = self.trains.create_train()
+        leading.enter_track("G02")
+        leading.status = "STOPPED"
+        following = self.trains.create_train()
+        following.enter_track("G01")
+        following.position = self.trains.default_track_length + 1
+
+        self.trains.handle_track_transition(following)
+
+        self.assertEqual(following.current_track, "G01")
+        self.assertEqual(following.status, "STOPPED")
+
     def test_main_train_does_not_use_side_departure_route(self):
         self.routes.establish_route("A", RouteType.SIDE_DEPART)
         train = self.trains.add_waiting_train("MAIN")
@@ -172,6 +185,16 @@ class RouteDirectionIntegrationTest(unittest.TestCase):
 
         self.assertIsNone(message)
         self.assertEqual(reason, "本站未建立发车进路")
+        self.assertEqual(simulation.get_direction(), "A_TO_B")
+
+    def test_invalid_target_direction_is_denied(self):
+        routes = RouteService()
+        simulation, manager = self.make_manager("A", routes)
+
+        approved, reason = manager.evaluate_request("INVALID")
+
+        self.assertFalse(approved)
+        self.assertEqual(reason, "非法目标方向")
         self.assertEqual(simulation.get_direction(), "A_TO_B")
 
     def test_direction_request_is_denied_when_remote_departure_route_exists(self):
