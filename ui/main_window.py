@@ -985,6 +985,10 @@ class MainWindow(QMainWindow):
             restrictions=(
                 self.temporary_speed_service.active_restrictions()
             ),
+            routes=[
+                route.to_dict()
+                for route in self.route_service.active_routes()
+            ],
         )
 
         self.update_train_selector(

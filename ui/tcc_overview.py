@@ -2,6 +2,8 @@ from PyQt5.QtCore import QPoint, QRectF, Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QPainter, QPen, QPolygon
 from PyQt5.QtWidgets import QScrollArea, QSizePolicy, QWidget
 
+from models.route import RouteType
+
 
 class HorizontalWheelScrollArea(QScrollArea):
     """普通滚轮直接控制横向滚动，适合超长站场图。"""
@@ -60,6 +62,7 @@ class TccOverviewWidget(QWidget):
         self.tracks = []
         self.trains = []
         self.restrictions = []
+        self.routes = ()
         self.direction = "A_TO_B"
         self.signal_a = "红灯"
         self.signal_b = "红灯"
@@ -106,6 +109,25 @@ class TccOverviewWidget(QWidget):
             "passive_balise_count": 2,
         }
 
+    @staticmethod
+    def route_highlight_contract(station, route_type):
+        if station not in ("A", "B"):
+            raise ValueError("非法车站")
+        route_tracks = {
+            RouteType.MAIN_RECEIVE: "1G",
+            RouteType.MAIN_DEPART: "1G",
+            RouteType.SIDE_RECEIVE: "3G",
+            RouteType.SIDE_DEPART: "3G",
+        }
+        if route_type not in route_tracks:
+            raise ValueError("非法进路类型")
+        return {
+            "station": station,
+            "route_type": route_type,
+            "track": route_tracks[route_type],
+            "interval_throat": "RIGHT" if station == "A" else "LEFT",
+        }
+
     def set_state(
         self,
         tracks,
@@ -114,6 +136,7 @@ class TccOverviewWidget(QWidget):
         signal_a="红灯",
         signal_b="红灯",
         restrictions=None,
+        routes=None,
     ):
         self.tracks = tracks or []
         self.trains = trains or []
@@ -121,6 +144,7 @@ class TccOverviewWidget(QWidget):
         self.signal_a = signal_a
         self.signal_b = signal_b
         self.restrictions = restrictions or []
+        self.routes = tuple(dict(route) for route in (routes or []))
         self.update()
 
     def paintEvent(self, event):
@@ -175,6 +199,19 @@ class TccOverviewWidget(QWidget):
         painter.drawLine(int(siding_left), side_y, int(siding_right), side_y)
         painter.drawLine(int(main_left_throat), rail_y, int(siding_left), side_y)
         painter.drawLine(int(siding_right), side_y, int(main_right_throat), rail_y)
+
+        self._draw_route_highlights(
+            painter,
+            station,
+            core_left,
+            core_right,
+            rail_y,
+            side_y,
+            siding_left,
+            siding_right,
+            main_left_throat,
+            main_right_throat,
+        )
 
         painter.setPen(self.foreground_color)
         painter.setFont(QFont("PingFang SC", 8, QFont.Bold))
@@ -249,6 +286,57 @@ class TccOverviewWidget(QWidget):
             active=False,
             count=contract["passive_balise_count"],
         )
+
+    def _draw_route_highlights(
+        self,
+        painter,
+        station,
+        core_left,
+        core_right,
+        rail_y,
+        side_y,
+        siding_left,
+        siding_right,
+        main_left_throat,
+        main_right_throat,
+    ):
+        painter.setPen(
+            QPen(
+                QColor("#8de6ff"),
+                4,
+                Qt.SolidLine,
+                Qt.RoundCap,
+                Qt.RoundJoin,
+            )
+        )
+        for route in self.routes:
+            if route.get("station") != station:
+                continue
+            contract = self.route_highlight_contract(
+                station,
+                route.get("route_type"),
+            )
+            if contract["track"] == "1G":
+                painter.drawLine(int(core_left), rail_y, int(core_right), rail_y)
+                continue
+
+            painter.drawLine(int(siding_left), side_y, int(siding_right), side_y)
+            if contract["interval_throat"] == "RIGHT":
+                painter.drawLine(
+                    int(siding_right),
+                    side_y,
+                    int(main_right_throat),
+                    rail_y,
+                )
+                painter.drawLine(int(main_right_throat), rail_y, int(core_right), rail_y)
+            else:
+                painter.drawLine(int(core_left), rail_y, int(main_left_throat), rail_y)
+                painter.drawLine(
+                    int(main_left_throat),
+                    rail_y,
+                    int(siding_left),
+                    side_y,
+                )
 
     def _draw_interval(self, painter, left, rail_y, code_y):
         state_by_code = {

@@ -364,6 +364,48 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertFalse(window.route_cancel_button.isEnabled())
         window.close()
 
+    def test_route_highlight_contract_maps_main_and_side_tracks(self):
+        expected = (
+            ("A", RouteType.MAIN_DEPART, "1G", "RIGHT"),
+            ("A", RouteType.SIDE_RECEIVE, "3G", "RIGHT"),
+            ("B", RouteType.MAIN_RECEIVE, "1G", "LEFT"),
+            ("B", RouteType.SIDE_DEPART, "3G", "LEFT"),
+        )
+
+        for station, route_type, track, throat in expected:
+            with self.subTest(station=station, route_type=route_type):
+                contract = TccOverviewWidget.route_highlight_contract(
+                    station,
+                    route_type,
+                )
+                self.assertEqual(contract["track"], track)
+                self.assertEqual(contract["interval_throat"], throat)
+
+        station_a = TccOverviewWidget.station_layout_contract("A")["signals"]
+        station_b = TccOverviewWidget.station_layout_contract("B")["signals"]
+        for signal_name in ("X", "S3", "S1", "X3", "X1"):
+            self.assertEqual(station_a[signal_name], station_b[signal_name])
+        self.assertEqual(station_a["SN"], "LEFT")
+        self.assertEqual(station_b["S"], "LEFT")
+
+    def test_overview_accepts_active_route_snapshot(self):
+        view = TccOverviewWidget()
+        routes = [
+            {
+                "route_id": "A-MAIN-DEPART-001",
+                "station": "A",
+                "route_type": RouteType.MAIN_DEPART,
+                "track": "1G",
+                "state": "ESTABLISHED",
+            }
+        ]
+
+        view.set_state([], [], "A_TO_B", routes=routes)
+        routes[0]["track"] = "3G"
+
+        self.assertIsInstance(view.routes, tuple)
+        self.assertEqual(view.routes[0]["track"], "1G")
+
 
 if __name__ == "__main__":
     unittest.main()
