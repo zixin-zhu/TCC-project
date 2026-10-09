@@ -164,6 +164,40 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertEqual(set(view._active_balise_hitboxes), expected)
         view.close()
 
+    def test_station_code_bands_connect_to_interval_and_balises_fit_between(self):
+        view = TccOverviewWidget()
+        view.resize(view.minimumWidth(), 360)
+        view.show()
+        self.app.processEvents()
+        view.grab()
+
+        rail_y = max(145, int(view.height() * 0.51))
+        code_y = rail_y + 30
+        side_y = rail_y - 68
+        interval_left = view.SIDE_MARGIN + view.STATION_WIDTH
+        interval_right = interval_left + view.SECTION_COUNT * view.SECTION_WIDTH
+
+        self.assertEqual(view._station_code_rects["A_THROAT"].right(), interval_left)
+        self.assertEqual(view._station_code_rects["B_THROAT"].left(), interval_right)
+        self.assertEqual(view._station_code_rects["A_THROAT"].top(), code_y)
+        self.assertEqual(view._station_code_rects["B_THROAT"].top(), code_y)
+
+        for balise_id, hitbox in view._active_balise_hitboxes.items():
+            track_y = side_y if "X3_CZ" in balise_id or "S3_FCZ" in balise_id else rail_y
+            self.assertGreater(hitbox.center().y(), track_y)
+            self.assertLess(hitbox.center().y(), track_y + 30)
+
+        self.assertEqual(
+            view.balise_geometry_contract(),
+            {
+                "triangle_half_width": 3,
+                "triangle_height": 6,
+                "group_spacing": 6,
+                "placement": "BETWEEN_RAIL_AND_CODE_BAND",
+            },
+        )
+        view.close()
+
     def test_overview_uses_black_background(self):
         view = TccOverviewWidget()
         self.assertEqual(view.background_color, QColor("#05070a"))
@@ -414,6 +448,37 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertLessEqual(window.active_route_combo.maximumWidth(), 330)
         self.assertLessEqual(window.tsr_speed_combo.maximumWidth(), 120)
         self.assertLessEqual(window.active_tsr_combo.maximumWidth(), 360)
+        self.assertEqual(window.route_station_label.text(), "车站：")
+        self.assertEqual(window.route_type_label.text(), "进路类型：")
+        self.assertEqual(window.active_route_label.text(), "已建立进路：")
+        self.assertEqual(window.tsr_start_label.text(), "起始区段：")
+        self.assertEqual(window.tsr_end_label.text(), "终止区段：")
+        self.assertEqual(window.tsr_speed_label.text(), "限速：")
+        self.assertEqual(window.active_tsr_label.text(), "已生效限速：")
+        self.assertEqual(window.active_route_combo.count(), 0)
+        self.assertEqual(window.active_route_combo.currentText(), "")
+        self.assertGreaterEqual(groups[1].minimumWidth(), 315)
+        self.assertGreaterEqual(groups[2].minimumWidth(), 420)
+        for control in (
+            window.route_station_label,
+            window.route_type_label,
+            window.active_route_label,
+            window.route_station_combo,
+            window.route_type_combo,
+            window.route_establish_button,
+            window.route_cancel_button,
+            window.tsr_start_label,
+            window.tsr_end_label,
+            window.tsr_speed_label,
+            window.active_tsr_label,
+            window.tsr_start_combo,
+            window.tsr_end_combo,
+            window.tsr_speed_combo,
+            window.tsr_apply_button,
+            window.tsr_cancel_button,
+        ):
+            control.ensurePolished()
+            self.assertGreaterEqual(control.width(), control.minimumSizeHint().width())
         self.assertEqual(
             [window.speed_combo.itemText(index) for index in range(window.speed_combo.count())],
             ["0.5×", "1×", "2×", "5×", "10×", "20×"],
@@ -434,8 +499,8 @@ class PhaseOneUiContractTest(unittest.TestCase):
         window.route_cancel_button.click()
 
         self.assertEqual(window.route_service.active_routes(), [])
-        self.assertEqual(window.active_route_combo.count(), 1)
-        self.assertEqual(window.active_route_combo.currentText(), "暂无已建立进路")
+        self.assertEqual(window.active_route_combo.count(), 0)
+        self.assertEqual(window.active_route_combo.currentText(), "")
         self.assertFalse(window.route_cancel_button.isEnabled())
         window.close()
 

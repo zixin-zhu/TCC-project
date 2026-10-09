@@ -27,6 +27,9 @@ class TccOverviewWidget(QWidget):
     STATION_WIDTH = 390
     APPROACH_SECTION_WIDTH = 34
     SIDE_MARGIN = 28
+    BALISE_HALF_WIDTH = 3
+    BALISE_HEIGHT = 6
+    BALISE_GROUP_SPACING = 6
     SECTION_EQUIPMENT_ALIASES = {
         "G01": "X1LQ",
         "G02": "X2LQ",
@@ -79,6 +82,7 @@ class TccOverviewWidget(QWidget):
         self.signal_a = "红灯"
         self.signal_b = "红灯"
         self._active_balise_hitboxes = {}
+        self._station_code_rects = {}
 
     @staticmethod
     def layout_contract():
@@ -153,6 +157,15 @@ class TccOverviewWidget(QWidget):
             "interval_throat": "RIGHT" if station == "A" else "LEFT",
         }
 
+    @classmethod
+    def balise_geometry_contract(cls):
+        return {
+            "triangle_half_width": cls.BALISE_HALF_WIDTH,
+            "triangle_height": cls.BALISE_HEIGHT,
+            "group_spacing": cls.BALISE_GROUP_SPACING,
+            "placement": "BETWEEN_RAIL_AND_CODE_BAND",
+        }
+
     def set_state(
         self,
         tracks,
@@ -203,13 +216,14 @@ class TccOverviewWidget(QWidget):
         painter.drawLine(a_left, rail_y, b_right, rail_y)
 
         self._active_balise_hitboxes = {}
-        self._draw_station(painter, a_left, interval_left, rail_y, "A")
+        self._station_code_rects = {}
+        self._draw_station(painter, a_left, interval_left, rail_y, code_y, "A")
         self._draw_interval(painter, interval_left, rail_y, code_y)
-        self._draw_station(painter, interval_right, b_right, rail_y, "B")
+        self._draw_station(painter, interval_right, b_right, rail_y, code_y, "B")
         self._draw_restrictions(painter, interval_left, code_y)
         self._draw_train_markers(painter, interval_left, rail_y)
 
-    def _draw_station(self, painter, left, right, rail_y, station):
+    def _draw_station(self, painter, left, right, rail_y, code_y, station):
         contract = self.station_layout_contract(station)
         core_left = left + 10
         core_right = right - 10
@@ -282,15 +296,18 @@ class TccOverviewWidget(QWidget):
             station_center,
             rail_y,
             side_y,
+            left,
+            right,
+            code_y,
         )
 
         balise_specs = (
-            (outer_left_x - 34, rail_y + 55, f"{station}站_X_JZ", "JZ"),
-            (outer_right_x + 34, rail_y + 55, f"{station}站_{outer_right_name}_FJZ", "FJZ"),
-            (inner_right_x - 32, rail_y + 55, f"{station}站_X1_CZ", "CZ"),
-            (inner_right_x - 32, side_y + 40, f"{station}站_X3_CZ", "CZ"),
-            (inner_left_x + 32, rail_y + 55, f"{station}站_S1_FCZ", "FCZ"),
-            (inner_left_x + 32, side_y + 40, f"{station}站_S3_FCZ", "FCZ"),
+            (outer_left_x - 34, rail_y + 15, f"{station}站_X_JZ", "JZ"),
+            (outer_right_x + 34, rail_y + 15, f"{station}站_{outer_right_name}_FJZ", "FJZ"),
+            (inner_right_x - 26, rail_y + 15, f"{station}站_X1_CZ", "CZ"),
+            (inner_right_x - 26, side_y + 15, f"{station}站_X3_CZ", "CZ"),
+            (inner_left_x + 26, rail_y + 15, f"{station}站_S1_FCZ", "FCZ"),
+            (inner_left_x + 26, side_y + 15, f"{station}站_S3_FCZ", "FCZ"),
         )
         for balise_x, balise_y, balise_id, label in balise_specs:
             self._draw_balise_group(
@@ -300,13 +317,13 @@ class TccOverviewWidget(QWidget):
                 balise_id,
                 active=True,
                 count=contract["active_balise_count"],
-                spacing=8,
+                spacing=self.BALISE_GROUP_SPACING,
                 label=label,
             )
         self._draw_balise_group(
             painter,
             station_center,
-            side_y + 45,
+            side_y + 15,
             f"{station}站3G_DD",
             active=False,
             count=contract["passive_balise_count"],
@@ -322,24 +339,41 @@ class TccOverviewWidget(QWidget):
         station_center,
         rail_y,
         side_y,
+        left,
+        right,
+        code_y,
     ):
         codes = self.station_codes.get(station, {})
-        band_width = 70
-        band_height = 17
-        throat_width = 46
+        section_width = 70
+        band_height = 22
 
-        def draw_band(x, y, width, code):
+        def draw_band(key, rect, code):
+            self._station_code_rects[key] = QRectF(rect)
             painter.setBrush(self.CODE_COLORS.get(code, self.CODE_COLORS["-"]))
             painter.setPen(QPen(QColor("#101820"), 1))
-            painter.drawRect(int(x), int(y), int(width), band_height)
+            painter.drawRect(rect)
             painter.setPen(QColor("#071009") if code not in ("B", "-") else QColor("#ffffff"))
-            painter.setFont(QFont("PingFang SC", 6, QFont.Bold))
-            painter.drawText(int(x + 4), int(y + 12), str(code))
+            painter.setFont(QFont("PingFang SC", 7, QFont.Bold))
+            painter.drawText(int(rect.x() + 4), int(rect.y() + 15), str(code))
 
-        draw_band(station_center - band_width / 2, rail_y + 17, band_width, codes.get("1G", "HU"))
-        draw_band(station_center - band_width / 2, side_y + 14, band_width, codes.get("3G", "HU"))
-        throat_x = core_right - throat_width if station == "A" else core_left
-        draw_band(throat_x, rail_y + 17, throat_width, codes.get("THROAT", "HU"))
+        if station == "A":
+            throat_rect = QRectF(right - section_width, code_y, section_width, band_height)
+            main_rect = QRectF(right - section_width * 2, code_y, section_width, band_height)
+            outer_rect = QRectF(right - section_width * 3, code_y, section_width, band_height)
+        else:
+            throat_rect = QRectF(left, code_y, section_width, band_height)
+            main_rect = QRectF(left + section_width, code_y, section_width, band_height)
+            outer_rect = QRectF(left + section_width * 2, code_y, section_width, band_height)
+
+        draw_band(f"{station}_OUTER", outer_rect, "HU")
+        draw_band(f"{station}_1G", main_rect, codes.get("1G", "HU"))
+        draw_band(f"{station}_THROAT", throat_rect, codes.get("THROAT", "HU"))
+
+        side_left = station_center - section_width
+        side_rect_1 = QRectF(side_left, side_y + 30, section_width, band_height)
+        side_rect_2 = QRectF(side_left + section_width, side_y + 30, section_width, band_height)
+        draw_band(f"{station}_3G_LEFT", side_rect_1, codes.get("3G", "HU"))
+        draw_band(f"{station}_3G_RIGHT", side_rect_2, codes.get("3G", "HU"))
 
     def _draw_route_highlights(
         self,
@@ -523,13 +557,16 @@ class TccOverviewWidget(QWidget):
         spacing=14,
         label=None,
     ):
+        spacing = self.BALISE_GROUP_SPACING if active else spacing
+        half_width = self.BALISE_HALF_WIDTH
+        half_height = self.BALISE_HEIGHT / 2
         offsets = [(index - (count - 1) / 2) * spacing for index in range(count)]
         for offset in offsets:
             points = QPolygon(
                 [
-                    QPoint(int(x + offset), int(y - 6)),
-                    QPoint(int(x + offset - 6), int(y + 5)),
-                    QPoint(int(x + offset + 6), int(y + 5)),
+                    QPoint(int(x + offset), int(y - half_height)),
+                    QPoint(int(x + offset - half_width), int(y + half_height)),
+                    QPoint(int(x + offset + half_width), int(y + half_height)),
                 ]
             )
             painter.setPen(QPen(QColor("#7dd3fc") if active else QColor("#bdcad5"), 1))
@@ -538,15 +575,15 @@ class TccOverviewWidget(QWidget):
         display_label = name if label is None else label
         if display_label:
             painter.setPen(QColor("#83a2ba"))
-            painter.setFont(QFont("PingFang SC", 6))
-            painter.drawText(int(x - 10), int(y + 18), display_label)
+            painter.setFont(QFont("PingFang SC", 5))
+            painter.drawText(int(x + 13), int(y + 3), display_label)
         if active:
-            hit_width = max(40, (count - 1) * spacing + 24)
+            hit_width = max(30, (count - 1) * spacing + 14)
             self._active_balise_hitboxes[name] = QRectF(
                 x - hit_width / 2,
-                y - 13,
+                y - 12,
                 hit_width,
-                38,
+                24,
             )
 
     def _draw_train_markers(self, painter, interval_left, rail_y):
