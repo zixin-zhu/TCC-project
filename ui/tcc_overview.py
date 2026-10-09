@@ -23,10 +23,18 @@ class TccOverviewWidget(QWidget):
     SECTION_COUNT = 38
     BLOCK_COUNT = 19
     SECTIONS_PER_BLOCK = 2
-    SECTION_WIDTH = 66
+    SECTION_WIDTH = 34
     STATION_WIDTH = 390
     APPROACH_SECTION_WIDTH = 34
     SIDE_MARGIN = 28
+    SECTION_EQUIPMENT_ALIASES = {
+        "G01": "X1LQ",
+        "G02": "X2LQ",
+        "G03": "X3LQ",
+        "G36": "X1JG",
+        "G37": "X2JG",
+        "G38": "X3JG",
+    }
 
     background_color = QColor("#05070a")
     foreground_color = QColor("#d7e2ee")
@@ -63,6 +71,10 @@ class TccOverviewWidget(QWidget):
         self.trains = []
         self.restrictions = []
         self.routes = ()
+        self.station_codes = {
+            "A": {"1G": "HU", "3G": "HU", "THROAT": "HU"},
+            "B": {"1G": "HU", "3G": "HU", "THROAT": "HU"},
+        }
         self.direction = "A_TO_B"
         self.signal_a = "红灯"
         self.signal_b = "红灯"
@@ -81,7 +93,10 @@ class TccOverviewWidget(QWidget):
             "display_direction": "下行",
             "continuous_layout": True,
             "interval_signal_direction": "RIGHT_FIXED",
-            "active_balise_groups": ["A站SN口_JZ", "区间_JZ", "B站X口_JZ"],
+            "section_equipment_aliases": dict(
+                TccOverviewWidget.SECTION_EQUIPMENT_ALIASES
+            ),
+            "active_balise_groups": ["JZ", "FJZ", "CZ", "FCZ"],
         }
 
     @staticmethod
@@ -93,12 +108,21 @@ class TccOverviewWidget(QWidget):
             "X3": "RIGHT",
             "X1": "RIGHT",
         }
+        active_balise_groups = {
+            "JZ": {"signal": "X", "side": "LEFT", "count": 3},
+            "FJZ": {"signal": "S", "side": "RIGHT", "count": 3},
+            "X1_CZ": {"signal": "X1", "side": "LEFT", "count": 3},
+            "X3_CZ": {"signal": "X3", "side": "LEFT", "count": 3},
+            "S1_FCZ": {"signal": "S1", "side": "RIGHT", "count": 3},
+            "S3_FCZ": {"signal": "S3", "side": "RIGHT", "count": 3},
+        }
         if station == "A":
             return {
                 "signals": {**common_signals, "SN": "LEFT"},
                 "approach_sections": ["X1LQ", "X2LQ", "X3LQ"],
                 "approach_side": "AFTER_SN",
                 "active_balise_count": 3,
+                "active_balise_groups": active_balise_groups,
                 "passive_balise_count": 2,
             }
         return {
@@ -106,6 +130,7 @@ class TccOverviewWidget(QWidget):
             "approach_sections": ["X1JG", "X2JG", "X3JG"],
             "approach_side": "BEFORE_X",
             "active_balise_count": 3,
+            "active_balise_groups": active_balise_groups,
             "passive_balise_count": 2,
         }
 
@@ -137,6 +162,7 @@ class TccOverviewWidget(QWidget):
         signal_b="红灯",
         restrictions=None,
         routes=None,
+        station_codes=None,
     ):
         self.tracks = tracks or []
         self.trains = trains or []
@@ -145,6 +171,11 @@ class TccOverviewWidget(QWidget):
         self.signal_b = signal_b
         self.restrictions = restrictions or []
         self.routes = tuple(dict(route) for route in (routes or []))
+        if station_codes is not None:
+            self.station_codes = {
+                station: dict(codes)
+                for station, codes in station_codes.items()
+            }
         self.update()
 
     def paintEvent(self, event):
@@ -180,13 +211,8 @@ class TccOverviewWidget(QWidget):
 
     def _draw_station(self, painter, left, right, rail_y, station):
         contract = self.station_layout_contract(station)
-        approach_width = self.APPROACH_SECTION_WIDTH * 3
-        if station == "A":
-            core_left = left + 10
-            core_right = right - approach_width - 8
-        else:
-            core_left = left + approach_width + 8
-            core_right = right - 10
+        core_left = left + 10
+        core_right = right - 10
 
         station_center = (core_left + core_right) / 2
         side_y = rail_y - 68
@@ -248,44 +274,72 @@ class TccOverviewWidget(QWidget):
                 direction=signal_direction,
             )
 
-        if station == "A":
-            approach_left = outer_right_x + 13
-            approach_right = right
-            active_balise_id = "A站SN口_JZ"
-        else:
-            approach_left = left
-            approach_right = outer_left_x - 13
-            active_balise_id = "B站X口_JZ"
-
-        section_width = (approach_right - approach_left) / 3
-        for index, section_name in enumerate(contract["approach_sections"]):
-            x1 = approach_left + index * section_width
-            x2 = approach_left + (index + 1) * section_width
-            painter.setPen(QPen(QColor("#536b7f"), 1))
-            painter.drawLine(int(x1), rail_y - 7, int(x1), rail_y + 7)
-            if index == 2:
-                painter.drawLine(int(x2), rail_y - 7, int(x2), rail_y + 7)
-            painter.setPen(QColor("#8fa2b4"))
-            painter.setFont(QFont("PingFang SC", 6, QFont.Bold))
-            painter.drawText(int(x1 + 2), rail_y + 17, section_name)
-
-        self._draw_balise_group(
+        self._draw_station_code_bands(
             painter,
-            (approach_left + approach_right) / 2,
-            rail_y + 36,
-            active_balise_id,
-            active=True,
-            count=contract["active_balise_count"],
-            spacing=section_width,
+            station,
+            core_left,
+            core_right,
+            station_center,
+            rail_y,
+            side_y,
         )
+
+        balise_specs = (
+            (outer_left_x - 34, rail_y + 55, f"{station}站_X_JZ", "JZ"),
+            (outer_right_x + 34, rail_y + 55, f"{station}站_{outer_right_name}_FJZ", "FJZ"),
+            (inner_right_x - 32, rail_y + 55, f"{station}站_X1_CZ", "CZ"),
+            (inner_right_x - 32, side_y + 40, f"{station}站_X3_CZ", "CZ"),
+            (inner_left_x + 32, rail_y + 55, f"{station}站_S1_FCZ", "FCZ"),
+            (inner_left_x + 32, side_y + 40, f"{station}站_S3_FCZ", "FCZ"),
+        )
+        for balise_x, balise_y, balise_id, label in balise_specs:
+            self._draw_balise_group(
+                painter,
+                balise_x,
+                balise_y,
+                balise_id,
+                active=True,
+                count=contract["active_balise_count"],
+                spacing=8,
+                label=label,
+            )
         self._draw_balise_group(
             painter,
             station_center,
-            side_y + 24,
+            side_y + 45,
             f"{station}站3G_DD",
             active=False,
             count=contract["passive_balise_count"],
+            label="",
         )
+
+    def _draw_station_code_bands(
+        self,
+        painter,
+        station,
+        core_left,
+        core_right,
+        station_center,
+        rail_y,
+        side_y,
+    ):
+        codes = self.station_codes.get(station, {})
+        band_width = 70
+        band_height = 17
+        throat_width = 46
+
+        def draw_band(x, y, width, code):
+            painter.setBrush(self.CODE_COLORS.get(code, self.CODE_COLORS["-"]))
+            painter.setPen(QPen(QColor("#101820"), 1))
+            painter.drawRect(int(x), int(y), int(width), band_height)
+            painter.setPen(QColor("#071009") if code not in ("B", "-") else QColor("#ffffff"))
+            painter.setFont(QFont("PingFang SC", 6, QFont.Bold))
+            painter.drawText(int(x + 4), int(y + 12), str(code))
+
+        draw_band(station_center - band_width / 2, rail_y + 17, band_width, codes.get("1G", "HU"))
+        draw_band(station_center - band_width / 2, side_y + 14, band_width, codes.get("3G", "HU"))
+        throat_x = core_right - throat_width if station == "A" else core_left
+        draw_band(throat_x, rail_y + 17, throat_width, codes.get("THROAT", "HU"))
 
     def _draw_route_highlights(
         self,
@@ -373,6 +427,11 @@ class TccOverviewWidget(QWidget):
             painter.setPen(self.muted_color)
             painter.setFont(QFont("PingFang SC", 7))
             painter.drawText(int(x1 + 4), rail_y - 10, track_id)
+            equipment_name = self.SECTION_EQUIPMENT_ALIASES.get(track_id)
+            if equipment_name:
+                painter.setPen(QColor("#8fa2b4"))
+                painter.setFont(QFont("PingFang SC", 6, QFont.Bold))
+                painter.drawText(int(x1 + 2), rail_y + 17, equipment_name)
 
             if (index + 1) % self.SECTIONS_PER_BLOCK == 0 and index < self.SECTION_COUNT - 1:
                 block_no = (index + 1) // self.SECTIONS_PER_BLOCK
@@ -389,9 +448,6 @@ class TccOverviewWidget(QWidget):
                 painter.setPen(QColor("#60798e"))
                 painter.setFont(QFont("PingFang SC", 6))
                 painter.drawText(int(x1 - self.SECTION_WIDTH + 4), code_y + 38, f"闭塞{block_no:02d}")
-
-        interval_balise_x = left + self.SECTION_WIDTH * 34.5
-        self._draw_balise_group(painter, interval_balise_x, rail_y + 60, "区间_JZ", active=True)
 
     def _draw_restrictions(self, painter, interval_left, code_y):
         for restriction in self.restrictions:
@@ -456,7 +512,17 @@ class TccOverviewWidget(QWidget):
         label_x = x - 9 if direction == "RIGHT" else x - 22
         painter.drawText(int(label_x), int(lamp_center_y - radius - 4), name)
 
-    def _draw_balise_group(self, painter, x, y, name, active, count=2, spacing=14):
+    def _draw_balise_group(
+        self,
+        painter,
+        x,
+        y,
+        name,
+        active,
+        count=2,
+        spacing=14,
+        label=None,
+    ):
         offsets = [(index - (count - 1) / 2) * spacing for index in range(count)]
         for offset in offsets:
             points = QPolygon(
@@ -469,9 +535,11 @@ class TccOverviewWidget(QWidget):
             painter.setPen(QPen(QColor("#7dd3fc") if active else QColor("#bdcad5"), 1))
             painter.setBrush(QColor("#38bdf8") if active else Qt.NoBrush)
             painter.drawPolygon(points)
-        painter.setPen(QColor("#83a2ba"))
-        painter.setFont(QFont("PingFang SC", 6))
-        painter.drawText(int(x - 30), int(y + 18), name)
+        display_label = name if label is None else label
+        if display_label:
+            painter.setPen(QColor("#83a2ba"))
+            painter.setFont(QFont("PingFang SC", 6))
+            painter.drawText(int(x - 10), int(y + 18), display_label)
         if active:
             hit_width = max(40, (count - 1) * spacing + 24)
             self._active_balise_hitboxes[name] = QRectF(

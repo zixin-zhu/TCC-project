@@ -19,6 +19,7 @@ class SimulationService:
 
     CODE_ASPECTS = {
         "L5": "绿灯",
+        "L4": "绿灯",
         "L3": "绿灯",
         "L2": "绿灯",
         "L": "绿灯",
@@ -331,6 +332,9 @@ class SimulationService:
         if free_count >= 7:
             return "L5"
 
+        elif free_count >= 6:
+            return "L4"
+
         elif free_count >= 5:
             return "L3"
 
@@ -465,6 +469,38 @@ class SimulationService:
             return "G01"
 
         return "G38"
+
+    def get_station_track_codes(self):
+        """返回本站股道和区间侧咽喉的低频编码。
+
+        站内码由当前已建立进路决定，不由绘图层自行推断：
+        无进路时全部采用限制码 HU；正线发车时 1G 与相邻区间
+        入口码保持连续；侧线接发车按课程文档使用 UUS；接车
+        进路以股道停车目标为边界，正线股道保持 HU。
+        """
+        codes = {"1G": "HU", "3G": "HU", "THROAT": "HU"}
+        if self.route_service is None:
+            return codes
+
+        routes = self.route_service.active_routes(self.station_type)
+        if not routes:
+            return codes
+
+        route = routes[0]
+        if route.route_type == RouteType.MAIN_DEPART:
+            adjacent_code = self.track_circuits[
+                "G01" if self.station_type == "A" else "G38"
+            ].signal_code
+            codes["1G"] = adjacent_code
+            codes["THROAT"] = adjacent_code
+        elif route.route_type in (
+            RouteType.SIDE_RECEIVE,
+            RouteType.SIDE_DEPART,
+        ):
+            codes["3G"] = "UUS"
+            codes["THROAT"] = "UUS"
+
+        return codes
 
     def update_signal_status(self):
         """

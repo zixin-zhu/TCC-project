@@ -143,6 +143,39 @@ class RouteSignalIntegrationTest(unittest.TestCase):
         self.assertEqual(without_route, "HU")
         self.assertEqual(with_route, "U")
 
+    def test_station_track_codes_follow_route_type(self):
+        cases = (
+            (RouteType.MAIN_DEPART, "1G", "L5"),
+            (RouteType.SIDE_DEPART, "3G", "UUS"),
+            (RouteType.MAIN_RECEIVE, "1G", "HU"),
+            (RouteType.SIDE_RECEIVE, "3G", "UUS"),
+        )
+
+        for route_type, track, expected_code in cases:
+            with self.subTest(route_type=route_type):
+                routes, simulation = self.make_simulation("A")
+                routes.establish_route("A", route_type)
+                simulation.update_all_track_codes()
+
+                codes = simulation.get_station_track_codes()
+
+                self.assertEqual(codes[track], expected_code)
+                self.assertIn(codes["THROAT"], ("HU", "UUS", "L5", "L3", "L2", "L", "LU", "U"))
+
+    def test_station_codes_default_to_restrictive_code(self):
+        _, simulation = self.make_simulation("B")
+
+        self.assertEqual(
+            simulation.get_station_track_codes(),
+            {"1G": "HU", "3G": "HU", "THROAT": "HU"},
+        )
+
+    def test_word_code_sequence_includes_l4(self):
+        _, simulation = self.make_simulation("A")
+
+        self.assertEqual(simulation.calculate_track_code(6), "L4")
+        self.assertEqual(simulation.get_aspect_by_code("L4"), "绿灯")
+
     def test_balise_packets_follow_route_type(self):
         window = MainWindow()
         with patch.object(window, "is_connected", return_value=True):

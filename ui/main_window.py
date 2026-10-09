@@ -239,8 +239,10 @@ class MainWindow(QMainWindow):
         direction_group_layout = QVBoxLayout(direction_group)
         direction_group_layout.setContentsMargins(8, 8, 8, 8)
         direction_group_layout.setSpacing(5)
-        self.panel_a.direction_button.setText("A站申请区间改方")
-        self.panel_b.direction_button.setText("B站申请区间改方")
+        self.panel_a.direction_button.setText("A站改方")
+        self.panel_b.direction_button.setText("B站改方")
+        self.panel_a.direction_button.setToolTip("A站申请区间改方")
+        self.panel_b.direction_button.setToolTip("B站申请区间改方")
         direction_group_layout.addWidget(self.panel_a.direction_button)
         direction_group_layout.addWidget(self.panel_b.direction_button)
 
@@ -264,6 +266,8 @@ class MainWindow(QMainWindow):
             ["正线接车", "侧线接车", "正线发车", "侧线发车"]
         )
         self.route_type_combo.setToolTip("选择接车或发车进路类型")
+        self.route_type_combo.setMinimumWidth(96)
+        self.route_type_combo.setMaximumWidth(132)
         route_layout.addWidget(self.route_type_combo, 0, 1)
 
         self.route_establish_button = QPushButton("建立")
@@ -276,6 +280,12 @@ class MainWindow(QMainWindow):
         self.active_route_combo.setObjectName("active_route")
         self.active_route_combo.setToolTip("选择需要取消的已建立进路")
         self.active_route_combo.setStyleSheet("font-size: 11px;")
+        self.active_route_combo.setMinimumWidth(170)
+        self.active_route_combo.setMaximumWidth(330)
+        self.active_route_combo.setSizeAdjustPolicy(
+            QComboBox.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.active_route_combo.setMinimumContentsLength(20)
         route_layout.addWidget(self.active_route_combo, 1, 0, 1, 2)
 
         self.route_cancel_button = QPushButton("取消")
@@ -316,9 +326,10 @@ class MainWindow(QMainWindow):
         self.tsr_speed_combo = QComboBox()
         self.tsr_speed_combo.setObjectName("tsr_speed")
         self.tsr_speed_combo.addItems(["45 km/h", "80 km/h", "120 km/h", "160 km/h", "200 km/h", "250 km/h"])
-        self.tsr_speed_combo.setMinimumWidth(96)
+        self.tsr_speed_combo.setFixedWidth(108)
         self.tsr_speed_combo.setToolTip("临时限速值")
-        tsr_setting_layout.addWidget(self.tsr_speed_combo, 1)
+        tsr_setting_layout.addWidget(self.tsr_speed_combo)
+        tsr_setting_layout.addStretch(1)
 
         self.tsr_apply_button = QPushButton("设置")
         self.tsr_apply_button.setObjectName("tsr_apply_button")
@@ -331,6 +342,12 @@ class MainWindow(QMainWindow):
         tsr_active_layout.setSpacing(3)
         self.active_tsr_combo = QComboBox()
         self.active_tsr_combo.setObjectName("active_tsr")
+        self.active_tsr_combo.setMinimumWidth(190)
+        self.active_tsr_combo.setMaximumWidth(360)
+        self.active_tsr_combo.setSizeAdjustPolicy(
+            QComboBox.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.active_tsr_combo.setMinimumContentsLength(22)
         tsr_active_layout.addWidget(QLabel("生效"))
         tsr_active_layout.addWidget(self.active_tsr_combo, 1)
 
@@ -342,8 +359,8 @@ class MainWindow(QMainWindow):
         equipment_layout.addLayout(tsr_active_layout)
 
         self.operation_top_layout.addWidget(direction_group, 1)
-        self.operation_top_layout.addWidget(route_group, 2)
-        self.operation_top_layout.addWidget(equipment_group, 4)
+        self.operation_top_layout.addWidget(route_group, 4)
+        self.operation_top_layout.addWidget(equipment_group, 5)
         operation_layout.addLayout(self.operation_top_layout)
 
         train_info_group = QGroupBox(
@@ -531,7 +548,9 @@ class MainWindow(QMainWindow):
                 "0.5×",
                 "1×",
                 "2×",
-                "5×"
+                "5×",
+                "10×",
+                "20×"
             ]
         )
 
@@ -1045,6 +1064,10 @@ class MainWindow(QMainWindow):
                 route.to_dict()
                 for route in self.route_service.active_routes()
             ],
+            station_codes={
+                "A": self.simulation_a.get_station_track_codes(),
+                "B": self.simulation_b.get_station_track_codes(),
+            },
         )
 
         self.update_train_selector(

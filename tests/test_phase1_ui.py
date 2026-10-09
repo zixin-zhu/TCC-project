@@ -114,6 +114,56 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertEqual(station_b["passive_balise_count"], 2)
         self.assertEqual(view.layout_contract()["interval_signal_direction"], "RIGHT_FIXED")
 
+        expected_active_groups = {
+            "JZ": {"signal": "X", "side": "LEFT", "count": 3},
+            "FJZ": {"signal": "S", "side": "RIGHT", "count": 3},
+            "X1_CZ": {"signal": "X1", "side": "LEFT", "count": 3},
+            "X3_CZ": {"signal": "X3", "side": "LEFT", "count": 3},
+            "S1_FCZ": {"signal": "S1", "side": "RIGHT", "count": 3},
+            "S3_FCZ": {"signal": "S3", "side": "RIGHT", "count": 3},
+        }
+        self.assertEqual(station_a["active_balise_groups"], expected_active_groups)
+        self.assertEqual(station_b["active_balise_groups"], expected_active_groups)
+
+    def test_interval_uses_uniform_sections_with_equipment_aliases(self):
+        view = TccOverviewWidget()
+        contract = view.layout_contract()
+
+        self.assertEqual(view.SECTION_WIDTH, view.APPROACH_SECTION_WIDTH)
+        self.assertEqual(
+            contract["section_equipment_aliases"],
+            {
+                "G01": "X1LQ",
+                "G02": "X2LQ",
+                "G03": "X3LQ",
+                "G36": "X1JG",
+                "G37": "X2JG",
+                "G38": "X3JG",
+            },
+        )
+
+    def test_all_station_active_balise_groups_have_click_targets(self):
+        view = TccOverviewWidget()
+        view.resize(view.minimumWidth(), 360)
+        view.show()
+        self.app.processEvents()
+        view.grab()
+
+        expected = {
+            f"{station}站_{signal}_{group}"
+            for station in ("A", "B")
+            for signal, group in (
+                ("X", "JZ"),
+                (("SN" if station == "A" else "S"), "FJZ"),
+                ("X1", "CZ"),
+                ("X3", "CZ"),
+                ("S1", "FCZ"),
+                ("S3", "FCZ"),
+            )
+        }
+        self.assertEqual(set(view._active_balise_hitboxes), expected)
+        view.close()
+
     def test_overview_uses_black_background(self):
         view = TccOverviewWidget()
         self.assertEqual(view.background_color, QColor("#05070a"))
@@ -311,8 +361,8 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertIsNotNone(route_group)
         self.assertIsNotNone(speed_group)
         self.assertEqual(window.operation_top_layout.stretch(0), 1)
-        self.assertEqual(window.operation_top_layout.stretch(1), 2)
-        self.assertEqual(window.operation_top_layout.stretch(2), 4)
+        self.assertEqual(window.operation_top_layout.stretch(1), 4)
+        self.assertEqual(window.operation_top_layout.stretch(2), 5)
 
         distance_index = window.train_status_grid.indexOf(window.info_distance)
         braking_index = window.train_status_grid.indexOf(window.info_braking)
@@ -327,7 +377,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
         )
         window.close()
 
-    def test_route_panel_uses_one_two_four_layout_contract(self):
+    def test_route_panel_uses_one_four_five_layout_contract(self):
         window = MainWindow()
 
         groups = [
@@ -344,7 +394,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
         )
         self.assertEqual(
             [window.operation_top_layout.stretch(index) for index in range(3)],
-            [1, 2, 4],
+            [1, 4, 5],
         )
         self.assertEqual(
             [
@@ -359,6 +409,14 @@ class PhaseOneUiContractTest(unittest.TestCase):
                 for index in range(window.route_type_combo.count())
             ],
             ["正线接车", "侧线接车", "正线发车", "侧线发车"],
+        )
+        self.assertLessEqual(window.route_type_combo.maximumWidth(), 132)
+        self.assertLessEqual(window.active_route_combo.maximumWidth(), 330)
+        self.assertLessEqual(window.tsr_speed_combo.maximumWidth(), 120)
+        self.assertLessEqual(window.active_tsr_combo.maximumWidth(), 360)
+        self.assertEqual(
+            [window.speed_combo.itemText(index) for index in range(window.speed_combo.count())],
+            ["0.5×", "1×", "2×", "5×", "10×", "20×"],
         )
         window.close()
 
