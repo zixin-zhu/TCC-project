@@ -3,7 +3,8 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
-    QPushButton
+    QPushButton,
+    QSizePolicy,
 )
 
 
@@ -14,6 +15,7 @@ class StationPanel(QGroupBox):
 
         self.station_type = station_type
         self.setObjectName(f"station_panel_{station_type.lower()}")
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
 
         if station_type == "A":
             self.setTitle("A站通信")
@@ -85,7 +87,6 @@ class StationPanel(QGroupBox):
             "本界面无站间通信，改方请在C/S界面操作"
         )
 
-        layout.addStretch()
 
     def set_network_status(self, text):
 

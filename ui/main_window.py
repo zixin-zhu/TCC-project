@@ -202,7 +202,7 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(
             self.visualization_area,
-            7
+            9
         )
 
         # ==========================================
@@ -218,12 +218,26 @@ class MainWindow(QMainWindow):
         operation_layout = QVBoxLayout(
             self.operation_area
         )
-        operation_layout.setContentsMargins(10, 10, 10, 10)
-        operation_layout.setSpacing(8)
+        operation_layout.setContentsMargins(8, 8, 8, 8)
+        operation_layout.setSpacing(5)
+
+        self.operation_top_layout = QHBoxLayout()
+        self.operation_top_layout.setSpacing(7)
+
+        direction_group = QGroupBox("区间改方")
+        direction_group.setObjectName("direction_change_area")
+        direction_group_layout = QVBoxLayout(direction_group)
+        direction_group_layout.setContentsMargins(8, 8, 8, 8)
+        direction_group_layout.setSpacing(5)
+        self.panel_a.direction_button.setText("A站申请区间改方")
+        self.panel_b.direction_button.setText("B站申请区间改方")
+        direction_group_layout.addWidget(self.panel_a.direction_button)
+        direction_group_layout.addWidget(self.panel_b.direction_button)
 
         equipment_group = QGroupBox(
             "临时限速"
         )
+        equipment_group.setObjectName("temporary_speed_area")
         equipment_layout = QGridLayout(
             equipment_group
         )
@@ -259,42 +273,52 @@ class MainWindow(QMainWindow):
         self.tsr_cancel_button.setObjectName("tsr_cancel_button")
         equipment_layout.addWidget(self.tsr_cancel_button, 1, 6)
 
-        operation_layout.addWidget(
-            equipment_group
-        )
+        self.operation_top_layout.addWidget(direction_group, 1)
+        self.operation_top_layout.addWidget(equipment_group, 3)
+        operation_layout.addLayout(self.operation_top_layout)
 
         train_info_group = QGroupBox(
             "列车实时运行状态"
         )
 
-        train_info_layout = QGridLayout(
+        train_info_layout = QVBoxLayout(
             train_info_group
         )
+        train_info_layout.setContentsMargins(8, 8, 8, 8)
+        train_info_layout.setSpacing(5)
+
+        self.train_selector_layout = QHBoxLayout()
+        self.train_selector_layout.setSpacing(4)
 
         # 列车选择
-        train_info_layout.addWidget(
+        self.train_selector_layout.addWidget(
             QLabel("查看列车："),
-            0,
-            0
         )
 
         self.train_selector = QComboBox()
+        self.train_selector.setMinimumWidth(150)
 
-        train_info_layout.addWidget(
-            self.train_selector,
-            0,
-            1
-        )
+        self.train_selector_layout.addWidget(self.train_selector)
+        self.train_selector_layout.addSpacing(10)
 
-        train_info_layout.addWidget(QLabel("发车方式："), 0, 2)
+        self.train_selector_layout.addWidget(QLabel("发车方式："))
         self.departure_mode_combo = QComboBox()
         self.departure_mode_combo.addItems(["正线发车", "侧线发车"])
-        train_info_layout.addWidget(self.departure_mode_combo, 0, 3)
+        self.departure_mode_combo.setMinimumWidth(120)
+        self.train_selector_layout.addWidget(self.departure_mode_combo)
+        self.train_selector_layout.addSpacing(10)
 
-        train_info_layout.addWidget(QLabel("接车方式："), 0, 4)
+        self.train_selector_layout.addWidget(QLabel("接车方式："))
         self.arrival_mode_combo = QComboBox()
         self.arrival_mode_combo.addItems(["正线接车", "侧线接车"])
-        train_info_layout.addWidget(self.arrival_mode_combo, 0, 5)
+        self.arrival_mode_combo.setMinimumWidth(120)
+        self.train_selector_layout.addWidget(self.arrival_mode_combo)
+        self.train_selector_layout.addStretch()
+        train_info_layout.addLayout(self.train_selector_layout)
+
+        self.train_status_grid = QGridLayout()
+        self.train_status_grid.setHorizontalSpacing(14)
+        self.train_status_grid.setVerticalSpacing(4)
 
         # 第一行
         self.info_track = QLabel(
@@ -313,27 +337,27 @@ class MainWindow(QMainWindow):
             "目标速度：--"
         )
 
-        train_info_layout.addWidget(
+        self.train_status_grid.addWidget(
             self.info_track,
-            1,
+            0,
             0
         )
 
-        train_info_layout.addWidget(
+        self.train_status_grid.addWidget(
             self.info_position,
-            1,
+            0,
             1
         )
 
-        train_info_layout.addWidget(
+        self.train_status_grid.addWidget(
             self.info_speed,
-            1,
+            0,
             2
         )
 
-        train_info_layout.addWidget(
+        self.train_status_grid.addWidget(
             self.info_target,
-            1,
+            0,
             3
         )
 
@@ -354,27 +378,27 @@ class MainWindow(QMainWindow):
             "安全状态：--"
         )
 
-        train_info_layout.addWidget(
+        self.train_status_grid.addWidget(
             self.info_code,
-            2,
+            1,
             0
         )
 
-        train_info_layout.addWidget(
+        self.train_status_grid.addWidget(
             self.info_line_speed,
-            2,
+            1,
             1
         )
 
-        train_info_layout.addWidget(
+        self.train_status_grid.addWidget(
             self.info_balise,
-            2,
+            1,
             2
         )
 
-        train_info_layout.addWidget(
+        self.train_status_grid.addWidget(
             self.info_safety,
-            2,
+            1,
             3
         )
 
@@ -387,17 +411,19 @@ class MainWindow(QMainWindow):
             "制动距离：--"
         )
 
-        train_info_layout.addWidget(
+        self.train_status_grid.addWidget(
             self.info_distance,
-            3,
-            0
+            0,
+            4
         )
 
-        train_info_layout.addWidget(
+        self.train_status_grid.addWidget(
             self.info_braking,
-            3,
-            1
+            1,
+            4
         )
+
+        train_info_layout.addLayout(self.train_status_grid)
 
         operation_layout.addWidget(
             train_info_group
@@ -497,26 +523,18 @@ class MainWindow(QMainWindow):
         metrics_layout.addStretch()
         operation_layout.addLayout(metrics_layout)
 
-        direction_layout = QHBoxLayout()
-        self.panel_a.direction_button.setText("A站申请区间改方")
-        self.panel_b.direction_button.setText("B站申请区间改方")
-        direction_layout.addWidget(self.panel_a.direction_button)
-        direction_layout.addWidget(self.panel_b.direction_button)
-        direction_layout.addStretch()
-        operation_layout.addLayout(direction_layout)
-
-        bottom_widget = QWidget()
-        bottom_widget.setSizePolicy(
+        self.bottom_widget = QWidget()
+        self.bottom_widget.setSizePolicy(
             QSizePolicy.Expanding,
-            QSizePolicy.Preferred
+            QSizePolicy.Maximum
         )
-        bottom_layout = QHBoxLayout(bottom_widget)
+        bottom_layout = QHBoxLayout(self.bottom_widget)
         bottom_layout.setContentsMargins(0, 0, 0, 0)
         bottom_layout.setSpacing(10)
         bottom_layout.addWidget(self.communication_area)
         bottom_layout.addWidget(self.operation_area, 1)
 
-        main_layout.addWidget(bottom_widget, 4)
+        main_layout.addWidget(self.bottom_widget, 3)
 
         # ==========================
         # 绑定

@@ -10,9 +10,11 @@ from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
     QGroupBox,
+    QHBoxLayout,
     QLabel,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QWidget,
 )
 
@@ -139,6 +141,29 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertEqual(window.train_service.trains, {})
         self.assertEqual(window.train_service.waiting_queue, [])
         self.assertEqual(window.engine.simulation_time, 12.5)
+        window.close()
+
+    def test_compact_operation_layout_contract(self):
+        window = MainWindow()
+
+        direction_group = window.findChild(QGroupBox, "direction_change_area")
+        speed_group = window.findChild(QGroupBox, "temporary_speed_area")
+        self.assertIsNotNone(direction_group)
+        self.assertIsNotNone(speed_group)
+        self.assertEqual(window.operation_top_layout.stretch(0), 1)
+        self.assertEqual(window.operation_top_layout.stretch(1), 3)
+
+        distance_index = window.train_status_grid.indexOf(window.info_distance)
+        braking_index = window.train_status_grid.indexOf(window.info_braking)
+        self.assertEqual(window.train_status_grid.getItemPosition(distance_index)[:2], (0, 4))
+        self.assertEqual(window.train_status_grid.getItemPosition(braking_index)[:2], (1, 4))
+
+        self.assertIsInstance(window.train_selector_layout, QHBoxLayout)
+        self.assertLessEqual(window.train_selector_layout.spacing(), 5)
+        self.assertEqual(
+            window.bottom_widget.sizePolicy().verticalPolicy(),
+            QSizePolicy.Maximum,
+        )
         window.close()
 
 
