@@ -18,6 +18,7 @@ from services.simulation_engine import SimulationEngine
 from services.direction_manager import DirectionManager
 from services.temporary_speed_service import TemporarySpeedService
 from services.route_service import RouteService
+from services.operation_policy import OperationRuleError
 from models.route import RouteState, RouteType
 
 from network.message_protocol import MessageProtocol
@@ -120,6 +121,7 @@ class MainWindow(QMainWindow):
         self.network_workers = {}
         self.network_modes = {}
         self.network_server_station = None
+        self.connected_stations = set()
         self._network_resetting = False
 
         # 站间同步节拍计数
@@ -766,6 +768,9 @@ class MainWindow(QMainWindow):
 
     def add_waiting_train(self):
 
+        if not self.require_communication("添加列车失败"):
+            return
+
         departure_mode = (
             "MAIN"
             if self.departure_mode_combo.currentText() == "正线发车"
@@ -793,6 +798,9 @@ class MainWindow(QMainWindow):
 
     def start_simulation(self):
 
+        if not self.require_communication("仿真启动失败"):
+            return
+
         self.engine.start()
 
         self.start_button.setEnabled(
@@ -808,6 +816,9 @@ class MainWindow(QMainWindow):
     # ==============================
 
     def pause_simulation(self):
+
+        if not self.require_communication("暂停仿真失败"):
+            return
 
         self.engine.pause()
 
@@ -833,6 +844,8 @@ class MainWindow(QMainWindow):
         )
 
     def apply_temporary_speed_restriction(self):
+        if not self.require_communication("限速设置失败"):
+            return
         try:
             speed = int(self.tsr_speed_combo.currentText().split()[0])
             self.temporary_speed_service.set_restriction(
@@ -847,6 +860,8 @@ class MainWindow(QMainWindow):
         self.refresh_view()
 
     def cancel_temporary_speed_restriction(self):
+        if not self.require_communication("限速取消失败"):
+            return
         restriction_id = self.active_tsr_combo.currentData()
         if restriction_id is None:
             return
@@ -870,6 +885,8 @@ class MainWindow(QMainWindow):
                 self.active_tsr_combo.setCurrentIndex(index)
 
     def establish_selected_route(self):
+        if not self.require_communication("进路建立失败"):
+            return
         route_types = {
             "正线接车": RouteType.MAIN_RECEIVE,
             "侧线接车": RouteType.SIDE_RECEIVE,
@@ -888,6 +905,8 @@ class MainWindow(QMainWindow):
         self.refresh_view()
 
     def cancel_selected_route(self):
+        if not self.require_communication("进路取消失败"):
+            return
         route_id = self.active_route_combo.currentData()
         if route_id is None:
             return
@@ -951,6 +970,8 @@ class MainWindow(QMainWindow):
         )
 
     def clear_all_trains(self):
+        if not self.require_communication("一键清车失败"):
+            return
         self.engine.pause()
         self.train_service.clear_all_trains()
         self.route_service.clear_all()
@@ -1027,6 +1048,9 @@ class MainWindow(QMainWindow):
     # ==============================
 
     def reset_simulation(self):
+
+        if not self.require_communication("仿真复位失败"):
+            return
 
         self.engine.pause()
 
@@ -1196,6 +1220,8 @@ class MainWindow(QMainWindow):
 
         if self.network_tick % 2 == 0:
             self.send_track_status()
+
+        self.refresh_control_states()
 
     def update_train_selector(
             self,
@@ -1565,15 +1591,42 @@ class MainWindow(QMainWindow):
 
     def is_connected(self):
         """
-        站间通信是否已经建立（任一端点已连通）。
+        站间通信是否已经建立。
         """
 
-        for worker in self.network_workers.values():
+        return self.communication_ready()
 
-            if worker.running:
-                return True
+    def communication_ready(self):
+        return self.connected_stations == {"A", "B"}
 
+    def require_communication(self, title):
+        if self.communication_ready():
+            return True
+
+        missing = [
+            f"{station}站"
+            for station in ("A", "B")
+            if station not in self.connected_stations
+        ]
+        error = OperationRuleError(
+            "A站和B站尚未全部建立通信",
+            f"未连通站点：{'、'.join(missing) or '未知'}。",
+            "请依次点击A站和B站的“启动通信”，待两站均显示“已连接”后重试。",
+        )
+        QMessageBox.warning(self, title, error.format_message())
         return False
+
+    def refresh_control_states(self):
+        ready = self.communication_ready()
+        self.operation_area.setEnabled(ready)
+        self.panel_a.direction_button.setEnabled(ready)
+        self.panel_b.direction_button.setEnabled(ready)
+
+        for station in ("A", "B"):
+            panel = self.get_panel_by_role(station)
+            started = station in self.network_workers
+            panel.network_button.setEnabled(not started)
+            panel.disconnect_button.setEnabled(started)
 
     # ==========================================
     # 站间通信
@@ -1629,6 +1682,7 @@ class MainWindow(QMainWindow):
         panel.network_button.setEnabled(False)
         panel.disconnect_button.setEnabled(True)
         worker.start()
+        self.refresh_control_states()
 
     def network_worker_class(self, role):
         if role == self.network_server_station:
@@ -1644,6 +1698,8 @@ class MainWindow(QMainWindow):
             return
 
         self._network_resetting = True
+        self.engine.pause()
+        self.connected_stations.clear()
         workers = list(self.network_workers.values())
         self.network_workers.clear()
         self.network_modes.clear()
@@ -1660,8 +1716,14 @@ class MainWindow(QMainWindow):
                 panel.set_network_status("通信状态：未启动")
         finally:
             self._network_resetting = False
+            self.refresh_control_states()
 
     def on_connected(self, role):
+
+        if role not in self.network_workers:
+            return
+
+        self.connected_stations.add(role)
 
         self.get_panel_by_role(role).set_network_status(
             "通信状态：已连接"
@@ -1671,6 +1733,7 @@ class MainWindow(QMainWindow):
         # 连上以后立即同步一次
         self.send_track_status()
         self.send_signal_status(role)
+        self.refresh_control_states()
 
     def on_disconnected(self, role):
         self.disconnect_network(role)
@@ -1888,6 +1951,9 @@ class MainWindow(QMainWindow):
         """
         以指定站别的身份向邻站TCC申请区间改方。
         """
+
+        if not self.require_communication("无法申请改方"):
+            return
 
         worker = self.network_workers.get(role)
 

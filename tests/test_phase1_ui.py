@@ -63,6 +63,97 @@ class PhaseOneUiContractTest(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication(sys.argv[:1])
 
+    @staticmethod
+    def mark_communication_ready(window):
+        window.connected_stations.update({"A", "B"})
+        window.refresh_control_states()
+
+    def test_initially_only_station_start_buttons_are_enabled(self):
+        window = MainWindow()
+
+        self.assertTrue(window.panel_a.network_button.isEnabled())
+        self.assertTrue(window.panel_b.network_button.isEnabled())
+        self.assertFalse(window.panel_a.disconnect_button.isEnabled())
+        self.assertFalse(window.panel_b.disconnect_button.isEnabled())
+        for button in (
+            window.panel_a.direction_button,
+            window.panel_b.direction_button,
+            window.route_establish_button,
+            window.route_cancel_button,
+            window.tsr_apply_button,
+            window.tsr_cancel_button,
+            window.add_train_button,
+            window.start_button,
+            window.pause_button,
+            window.reset_button,
+            window.clear_trains_button,
+        ):
+            self.assertFalse(button.isEnabled(), button.text())
+        window.close()
+
+    def test_both_connected_events_are_required_to_unlock_operations(self):
+        window = MainWindow()
+        with patch("ui.main_window.ServerNetworkWorker", FakeServerWorker), patch(
+            "ui.main_window.ClientNetworkWorker", FakeClientWorker, create=True
+        ):
+            window.start_network("A")
+            self.assertFalse(window.operation_area.isEnabled())
+            window.network_workers["A"].connected.emit()
+            self.assertFalse(window.operation_area.isEnabled())
+
+            window.start_network("B")
+            self.assertFalse(window.operation_area.isEnabled())
+            window.network_workers["B"].connected.emit()
+
+        self.assertTrue(window.communication_ready())
+        self.assertTrue(window.operation_area.isEnabled())
+        window.disconnect_network("A")
+        window.close()
+
+    def test_disconnect_pauses_and_preserves_business_state(self):
+        window = MainWindow()
+        self.mark_communication_ready(window)
+        window.train_service.add_waiting_train()
+        route = window.route_service.establish_route(
+            "A", RouteType.MAIN_DEPART
+        )
+        restriction = window.temporary_speed_service.set_restriction(
+            "G05", "G08", 80
+        )
+        window.engine.start()
+
+        window.disconnect_network("A")
+
+        self.assertFalse(window.engine.timer.isActive())
+        self.assertFalse(window.communication_ready())
+        self.assertFalse(window.operation_area.isEnabled())
+        self.assertIn("T001", window.train_service.trains)
+        self.assertEqual(window.route_service.active_routes(), [route])
+        self.assertEqual(
+            window.temporary_speed_service.active_restrictions(),
+            [restriction],
+        )
+        window.close()
+
+    def test_direct_business_handler_before_connection_is_rejected(self):
+        window = MainWindow()
+        window.tsr_start_combo.setCurrentText("G05")
+        window.tsr_end_combo.setCurrentText("G08")
+
+        with patch("ui.main_window.QMessageBox.warning") as warning:
+            window.apply_temporary_speed_restriction()
+
+        self.assertEqual(
+            window.temporary_speed_service.active_restrictions(), []
+        )
+        title, message = warning.call_args.args[1:3]
+        self.assertEqual(title, "限速设置失败")
+        self.assertIn("操作失败", message)
+        self.assertIn("当前状态", message)
+        self.assertIn("处理建议", message)
+        self.assertIn("A站和B站", message)
+        window.close()
+
     def test_overview_matches_word_section_7_1_structure(self):
         view = TccOverviewWidget()
         contract = view.layout_contract()
@@ -257,6 +348,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
 
     def test_network_roles_and_tsr_actions_are_wired_to_services(self):
         window = MainWindow()
+        self.mark_communication_ready(window)
 
         window.tsr_start_combo.setCurrentText("G05")
         window.tsr_end_combo.setCurrentText("G08")
@@ -270,6 +362,8 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertIsNotNone(restriction_id)
         self.assertEqual(window.temporary_speed_service.active_restrictions(), [])
 
+        window.connected_stations.clear()
+        window.refresh_control_states()
         balise_info = window.get_balise_information("A站SN口_JZ")
         self.assertIn("ETCS-254", balise_info["packets"])
         self.assertGreater(window.simulation_view.receivers(window.simulation_view.balise_clicked), 0)
@@ -352,6 +446,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
         window.engine.simulation_time = 12.5
         window.route_service.establish_route("A", RouteType.MAIN_DEPART)
         window.train_service.add_waiting_train()
+        self.mark_communication_ready(window)
         window.clear_all_trains()
         self.assertEqual(window.train_service.trains, {})
         self.assertEqual(window.train_service.waiting_queue, [])
@@ -362,6 +457,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
 
     def test_reset_clears_routes_and_preserves_route_service_binding(self):
         window = MainWindow()
+        self.mark_communication_ready(window)
         window.route_service.establish_route("A", RouteType.MAIN_DEPART)
 
         window.reset_simulation()
@@ -373,6 +469,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
 
     def test_train_keeps_selected_departure_and_arrival_modes(self):
         window = MainWindow()
+        self.mark_communication_ready(window)
         window.departure_mode_combo.setCurrentText("侧线发车")
         window.arrival_mode_combo.setCurrentText("正线接车")
 
@@ -540,6 +637,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
 
     def test_route_panel_establishes_and_cancels_selected_route(self):
         window = MainWindow()
+        self.mark_communication_ready(window)
 
         window.route_station_combo.setCurrentText("A站")
         window.route_type_combo.setCurrentText("正线发车")
