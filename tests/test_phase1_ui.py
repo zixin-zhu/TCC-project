@@ -68,6 +68,14 @@ class PhaseOneUiContractTest(unittest.TestCase):
         window.connected_stations.update({"A", "B"})
         window.refresh_control_states()
 
+    def assert_complete_warning(self, warning, expected_title):
+        title, message = warning.call_args.args[1:3]
+        self.assertEqual(title, expected_title)
+        self.assertIn("操作失败", message)
+        self.assertIn("当前状态", message)
+        self.assertIn("处理建议", message)
+        return message
+
     def test_initially_only_station_start_buttons_are_enabled(self):
         window = MainWindow()
 
@@ -152,6 +160,90 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertIn("当前状态", message)
         self.assertIn("处理建议", message)
         self.assertIn("A站和B站", message)
+        window.close()
+
+    def test_direction_rejects_wrong_station_route_combinations(self):
+        cases = (
+            ("A_TO_B", "B站", "正线发车"),
+            ("A_TO_B", "A站", "正线接车"),
+            ("B_TO_A", "A站", "侧线发车"),
+            ("B_TO_A", "B站", "侧线接车"),
+        )
+
+        for direction, station, route_type in cases:
+            with self.subTest(
+                direction=direction,
+                station=station,
+                route_type=route_type,
+            ):
+                window = MainWindow()
+                self.mark_communication_ready(window)
+                window.simulation_a.set_direction(direction)
+                window.simulation_b.set_direction(direction)
+                window.route_station_combo.setCurrentText(station)
+                window.route_type_combo.setCurrentText(route_type)
+
+                with patch("ui.main_window.QMessageBox.warning") as warning:
+                    window.establish_selected_route()
+
+                message = self.assert_complete_warning(
+                    warning, "进路建立失败"
+                )
+                self.assertIn(station, message)
+                self.assertIn(route_type, message)
+                self.assertEqual(window.route_service.active_routes(), [])
+                window.close()
+
+    def test_duplicate_route_popup_names_route_and_recovery(self):
+        window = MainWindow()
+        self.mark_communication_ready(window)
+        window.route_service.establish_route("A", RouteType.MAIN_DEPART)
+        window.route_station_combo.setCurrentText("A站")
+        window.route_type_combo.setCurrentText("正线发车")
+
+        with patch("ui.main_window.QMessageBox.warning") as warning:
+            window.establish_selected_route()
+
+        message = self.assert_complete_warning(warning, "进路建立失败")
+        self.assertIn("A站", message)
+        self.assertIn("正线发车", message)
+        self.assertIn("请勿重复操作", message)
+        window.close()
+
+    def test_overlapping_speed_popup_names_both_restrictions(self):
+        window = MainWindow()
+        self.mark_communication_ready(window)
+        first = window.temporary_speed_service.set_restriction(
+            "G05", "G10", 120
+        )
+        window.tsr_start_combo.setCurrentText("G08")
+        window.tsr_end_combo.setCurrentText("G12")
+        window.tsr_speed_combo.setCurrentText("80 km/h")
+
+        with patch("ui.main_window.QMessageBox.warning") as warning:
+            window.apply_temporary_speed_restriction()
+
+        message = self.assert_complete_warning(warning, "限速设置失败")
+        self.assertIn(first["id"], message)
+        self.assertIn("G05～G10", message)
+        self.assertIn("120 km/h", message)
+        self.assertIn("G08～G12", message)
+        self.assertIn("80 km/h", message)
+        window.close()
+
+    def test_direction_change_denial_uses_complete_warning(self):
+        window = MainWindow()
+        self.mark_communication_ready(window)
+        worker = FakeServerWorker("127.0.0.1", 9000)
+        worker.start()
+        window.network_workers["B"] = worker
+
+        with patch("ui.main_window.QMessageBox.warning") as warning:
+            window.request_direction_change("B")
+
+        message = self.assert_complete_warning(warning, "无法改方")
+        self.assertIn("本站未建立发车进路", message)
+        self.assertIn("B站", message)
         window.close()
 
     def test_overview_matches_word_section_7_1_structure(self):

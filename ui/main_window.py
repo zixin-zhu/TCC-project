@@ -851,7 +851,7 @@ class MainWindow(QMainWindow):
                 speed,
             )
         except ValueError as error:
-            QMessageBox.warning(self, "限速设置失败", str(error))
+            self.show_operation_error("限速设置失败", error)
             return
         self.refresh_temporary_speed_controls()
         self.refresh_view()
@@ -894,9 +894,14 @@ class MainWindow(QMainWindow):
         station = self.route_station_combo.currentText().replace("站", "")
         route_type = route_types[self.route_type_combo.currentText()]
         try:
+            OperationPolicy.validate_route_request(
+                self.simulation_a.get_direction(),
+                station,
+                route_type,
+            )
             self.route_service.establish_route(station, route_type)
-        except ValueError as error:
-            QMessageBox.warning(self, "进路建立失败", str(error))
+        except (OperationRuleError, ValueError) as error:
+            self.show_operation_error("进路建立失败", error)
             return
         self.recalculate_route_dependent_state()
         self.refresh_route_controls()
@@ -911,7 +916,7 @@ class MainWindow(QMainWindow):
         try:
             self.route_service.cancel_route(route_id)
         except ValueError as error:
-            QMessageBox.warning(self, "进路取消失败", str(error))
+            self.show_operation_error("进路取消失败", error)
             return
         self.recalculate_route_dependent_state()
         self.refresh_route_controls()
@@ -1614,7 +1619,11 @@ class MainWindow(QMainWindow):
         if isinstance(error, OperationRuleError):
             message = error.format_message()
         else:
-            message = str(error)
+            message = OperationRuleError(
+                "请求未能完成",
+                str(error),
+                "请根据当前状态调整操作条件后重试。",
+            ).format_message()
         QMessageBox.warning(self, title, message)
 
     def validate_simulation_start(self):
@@ -1999,13 +2008,14 @@ class MainWindow(QMainWindow):
         worker = self.network_workers.get(role)
 
         if worker is None or not worker.running:
-
-            QMessageBox.warning(
-                self,
+            self.show_operation_error(
                 "无法申请改方",
-                "站间通信尚未建立。"
+                OperationRuleError(
+                    f"{role}站无法发送区间改方申请",
+                    "该站通信端点未运行。",
+                    "请断开两站通信并重新启动，待两站均显示“已连接”后重试。",
+                ),
             )
-
             return
 
         direction_manager = self.get_direction_manager(role)
@@ -2022,11 +2032,13 @@ class MainWindow(QMainWindow):
                     == DirectionManager.DENIED
             ):
 
-                QMessageBox.warning(
-                    self,
+                self.show_operation_error(
                     "无法改方",
-                    f"{reason}\n\n"
-                    "请确认区间空闲、信号关闭，且申请站已建立发车进路。"
+                    OperationRuleError(
+                        f"{role}站区间改方申请被拒绝",
+                        reason,
+                        "请确认区间空闲、信号关闭，且申请站已建立发车进路。",
+                    ),
                 )
 
             else:
