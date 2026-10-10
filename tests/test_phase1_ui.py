@@ -7,10 +7,11 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt5.QtCore import QObject, pyqtSignal
-from PyQt5.QtGui import QColor
+from PyQt5.QtGui import QColor, QPalette
 from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -903,17 +904,40 @@ class PhaseOneUiContractTest(unittest.TestCase):
             self.assertLessEqual(gap, 4)
 
         expected_minimum_widths = {
-            window.route_station_combo: 54,
-            window.route_type_combo: 94,
-            window.active_route_combo: 180,
-            window.tsr_start_combo: 59,
-            window.tsr_end_combo: 59,
-            window.tsr_speed_combo: 98,
-            window.active_tsr_combo: 261,
+            window.route_station_combo: 85,
+            window.route_type_combo: 170,
+            window.active_route_combo: 260,
+            window.tsr_start_combo: 75,
+            window.tsr_end_combo: 75,
+            window.tsr_speed_combo: 145,
+            window.active_tsr_combo: 380,
         }
         for combo, minimum_width in expected_minimum_widths.items():
             self.assertGreaterEqual(combo.width(), minimum_width)
 
+        window.close()
+
+    def test_operation_rows_use_grid_layout_and_give_space_to_combos(self):
+        window = MainWindow()
+
+        route_group = window.findChild(QGroupBox, "route_management_area")
+        speed_group = window.findChild(QGroupBox, "temporary_speed_area")
+        route_primary = route_group.layout().itemAt(0).layout()
+        route_active = route_group.layout().itemAt(1).layout()
+        speed_primary = speed_group.layout().itemAt(0).layout()
+        speed_active = speed_group.layout().itemAt(1).layout()
+
+        for row in (route_primary, route_active, speed_primary, speed_active):
+            self.assertIsInstance(row, QGridLayout)
+            self.assertEqual(row.horizontalSpacing(), 0)
+
+        self.assertGreater(route_primary.columnStretch(1), 0)
+        self.assertGreater(route_primary.columnStretch(3), 0)
+        self.assertGreater(route_active.columnStretch(1), 0)
+        self.assertGreater(speed_primary.columnStretch(1), 0)
+        self.assertGreater(speed_primary.columnStretch(3), 0)
+        self.assertGreater(speed_primary.columnStretch(5), 0)
+        self.assertGreater(speed_active.columnStretch(1), 0)
         window.close()
 
     def test_route_and_speed_controls_inherit_application_font(self):
@@ -958,12 +982,30 @@ class PhaseOneUiContractTest(unittest.TestCase):
         )
         self.assertIn("background-color: #dceefe", APP_STYLESHEET)
 
+    def test_combo_popup_view_has_explicit_light_blue_hover_feedback(self):
+        window = MainWindow()
+
+        for combo in window.findChildren(QComboBox):
+            self.assertTrue(combo.view().hasMouseTracking())
+            self.assertEqual(
+                combo.view().itemDelegate().__class__.__name__,
+                "ComboHoverDelegate",
+            )
+            palette = combo.view().palette()
+            self.assertEqual(
+                palette.color(QPalette.Highlight), QColor("#dceefe")
+            )
+            self.assertEqual(
+                palette.color(QPalette.HighlightedText), QColor("#1d2a36")
+            )
+        window.close()
+
     def test_minimum_window_keeps_operation_controls_readable(self):
         window = MainWindow()
         window.resize(1180, 760)
         window.show()
         self.app.processEvents()
-        self.assertGreaterEqual(window.width(), 1400)
+        self.assertGreaterEqual(window.width(), 1600)
 
         adjacent_pairs = (
             (window.route_station_label, window.route_station_combo),
