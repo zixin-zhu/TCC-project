@@ -62,7 +62,7 @@ class MainWindow(QMainWindow):
             1440,
             900
         )
-        self.setMinimumSize(1180, 760)
+        self.setMinimumSize(1400, 760)
         self.setStyleSheet(APP_STYLESHEET)
 
         # ==========================
@@ -250,22 +250,22 @@ class MainWindow(QMainWindow):
 
         route_group = QGroupBox("进路建立")
         route_group.setObjectName("route_management_area")
-        route_group.setMinimumWidth(320)
+        route_group.setMinimumWidth(400)
         route_layout = QVBoxLayout(route_group)
         route_layout.setContentsMargins(6, 8, 6, 8)
         route_layout.setSpacing(5)
-        route_station_layout = QHBoxLayout()
-        route_station_layout.setSpacing(2)
+        route_primary_layout = QHBoxLayout()
+        route_primary_layout.setSpacing(2)
 
         self.route_station_label = QLabel("车站：")
         self.route_station_label.setFixedWidth(52)
-        route_station_layout.addWidget(self.route_station_label)
+        route_primary_layout.addWidget(self.route_station_label)
 
         self.route_station_combo = QComboBox()
         self.route_station_combo.setObjectName("route_station")
         self.route_station_combo.addItems(["A站", "B站"])
         self.route_station_combo.setToolTip("选择需要办理进路的车站")
-        self.route_station_combo.setMinimumWidth(50)
+        self.route_station_combo.setMinimumWidth(54)
         self.route_station_combo.setSizePolicy(
             QSizePolicy.Expanding,
             QSizePolicy.Fixed,
@@ -273,22 +273,11 @@ class MainWindow(QMainWindow):
         self.route_station_combo.setStyleSheet(
             "padding-left: 4px; padding-right: 3px;"
         )
-        route_station_layout.addWidget(self.route_station_combo, 1)
-
-        self.route_establish_button = QPushButton("建立进路")
-        self.route_establish_button.setObjectName("route_establish_button")
-        self.route_establish_button.setToolTip("建立所选车站进路")
-        self.route_establish_button.setFixedWidth(82)
-        self.route_establish_button.setStyleSheet("padding: 0 5px;")
-        route_station_layout.addWidget(self.route_establish_button)
-        route_layout.addLayout(route_station_layout)
-
-        route_type_layout = QHBoxLayout()
-        route_type_layout.setSpacing(2)
+        route_primary_layout.addWidget(self.route_station_combo, 1)
 
         self.route_type_label = QLabel("进路类型：")
         self.route_type_label.setFixedWidth(86)
-        route_type_layout.addWidget(self.route_type_label)
+        route_primary_layout.addWidget(self.route_type_label)
 
         self.route_type_combo = QComboBox()
         self.route_type_combo.setObjectName("route_type")
@@ -296,7 +285,7 @@ class MainWindow(QMainWindow):
             ["正线接车", "侧线接车", "正线发车", "侧线发车"]
         )
         self.route_type_combo.setToolTip("选择接车或发车进路类型")
-        self.route_type_combo.setMinimumWidth(80)
+        self.route_type_combo.setMinimumWidth(94)
         self.route_type_combo.setSizePolicy(
             QSizePolicy.Expanding,
             QSizePolicy.Fixed,
@@ -304,8 +293,15 @@ class MainWindow(QMainWindow):
         self.route_type_combo.setStyleSheet(
             "padding-left: 4px; padding-right: 3px;"
         )
-        route_type_layout.addWidget(self.route_type_combo, 1)
-        route_layout.addLayout(route_type_layout)
+        route_primary_layout.addWidget(self.route_type_combo, 2)
+
+        self.route_establish_button = QPushButton("建立进路")
+        self.route_establish_button.setObjectName("route_establish_button")
+        self.route_establish_button.setToolTip("建立所选车站进路")
+        self.route_establish_button.setFixedWidth(82)
+        self.route_establish_button.setStyleSheet("padding: 0 5px;")
+        route_primary_layout.addWidget(self.route_establish_button)
+        route_layout.addLayout(route_primary_layout)
 
         active_route_layout = QHBoxLayout()
         active_route_layout.setSpacing(2)
@@ -331,10 +327,10 @@ class MainWindow(QMainWindow):
         self.active_route_combo.setMinimumContentsLength(8)
         active_route_layout.addWidget(self.active_route_combo, 1)
 
-        self.route_cancel_button = QPushButton("取消")
+        self.route_cancel_button = QPushButton("取消选中进路")
         self.route_cancel_button.setObjectName("route_cancel_button")
         self.route_cancel_button.setToolTip("取消列车尚未进入的所选进路")
-        self.route_cancel_button.setFixedWidth(60)
+        self.route_cancel_button.setFixedWidth(116)
         self.route_cancel_button.setStyleSheet("padding: 0 5px;")
         active_route_layout.addWidget(self.route_cancel_button)
         route_layout.addLayout(active_route_layout)
@@ -343,20 +339,20 @@ class MainWindow(QMainWindow):
             "临时限速"
         )
         equipment_group.setObjectName("temporary_speed_area")
-        equipment_group.setMinimumWidth(424)
+        equipment_group.setMinimumWidth(550)
         equipment_layout = QVBoxLayout(equipment_group)
         equipment_layout.setContentsMargins(6, 8, 6, 8)
         equipment_layout.setSpacing(5)
-        tsr_section_layout = QHBoxLayout()
-        tsr_section_layout.setSpacing(2)
+        tsr_primary_layout = QHBoxLayout()
+        tsr_primary_layout.setSpacing(2)
 
         self.tsr_start_label = QLabel("起始区段：")
         self.tsr_start_label.setFixedWidth(86)
-        tsr_section_layout.addWidget(self.tsr_start_label)
+        tsr_primary_layout.addWidget(self.tsr_start_label)
         self.tsr_start_combo = QComboBox()
         self.tsr_start_combo.setObjectName("tsr_start_section")
         self.tsr_start_combo.addItems([f"G{i:02d}" for i in range(1, 39)])
-        self.tsr_start_combo.setMinimumWidth(52)
+        self.tsr_start_combo.setMinimumWidth(59)
         self.tsr_start_combo.setSizePolicy(
             QSizePolicy.Expanding,
             QSizePolicy.Fixed,
@@ -365,15 +361,15 @@ class MainWindow(QMainWindow):
             "padding-left: 4px; padding-right: 3px;"
         )
         self.tsr_start_combo.setToolTip("临时限速起始区段")
-        tsr_section_layout.addWidget(self.tsr_start_combo, 1)
+        tsr_primary_layout.addWidget(self.tsr_start_combo, 1)
 
         self.tsr_end_label = QLabel("终止区段：")
         self.tsr_end_label.setFixedWidth(86)
-        tsr_section_layout.addWidget(self.tsr_end_label)
+        tsr_primary_layout.addWidget(self.tsr_end_label)
         self.tsr_end_combo = QComboBox()
         self.tsr_end_combo.setObjectName("tsr_end_section")
         self.tsr_end_combo.addItems([f"G{i:02d}" for i in range(1, 39)])
-        self.tsr_end_combo.setMinimumWidth(52)
+        self.tsr_end_combo.setMinimumWidth(59)
         self.tsr_end_combo.setSizePolicy(
             QSizePolicy.Expanding,
             QSizePolicy.Fixed,
@@ -382,19 +378,15 @@ class MainWindow(QMainWindow):
             "padding-left: 4px; padding-right: 3px;"
         )
         self.tsr_end_combo.setToolTip("临时限速终止区段")
-        tsr_section_layout.addWidget(self.tsr_end_combo, 1)
-        equipment_layout.addLayout(tsr_section_layout)
-
-        tsr_speed_layout = QHBoxLayout()
-        tsr_speed_layout.setSpacing(2)
+        tsr_primary_layout.addWidget(self.tsr_end_combo, 1)
 
         self.tsr_speed_label = QLabel("限速：")
         self.tsr_speed_label.setFixedWidth(52)
-        tsr_speed_layout.addWidget(self.tsr_speed_label)
+        tsr_primary_layout.addWidget(self.tsr_speed_label)
         self.tsr_speed_combo = QComboBox()
         self.tsr_speed_combo.setObjectName("tsr_speed")
         self.tsr_speed_combo.addItems(["45 km/h", "80 km/h", "120 km/h", "160 km/h", "200 km/h", "250 km/h"])
-        self.tsr_speed_combo.setMinimumWidth(80)
+        self.tsr_speed_combo.setMinimumWidth(98)
         self.tsr_speed_combo.setSizePolicy(
             QSizePolicy.Expanding,
             QSizePolicy.Fixed,
@@ -403,15 +395,15 @@ class MainWindow(QMainWindow):
             "padding-left: 4px; padding-right: 3px;"
         )
         self.tsr_speed_combo.setToolTip("临时限速值")
-        tsr_speed_layout.addWidget(self.tsr_speed_combo, 1)
+        tsr_primary_layout.addWidget(self.tsr_speed_combo, 2)
 
         self.tsr_apply_button = QPushButton("设置限速")
         self.tsr_apply_button.setObjectName("tsr_apply_button")
         self.tsr_apply_button.setToolTip("设置所选区段范围的临时限速")
         self.tsr_apply_button.setFixedWidth(82)
         self.tsr_apply_button.setStyleSheet("padding: 0 5px;")
-        tsr_speed_layout.addWidget(self.tsr_apply_button)
-        equipment_layout.addLayout(tsr_speed_layout)
+        tsr_primary_layout.addWidget(self.tsr_apply_button)
+        equipment_layout.addLayout(tsr_primary_layout)
 
         active_tsr_layout = QHBoxLayout()
         active_tsr_layout.setSpacing(2)
@@ -435,10 +427,10 @@ class MainWindow(QMainWindow):
         )
         active_tsr_layout.addWidget(self.active_tsr_combo, 1)
 
-        self.tsr_cancel_button = QPushButton("取消")
+        self.tsr_cancel_button = QPushButton("取消选中限速")
         self.tsr_cancel_button.setObjectName("tsr_cancel_button")
         self.tsr_cancel_button.setToolTip("取消当前选中的临时限速")
-        self.tsr_cancel_button.setFixedWidth(60)
+        self.tsr_cancel_button.setFixedWidth(116)
         self.tsr_cancel_button.setStyleSheet("padding: 0 5px;")
         active_tsr_layout.addWidget(self.tsr_cancel_button)
         equipment_layout.addLayout(active_tsr_layout)

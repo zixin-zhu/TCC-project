@@ -69,8 +69,8 @@ QComboBox {
 QComboBox QAbstractItemView {
     color: #1d2a36;
     background: #ffffff;
-    selection-color: #ffffff;
-    selection-background-color: #2f83c5;
+    selection-color: #1d2a36;
+    selection-background-color: #dceefe;
     outline: 0;
 }
 
@@ -79,7 +79,12 @@ QComboBox QAbstractItemView::item {
 }
 
 QComboBox QAbstractItemView::item:selected {
-    color: #ffffff;
-    background-color: #2f83c5;
+    color: #1d2a36;
+    background-color: #dceefe;
+}
+
+QComboBox QAbstractItemView::item:hover {
+    color: #1d2a36;
+    background-color: #dceefe;
 }
 """

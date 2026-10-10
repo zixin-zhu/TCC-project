@@ -801,6 +801,14 @@ class PhaseOneUiContractTest(unittest.TestCase):
             [window.operation_top_layout.stretch(index) for index in range(3)],
             [1, 4, 5],
         )
+        self.assertEqual(groups[1].layout().count(), 2)
+        self.assertEqual(groups[1].layout().itemAt(0).layout().count(), 5)
+        self.assertEqual(groups[1].layout().itemAt(1).layout().count(), 3)
+        self.assertEqual(groups[2].layout().count(), 2)
+        self.assertEqual(groups[2].layout().itemAt(0).layout().count(), 7)
+        self.assertEqual(groups[2].layout().itemAt(1).layout().count(), 3)
+        self.assertEqual(window.route_cancel_button.text(), "取消选中进路")
+        self.assertEqual(window.tsr_cancel_button.text(), "取消选中限速")
         self.assertEqual(
             [
                 window.route_station_combo.itemText(index)
@@ -837,8 +845,8 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertEqual(window.active_tsr_label.text(), "已生效限速：")
         self.assertEqual(window.active_route_combo.count(), 0)
         self.assertEqual(window.active_route_combo.currentText(), "")
-        self.assertGreaterEqual(groups[1].minimumWidth(), 315)
-        self.assertGreaterEqual(groups[2].minimumWidth(), 420)
+        self.assertGreaterEqual(groups[1].minimumWidth(), 400)
+        self.assertGreaterEqual(groups[2].minimumWidth(), 550)
         for control in (
             window.route_station_label,
             window.route_type_label,
@@ -876,8 +884,9 @@ class PhaseOneUiContractTest(unittest.TestCase):
 
         adjacent_pairs = (
             (window.route_station_label, window.route_station_combo),
-            (window.route_station_combo, window.route_establish_button),
+            (window.route_station_combo, window.route_type_label),
             (window.route_type_label, window.route_type_combo),
+            (window.route_type_combo, window.route_establish_button),
             (window.active_route_label, window.active_route_combo),
             (window.active_route_combo, window.route_cancel_button),
             (window.tsr_start_label, window.tsr_start_combo),
@@ -894,12 +903,12 @@ class PhaseOneUiContractTest(unittest.TestCase):
             self.assertLessEqual(gap, 4)
 
         expected_minimum_widths = {
-            window.route_station_combo: 51,
-            window.route_type_combo: 81,
-            window.active_route_combo: 221,
-            window.tsr_start_combo: 53,
-            window.tsr_end_combo: 53,
-            window.tsr_speed_combo: 81,
+            window.route_station_combo: 54,
+            window.route_type_combo: 94,
+            window.active_route_combo: 180,
+            window.tsr_start_combo: 59,
+            window.tsr_end_combo: 59,
+            window.tsr_speed_combo: 98,
             window.active_tsr_combo: 261,
         }
         for combo, minimum_width in expected_minimum_widths.items():
@@ -940,22 +949,27 @@ class PhaseOneUiContractTest(unittest.TestCase):
         )
         self.assertIn("color: #1d2a36", APP_STYLESHEET)
         self.assertIn("background: #ffffff", APP_STYLESHEET)
-        self.assertIn("selection-color: #ffffff", APP_STYLESHEET)
+        self.assertIn("selection-color: #1d2a36", APP_STYLESHEET)
         self.assertIn(
-            "selection-background-color: #2f83c5", APP_STYLESHEET
+            "selection-background-color: #dceefe", APP_STYLESHEET
         )
-        self.assertIn("background-color: #2f83c5", APP_STYLESHEET)
+        self.assertIn(
+            "QComboBox QAbstractItemView::item:hover", APP_STYLESHEET
+        )
+        self.assertIn("background-color: #dceefe", APP_STYLESHEET)
 
     def test_minimum_window_keeps_operation_controls_readable(self):
         window = MainWindow()
         window.resize(1180, 760)
         window.show()
         self.app.processEvents()
+        self.assertGreaterEqual(window.width(), 1400)
 
         adjacent_pairs = (
             (window.route_station_label, window.route_station_combo),
-            (window.route_station_combo, window.route_establish_button),
+            (window.route_station_combo, window.route_type_label),
             (window.route_type_label, window.route_type_combo),
+            (window.route_type_combo, window.route_establish_button),
             (window.active_route_label, window.active_route_combo),
             (window.active_route_combo, window.route_cancel_button),
             (window.tsr_start_label, window.tsr_start_combo),
