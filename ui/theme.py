@@ -65,4 +65,21 @@ QComboBox {
     border-radius: 5px;
     background: #ffffff;
 }
+
+QComboBox QAbstractItemView {
+    color: #1d2a36;
+    background: #ffffff;
+    selection-color: #ffffff;
+    selection-background-color: #2f83c5;
+    outline: 0;
+}
+
+QComboBox QAbstractItemView::item {
+    min-height: 28px;
+}
+
+QComboBox QAbstractItemView::item:selected {
+    color: #ffffff;
+    background-color: #2f83c5;
+}
 """

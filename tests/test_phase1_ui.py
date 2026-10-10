@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (
 
 from ui.main_window import MainWindow
 from ui.tcc_overview import TccOverviewWidget
+from ui.theme import APP_STYLESHEET
 from models.route import RouteType
 class FakeNetworkWorker(QObject):
     connected = pyqtSignal()
@@ -842,15 +843,13 @@ class PhaseOneUiContractTest(unittest.TestCase):
 
         adjacent_pairs = (
             (window.route_station_label, window.route_station_combo),
-            (window.route_station_combo, window.route_type_label),
+            (window.route_station_combo, window.route_establish_button),
             (window.route_type_label, window.route_type_combo),
-            (window.route_type_combo, window.route_establish_button),
             (window.active_route_label, window.active_route_combo),
             (window.active_route_combo, window.route_cancel_button),
             (window.tsr_start_label, window.tsr_start_combo),
             (window.tsr_start_combo, window.tsr_end_label),
             (window.tsr_end_label, window.tsr_end_combo),
-            (window.tsr_end_combo, window.tsr_speed_label),
             (window.tsr_speed_label, window.tsr_speed_combo),
             (window.tsr_speed_combo, window.tsr_apply_button),
             (window.active_tsr_label, window.active_tsr_combo),
@@ -873,6 +872,90 @@ class PhaseOneUiContractTest(unittest.TestCase):
         for combo, minimum_width in expected_minimum_widths.items():
             self.assertGreaterEqual(combo.width(), minimum_width)
 
+        window.close()
+
+    def test_route_and_speed_controls_inherit_application_font(self):
+        window = MainWindow()
+
+        for control in (
+            window.route_station_label,
+            window.route_type_label,
+            window.active_route_label,
+            window.route_station_combo,
+            window.route_type_combo,
+            window.active_route_combo,
+            window.route_establish_button,
+            window.route_cancel_button,
+            window.tsr_start_label,
+            window.tsr_end_label,
+            window.tsr_speed_label,
+            window.active_tsr_label,
+            window.tsr_start_combo,
+            window.tsr_end_combo,
+            window.tsr_speed_combo,
+            window.active_tsr_combo,
+            window.tsr_apply_button,
+            window.tsr_cancel_button,
+        ):
+            self.assertNotIn("font-size", control.styleSheet())
+        window.close()
+
+    def test_combo_popup_has_readable_normal_and_selected_colors(self):
+        self.assertIn("QComboBox QAbstractItemView", APP_STYLESHEET)
+        self.assertIn(
+            "QComboBox QAbstractItemView::item:selected", APP_STYLESHEET
+        )
+        self.assertIn("color: #1d2a36", APP_STYLESHEET)
+        self.assertIn("background: #ffffff", APP_STYLESHEET)
+        self.assertIn("selection-color: #ffffff", APP_STYLESHEET)
+        self.assertIn(
+            "selection-background-color: #2f83c5", APP_STYLESHEET
+        )
+        self.assertIn("background-color: #2f83c5", APP_STYLESHEET)
+
+    def test_minimum_window_keeps_operation_controls_readable(self):
+        window = MainWindow()
+        window.resize(1180, 760)
+        window.show()
+        self.app.processEvents()
+
+        adjacent_pairs = (
+            (window.route_station_label, window.route_station_combo),
+            (window.route_station_combo, window.route_establish_button),
+            (window.route_type_label, window.route_type_combo),
+            (window.active_route_label, window.active_route_combo),
+            (window.active_route_combo, window.route_cancel_button),
+            (window.tsr_start_label, window.tsr_start_combo),
+            (window.tsr_start_combo, window.tsr_end_label),
+            (window.tsr_end_label, window.tsr_end_combo),
+            (window.tsr_speed_label, window.tsr_speed_combo),
+            (window.tsr_speed_combo, window.tsr_apply_button),
+            (window.active_tsr_label, window.active_tsr_combo),
+            (window.active_tsr_combo, window.tsr_cancel_button),
+        )
+        for left_widget, right_widget in adjacent_pairs:
+            gap = right_widget.x() - (
+                left_widget.x() + left_widget.width()
+            )
+            self.assertGreaterEqual(gap, 0)
+            self.assertLessEqual(gap, 4)
+
+        for control in (
+            window.route_station_combo,
+            window.route_type_combo,
+            window.active_route_combo,
+            window.tsr_start_combo,
+            window.tsr_end_combo,
+            window.tsr_speed_combo,
+            window.active_tsr_combo,
+            window.route_establish_button,
+            window.route_cancel_button,
+            window.tsr_apply_button,
+            window.tsr_cancel_button,
+        ):
+            self.assertGreaterEqual(
+                control.width(), control.minimumSizeHint().width()
+            )
         window.close()
 
     def test_route_panel_establishes_and_cancels_selected_route(self):
