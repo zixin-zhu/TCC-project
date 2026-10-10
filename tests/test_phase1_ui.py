@@ -444,10 +444,19 @@ class PhaseOneUiContractTest(unittest.TestCase):
             ],
             ["正线接车", "侧线接车", "正线发车", "侧线发车"],
         )
-        self.assertLessEqual(window.route_type_combo.maximumWidth(), 132)
-        self.assertLessEqual(window.active_route_combo.maximumWidth(), 330)
-        self.assertLessEqual(window.tsr_speed_combo.maximumWidth(), 120)
-        self.assertLessEqual(window.active_tsr_combo.maximumWidth(), 360)
+        for combo in (
+            window.route_station_combo,
+            window.route_type_combo,
+            window.active_route_combo,
+            window.tsr_start_combo,
+            window.tsr_end_combo,
+            window.tsr_speed_combo,
+            window.active_tsr_combo,
+        ):
+            self.assertEqual(
+                combo.sizePolicy().horizontalPolicy(),
+                QSizePolicy.Expanding,
+            )
         self.assertEqual(window.route_station_label.text(), "车站：")
         self.assertEqual(window.route_type_label.text(), "进路类型：")
         self.assertEqual(window.active_route_label.text(), "已建立进路：")
@@ -483,6 +492,50 @@ class PhaseOneUiContractTest(unittest.TestCase):
             [window.speed_combo.itemText(index) for index in range(window.speed_combo.count())],
             ["0.5×", "1×", "2×", "5×", "10×", "20×"],
         )
+        window.close()
+
+    def test_route_and_speed_combos_fill_space_between_labels_and_actions(self):
+        window = MainWindow()
+        window.resize(1440, 900)
+        window.show()
+        self.app.processEvents()
+
+        def horizontal_gap(left_widget, right_widget):
+            return right_widget.x() - (left_widget.x() + left_widget.width())
+
+        adjacent_pairs = (
+            (window.route_station_label, window.route_station_combo),
+            (window.route_station_combo, window.route_type_label),
+            (window.route_type_label, window.route_type_combo),
+            (window.route_type_combo, window.route_establish_button),
+            (window.active_route_label, window.active_route_combo),
+            (window.active_route_combo, window.route_cancel_button),
+            (window.tsr_start_label, window.tsr_start_combo),
+            (window.tsr_start_combo, window.tsr_end_label),
+            (window.tsr_end_label, window.tsr_end_combo),
+            (window.tsr_end_combo, window.tsr_speed_label),
+            (window.tsr_speed_label, window.tsr_speed_combo),
+            (window.tsr_speed_combo, window.tsr_apply_button),
+            (window.active_tsr_label, window.active_tsr_combo),
+            (window.active_tsr_combo, window.tsr_cancel_button),
+        )
+        for left_widget, right_widget in adjacent_pairs:
+            gap = horizontal_gap(left_widget, right_widget)
+            self.assertGreaterEqual(gap, 0)
+            self.assertLessEqual(gap, 4)
+
+        expected_minimum_widths = {
+            window.route_station_combo: 51,
+            window.route_type_combo: 81,
+            window.active_route_combo: 221,
+            window.tsr_start_combo: 53,
+            window.tsr_end_combo: 53,
+            window.tsr_speed_combo: 81,
+            window.active_tsr_combo: 261,
+        }
+        for combo, minimum_width in expected_minimum_widths.items():
+            self.assertGreaterEqual(combo.width(), minimum_width)
+
         window.close()
 
     def test_route_panel_establishes_and_cancels_selected_route(self):
