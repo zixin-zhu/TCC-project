@@ -44,18 +44,40 @@ class RouteServiceTest(unittest.TestCase):
         service = RouteService()
         first = service.establish_route("A", RouteType.MAIN_RECEIVE)
 
-        with self.assertRaisesRegex(ValueError, "本站存在冲突进路"):
+        with self.assertRaises(ValueError) as raised:
             service.establish_route("A", RouteType.SIDE_DEPART)
 
+        message = str(raised.exception)
+        self.assertIn("A站", message)
+        self.assertIn("正线接车", message)
+        self.assertIn("侧线发车", message)
+        self.assertEqual(service.active_routes(), [first])
+
+    def test_exact_duplicate_route_has_specific_recovery_message(self):
+        service = RouteService()
+        first = service.establish_route("A", RouteType.MAIN_DEPART)
+
+        with self.assertRaises(ValueError) as raised:
+            service.establish_route("A", RouteType.MAIN_DEPART)
+
+        message = str(raised.exception)
+        self.assertIn("A站", message)
+        self.assertIn("正线发车", message)
+        self.assertIn("请勿重复操作", message)
         self.assertEqual(service.active_routes(), [first])
 
     def test_opposing_departure_routes_conflict(self):
         service = RouteService()
         first = service.establish_route("A", RouteType.MAIN_DEPART)
 
-        with self.assertRaisesRegex(ValueError, "对端已有发车进路"):
+        with self.assertRaises(ValueError) as raised:
             service.establish_route("B", RouteType.SIDE_DEPART)
 
+        message = str(raised.exception)
+        self.assertIn("A站", message)
+        self.assertIn("正线发车", message)
+        self.assertIn("B站", message)
+        self.assertIn("侧线发车", message)
         self.assertEqual(service.active_routes(), [first])
 
     def test_matching_departure_and_remote_receive_can_coexist(self):
@@ -90,8 +112,10 @@ class RouteServiceTest(unittest.TestCase):
 
         self.assertEqual(locked.state, RouteState.LOCKED)
         self.assertEqual(locked.train_id, "T001")
-        with self.assertRaisesRegex(ValueError, "列车已进入进路，不能人工取消"):
+        with self.assertRaises(ValueError) as raised:
             service.cancel_route(route.route_id)
+        self.assertIn("T001", str(raised.exception))
+        self.assertIn("不能人工取消", str(raised.exception))
         self.assertEqual(service.active_routes(), [locked])
         self.assertTrue(service.release_route(route.route_id))
         self.assertEqual(service.active_routes(), [])
@@ -116,6 +140,27 @@ class RouteServiceTest(unittest.TestCase):
 
         self.assertEqual(service.active_routes(), [route])
         self.assertEqual(route.route_id, "B-SIDE-RECEIVE-001")
+
+    def test_reset_locks_preserves_routes_and_clears_train_bindings(self):
+        service = RouteService()
+        departure = service.establish_route("A", RouteType.MAIN_DEPART)
+        receive = service.establish_route("B", RouteType.SIDE_RECEIVE)
+        original_ids = [departure.route_id, receive.route_id]
+        original_orders = [departure.created_order, receive.created_order]
+        service.lock_route(departure.route_id, "T001")
+        service.lock_route(receive.route_id, "T001")
+
+        service.reset_locks()
+
+        routes = service.active_routes()
+        self.assertEqual([route.route_id for route in routes], original_ids)
+        self.assertEqual(
+            [route.created_order for route in routes], original_orders
+        )
+        self.assertTrue(
+            all(route.state == RouteState.ESTABLISHED for route in routes)
+        )
+        self.assertTrue(all(route.train_id is None for route in routes))
 
 
 if __name__ == "__main__":

@@ -20,12 +20,41 @@ class RouteService:
             raise ValueError("非法进路类型")
 
         display_name, track, movement = self.ROUTE_SPECS[route_type]
-        if self.active_routes(station):
-            raise ValueError("本站存在冲突进路")
+        station_routes = self.active_routes(station)
+        duplicate = next(
+            (
+                route
+                for route in station_routes
+                if route.route_type == route_type
+            ),
+            None,
+        )
+        if duplicate is not None:
+            raise ValueError(
+                f"{station}站{display_name}已建立，请勿重复操作。"
+            )
+        if station_routes:
+            existing = station_routes[0]
+            raise ValueError(
+                f"{station}站已建立{existing.display_name}，"
+                f"不能同时建立{display_name}；请先取消现有进路。"
+            )
         if movement == "DEPART":
             remote_station = "B" if station == "A" else "A"
-            if self.has_departure_route(remote_station):
-                raise ValueError("对端已有发车进路")
+            remote_departure = next(
+                (
+                    route
+                    for route in self.active_routes(remote_station)
+                    if route.movement == "DEPART"
+                ),
+                None,
+            )
+            if remote_departure is not None:
+                raise ValueError(
+                    f"{remote_station}站已建立{remote_departure.display_name}，"
+                    f"不能再建立{station}站{display_name}；"
+                    "请先取消对端发车进路。"
+                )
 
         route = Route(
             route_id=f"{station}-{route_type.replace('_', '-')}-{self._next_order:03d}",
@@ -52,7 +81,10 @@ class RouteService:
         if route is None:
             return False
         if route.state == RouteState.LOCKED:
-            raise ValueError("列车已进入进路，不能人工取消")
+            raise ValueError(
+                f"{route.station}站{route.display_name}已被列车"
+                f"{route.train_id}锁闭，列车已进入进路，不能人工取消。"
+            )
         del self._routes[route_id]
         return True
 
@@ -75,6 +107,11 @@ class RouteService:
     def clear_all(self) -> None:
         self._routes.clear()
         self._next_order = 1
+
+    def reset_locks(self) -> None:
+        for route in self._routes.values():
+            route.state = RouteState.ESTABLISHED
+            route.train_id = None
 
     def departure_route_for(self, station: str, track: str) -> Route | None:
         return self._route_for(station, track, "DEPART")
