@@ -104,6 +104,20 @@ class RouteService:
         del self._routes[route_id]
         return True
 
+    def unlock_route(self, route_id: str) -> bool:
+        route = self._routes.get(route_id)
+        if route is None:
+            return False
+        route.state = RouteState.ESTABLISHED
+        route.train_id = None
+        return True
+
+    def unlock_routes_for_train(self, train_id: str) -> None:
+        for route in self._routes.values():
+            if route.train_id == train_id:
+                route.state = RouteState.ESTABLISHED
+                route.train_id = None
+
     def clear_all(self) -> None:
         self._routes.clear()
         self._next_order = 1

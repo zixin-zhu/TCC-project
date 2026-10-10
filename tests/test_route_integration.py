@@ -56,7 +56,7 @@ class RouteTrainIntegrationTest(unittest.TestCase):
         self.assertEqual(route.state, RouteState.LOCKED)
         self.assertEqual(route.train_id, train.train_id)
 
-    def test_departure_route_releases_after_train_enters_second_section(self):
+    def test_departure_route_remains_established_after_train_enters_second_section(self):
         route = self.routes.establish_route("A", RouteType.SIDE_DEPART)
         train = self.trains.add_waiting_train("SIDE")
         self.assertTrue(self.trains.dispatch_train(train))
@@ -66,9 +66,11 @@ class RouteTrainIntegrationTest(unittest.TestCase):
 
         self.assertEqual(train.current_track, "G02")
         self.assertIsNone(train.route_id)
-        self.assertNotIn(route, self.routes.active_routes())
+        self.assertIn(route, self.routes.active_routes())
+        self.assertEqual(route.state, RouteState.ESTABLISHED)
+        self.assertIsNone(route.train_id)
 
-    def test_receive_route_locks_at_terminal_section_and_releases_on_arrival(self):
+    def test_receive_route_locks_at_terminal_section_and_remains_after_arrival(self):
         self.simulation.set_direction("B_TO_A")
         departure = self.routes.establish_route("B", RouteType.SIDE_DEPART)
         receive = self.routes.establish_route("A", RouteType.SIDE_RECEIVE)
@@ -77,7 +79,8 @@ class RouteTrainIntegrationTest(unittest.TestCase):
 
         train.position = self.trains.default_track_length + 1
         self.trains.handle_track_transition(train)
-        self.assertNotIn(departure, self.routes.active_routes())
+        self.assertIn(departure, self.routes.active_routes())
+        self.assertEqual(departure.state, RouteState.ESTABLISHED)
 
         train.current_track = "G02"
         train.position = self.trains.default_track_length + 1
@@ -92,7 +95,9 @@ class RouteTrainIntegrationTest(unittest.TestCase):
 
         self.assertEqual(train.status, "ARRIVED")
         self.assertIsNone(train.route_id)
-        self.assertNotIn(receive, self.routes.active_routes())
+        self.assertIn(receive, self.routes.active_routes())
+        self.assertEqual(receive.state, RouteState.ESTABLISHED)
+        self.assertIsNone(receive.train_id)
 
 
 class RouteSignalIntegrationTest(unittest.TestCase):

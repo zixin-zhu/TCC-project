@@ -35,6 +35,8 @@ class TrainService:
         self.trains = {}
         # 待发列车队列
         self.waiting_queue = []
+        # 只有用户在“查看列车”中选中并点击开始的列车才允许自动发车
+        self.dispatch_target_id = None
 
         # 下一辆列车编号
         self.next_train_number = 1
@@ -46,7 +48,7 @@ class TrainService:
     # 创建列车
     # ==================================================
 
-    def create_train(self, departure_mode="MAIN", arrival_mode=None):
+    def create_train(self, departure_mode=None, arrival_mode=None):
 
         train_id = f"T{self.next_train_number:03d}"
 
@@ -88,7 +90,35 @@ class TrainService:
         """清除运行及待发列车，并释放由列车造成的区段占用。"""
         self.trains.clear()
         self.waiting_queue.clear()
+        self.dispatch_target_id = None
         self.sync_track_circuits()
+
+    def prepare_train_for_dispatch(
+        self,
+        train_id,
+        departure_mode,
+        arrival_mode,
+    ):
+        train = self.trains.get(train_id)
+        if train is None or train.status != "WAITING":
+            raise ValueError("所选列车不是待发列车")
+        if train_id not in self.waiting_queue:
+            self.waiting_queue.append(train_id)
+        train.configure_operation_modes(departure_mode, arrival_mode)
+        self.dispatch_target_id = train_id
+        return train
+
+    def reset_train_to_departure(self, train_id):
+        train = self.trains.get(train_id)
+        if train is None:
+            return None
+        train.reset_to_departure()
+        if train_id not in self.waiting_queue:
+            self.waiting_queue.append(train_id)
+        if self.dispatch_target_id == train_id:
+            self.dispatch_target_id = None
+        self.sync_track_circuits()
+        return train
 
     # ==================================================
     # 判断某分区是否被列车占用
@@ -442,7 +472,7 @@ class TrainService:
             direction
         )
 
-    def add_waiting_train(self, departure_mode="MAIN", arrival_mode=None):
+    def add_waiting_train(self, departure_mode=None, arrival_mode=None):
         """
         创建一辆列车，并加入待发队列。
         """
@@ -463,17 +493,22 @@ class TrainService:
         自动发送队首列车。
         """
 
-        if not self.waiting_queue:
+        if not self.waiting_queue or self.dispatch_target_id is None:
             return None
 
-        train_id = self.waiting_queue[0]
+        train_id = self.dispatch_target_id
+
+        if train_id not in self.waiting_queue:
+            self.dispatch_target_id = None
+            return None
 
         train = self.trains.get(
             train_id
         )
 
         if train is None:
-            self.waiting_queue.pop(0)
+            self.waiting_queue.remove(train_id)
+            self.dispatch_target_id = None
             return None
 
         # 判断是否满足安全发车条件
@@ -492,7 +527,8 @@ class TrainService:
             return None
 
         # 从待发队列删除
-        self.waiting_queue.pop(0)
+        self.waiting_queue.remove(train_id)
+        self.dispatch_target_id = None
 
         return train
 
@@ -533,7 +569,7 @@ class TrainService:
 
     def release_train_route(self, train):
         if self.route_service is not None and train.route_id is not None:
-            self.route_service.release_route(train.route_id)
+            self.route_service.unlock_route(train.route_id)
         train.route_id = None
 
     def get_entry_signal_status(self):

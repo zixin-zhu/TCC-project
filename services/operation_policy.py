@@ -81,40 +81,64 @@ class OperationPolicy:
         receive_station = "B" if direction == "A_TO_B" else "A"
 
         for train in trains:
-            departure_track = cls._mode_to_track(train.departure_mode)
-            arrival_track = cls._mode_to_track(train.arrival_mode)
-            departure_route = route_service.departure_route_for(
-                departure_station, departure_track
+            cls.validate_train_routes(
+                direction,
+                train.train_id,
+                train.departure_mode,
+                train.arrival_mode,
+                route_service,
             )
-            if departure_route is None:
-                departure_name = cls._mode_route_name(
-                    train.departure_mode, "发车"
-                )
-                raise OperationRuleError(
-                    f"列车{train.train_id}缺少匹配的出发进路",
-                    f"列车选择{departure_station}站{departure_name}，"
-                    "但该进路尚未建立。",
-                    f"请先建立{departure_station}站{departure_name}，"
-                    "或修改列车的发车方式。",
-                )
 
-            receive_route = route_service.receive_route_for(
-                receive_station, arrival_track
+    @classmethod
+    def validate_train_routes(
+        cls,
+        direction: str,
+        train_id: str,
+        departure_mode: str,
+        arrival_mode: str,
+        route_service,
+    ) -> None:
+        if direction not in cls.ALLOWED_ROUTES:
+            cls.validate_route_request(direction, "A", RouteType.MAIN_DEPART)
+
+        departure_station = "A" if direction == "A_TO_B" else "B"
+        receive_station = "B" if direction == "A_TO_B" else "A"
+        departure_track = cls._mode_to_track(departure_mode)
+        arrival_track = cls._mode_to_track(arrival_mode)
+        departure_route = route_service.departure_route_for(
+            departure_station, departure_track
+        )
+        if departure_route is None:
+            departure_name = cls._mode_route_name(departure_mode, "发车")
+            raise OperationRuleError(
+                f"列车{train_id}缺少匹配的出发进路",
+                f"列车选择{departure_station}站{departure_name}，"
+                "但该进路尚未建立。",
+                f"请先建立{departure_station}站{departure_name}，"
+                "或修改列车的发车方式。",
             )
-            if receive_route is None:
-                receive_name = cls._mode_route_name(
-                    train.arrival_mode, "接车"
-                )
-                raise OperationRuleError(
-                    f"列车{train.train_id}缺少匹配的到达进路",
-                    f"列车选择{receive_station}站{receive_name}，"
-                    "但该进路尚未建立。",
-                    f"请先建立{receive_station}站{receive_name}，"
-                    "或修改列车的接车方式。",
-                )
+
+        receive_route = route_service.receive_route_for(
+            receive_station, arrival_track
+        )
+        if receive_route is None:
+            receive_name = cls._mode_route_name(arrival_mode, "接车")
+            raise OperationRuleError(
+                f"列车{train_id}缺少匹配的到达进路",
+                f"列车选择{receive_station}站{receive_name}，"
+                "但该进路尚未建立。",
+                f"请先建立{receive_station}站{receive_name}，"
+                "或修改列车的接车方式。",
+            )
 
     @staticmethod
     def _mode_to_track(mode: str) -> str:
+        if mode not in ("MAIN", "SIDE"):
+            raise OperationRuleError(
+                "列车尚未选择接发方式",
+                "所选列车的发车方式或接车方式为空。",
+                "请在列车实时运行状态区域选择发车和接车方式后重试。",
+            )
         return "1G" if mode == "MAIN" else "3G"
 
     @staticmethod

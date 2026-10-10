@@ -4,17 +4,22 @@ class Train:
         self,
         train_id,
         direction="A_TO_B",
-        departure_mode="MAIN",
+        departure_mode=None,
         arrival_mode=None,
     ):
         self.train_id = train_id
 
         self.direction = direction
 
-        self.departure_mode = departure_mode
-        self.arrival_mode = arrival_mode or departure_mode
-        self.station_track = "1G" if departure_mode == "MAIN" else "3G"
-        self.arrival_track = "1G" if self.arrival_mode == "MAIN" else "3G"
+        self.departure_mode = None
+        self.arrival_mode = None
+        self.station_track = None
+        self.arrival_track = None
+        if departure_mode is not None:
+            self.configure_operation_modes(
+                departure_mode,
+                arrival_mode or departure_mode,
+            )
         self.route_id = None
 
         self.current_track = None
@@ -71,6 +76,40 @@ class Train:
 
         # 下一分区线路限速
         self.next_line_speed = None
+
+    def configure_operation_modes(self, departure_mode, arrival_mode):
+        if departure_mode not in ("MAIN", "SIDE"):
+            raise ValueError("非法发车方式")
+        if arrival_mode not in ("MAIN", "SIDE"):
+            raise ValueError("非法接车方式")
+        self.departure_mode = departure_mode
+        self.arrival_mode = arrival_mode
+        self.station_track = "1G" if departure_mode == "MAIN" else "3G"
+        self.arrival_track = "1G" if arrival_mode == "MAIN" else "3G"
+
+    def reset_to_departure(self):
+        self.current_track = None
+        self.position = 0.0
+        self.speed = 0.0
+        self.target_speed = 0.0
+        self.status = "WAITING"
+        self.route_id = None
+        self.max_speed = 120.0
+        self.block_speed = 120.0
+        self.line_speed = 120.0
+        self.active_balise_speed = 120.0
+        self.temporary_speed = 120.0
+        self.block_code = "L5"
+        self.departure_mode = None
+        self.arrival_mode = None
+        self.station_track = None
+        self.arrival_track = None
+        self.last_balise = None
+        self.next_track = None
+        self.next_line_speed = None
+        self.distance_to_ahead = None
+        self.braking_distance = 0.0
+        self.safety_status = "CLEAR"
 
 
     def enter_track(self, track_code):

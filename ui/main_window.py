@@ -822,20 +822,7 @@ class MainWindow(QMainWindow):
         if not self.require_communication("添加列车失败"):
             return
 
-        departure_mode = (
-            "MAIN"
-            if self.departure_mode_combo.currentText() == "正线发车"
-            else "SIDE"
-        )
-        arrival_mode = (
-            "MAIN"
-            if self.arrival_mode_combo.currentText() == "正线接车"
-            else "SIDE"
-        )
-        train = self.train_service.add_waiting_train(
-            departure_mode,
-            arrival_mode,
-        )
+        train = self.train_service.add_waiting_train()
 
         print(
             f"{train.train_id} 已加入待发队列"
@@ -1106,34 +1093,29 @@ class MainWindow(QMainWindow):
             return
 
         self.engine.pause()
+        train_id = self.train_selector.currentText()
+        train = self.train_service.trains.get(train_id)
+        if train is None:
+            self.show_operation_error(
+                "仿真复位失败",
+                OperationRuleError(
+                    "没有可复位的当前列车",
+                    "“查看列车”中未选中有效列车。",
+                    "请先在“查看列车”下拉框中选择需要复位的列车。",
+                ),
+            )
+            self.refresh_control_states()
+            return
 
-        self.route_service.reset_locks()
-
-        # 重新创建列车服务（列车仿真始终挂A侧）
-        self.train_service = TrainService(
-            self.simulation_a,
-            self.route_service,
-        )
-
-        # Engine改为使用新的服务
-        self.engine.train_service = (
-            self.train_service
-        )
-
-        # 清空两侧TCC的轨道占用
-        for simulation in (
-                self.simulation_a,
-                self.simulation_b
-        ):
-
-            for track in (
-                    simulation
-                    .track_circuits
-                    .values()
-            ):
+        self.route_service.unlock_routes_for_train(train_id)
+        self.train_service.reset_train_to_departure(train_id)
+        for track_code, track in self.simulation_b.track_circuits.items():
+            source_track = self.simulation_a.track_circuits[track_code]
+            if source_track.occupied:
+                track.occupy()
+            else:
                 track.release()
-
-            simulation.update_all_track_codes()
+        self.simulation_b.update_all_track_codes()
 
         self.engine.reset_time()
 
@@ -1677,36 +1659,56 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(self, title, message)
 
     def validate_simulation_start(self):
-        active_trains = any(
-            train.status in ("RUNNING", "STOPPED")
-            for train in self.train_service.trains.values()
-        )
-        if not self.train_service.waiting_queue and not active_trains:
+        train_id = self.train_selector.currentText()
+        train = self.train_service.trains.get(train_id)
+        if train is None:
             self.show_operation_error(
                 "仿真启动失败",
                 OperationRuleError(
-                    "当前没有待发列车",
-                    "待发列车数量为 0。",
-                    "请先选择接发车方式并点击“添加待发列车”。",
+                    "没有选中需要启动的列车",
+                    "“查看列车”中未选中有效列车。",
+                    "请先添加列车，并在“查看列车”下拉框中选中目标列车。",
                 ),
             )
             return False
 
-        # 暂停后继续运行时，列车可能已全部发出，待发队列为空。
-        # 这时无需重新校验接发进路，直接恢复现有列车即可。
-        if not self.train_service.waiting_queue:
+        if train.status in ("RUNNING", "STOPPED"):
+            self.train_service.dispatch_target_id = None
             return True
 
-        trains = [
-            self.train_service.trains[train_id]
-            for train_id in self.train_service.waiting_queue
-            if train_id in self.train_service.trains
-        ]
+        if train.status != "WAITING":
+            self.show_operation_error(
+                "仿真启动失败",
+                OperationRuleError(
+                    f"列车{train_id}当前不能启动",
+                    f"列车状态为 {train.status}。",
+                    "请复位该列车后重新选择接发方式，再点击开始仿真。",
+                ),
+            )
+            return False
+
+        departure_mode = (
+            "MAIN"
+            if self.departure_mode_combo.currentText() == "正线发车"
+            else "SIDE"
+        )
+        arrival_mode = (
+            "MAIN"
+            if self.arrival_mode_combo.currentText() == "正线接车"
+            else "SIDE"
+        )
         try:
-            OperationPolicy.validate_waiting_train_routes(
+            OperationPolicy.validate_train_routes(
                 self.simulation_a.get_direction(),
-                trains,
+                train_id,
+                departure_mode,
+                arrival_mode,
                 self.route_service,
+            )
+            self.train_service.prepare_train_for_dispatch(
+                train_id,
+                departure_mode,
+                arrival_mode,
             )
         except OperationRuleError as error:
             self.show_operation_error("仿真启动失败", error)
@@ -1716,15 +1718,16 @@ class MainWindow(QMainWindow):
     def refresh_control_states(self):
         ready = self.communication_ready()
         running = self.engine.timer.isActive()
+        has_trains = bool(self.train_service.trains)
         self.operation_area.setEnabled(ready)
         self.panel_a.direction_button.setEnabled(ready)
         self.panel_b.direction_button.setEnabled(ready)
 
         self.start_button.setEnabled(ready and not running)
         self.pause_button.setEnabled(ready and running)
-        self.reset_button.setEnabled(ready and running)
+        self.reset_button.setEnabled(ready and has_trains)
         self.clear_trains_button.setEnabled(
-            ready and bool(self.train_service.waiting_queue)
+            ready and has_trains
         )
         self.tsr_cancel_button.setEnabled(
             ready and self.active_tsr_combo.currentData() is not None
