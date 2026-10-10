@@ -48,15 +48,47 @@ class TemporarySpeedServiceTest(unittest.TestCase):
         self.assertEqual(self.service.speed_for("G08"), 80)
         self.assertEqual(restriction["start_section"], "G05")
 
-    def test_overlapping_restrictions_take_lower_speed_and_can_cancel(self):
+    def test_overlapping_restriction_is_rejected_and_preserves_existing(self):
         first = self.service.set_restriction("G05", "G10", 120)
-        second = self.service.set_restriction("G08", "G12", 80)
 
-        self.assertEqual(self.service.speed_for("G09"), 80)
-        self.assertTrue(self.service.cancel_restriction(second["id"]))
+        with self.assertRaises(ValueError) as raised:
+            self.service.set_restriction("G08", "G12", 80)
+
+        message = str(raised.exception)
+        self.assertIn(first["id"], message)
+        self.assertIn("G05～G10", message)
+        self.assertIn("120 km/h", message)
+        self.assertIn("G08～G12", message)
+        self.assertIn("80 km/h", message)
         self.assertEqual(self.service.speed_for("G09"), 120)
         self.assertEqual(len(self.service.active_restrictions()), 1)
         self.assertEqual(self.service.active_restrictions()[0]["id"], first["id"])
+
+    def test_exact_duplicate_range_is_rejected(self):
+        first = self.service.set_restriction("G05", "G08", 80)
+
+        with self.assertRaises(ValueError) as raised:
+            self.service.set_restriction("G05", "G08", 45)
+
+        self.assertIn(first["id"], str(raised.exception))
+        self.assertEqual(self.service.active_restrictions(), [first])
+
+    def test_adjacent_ranges_are_allowed(self):
+        first = self.service.set_restriction("G05", "G08", 80)
+        second = self.service.set_restriction("G09", "G12", 45)
+
+        self.assertEqual(first["id"], "TSR-001")
+        self.assertEqual(second["id"], "TSR-002")
+        self.assertEqual(len(self.service.active_restrictions()), 2)
+
+    def test_failed_insert_does_not_consume_identifier(self):
+        self.service.set_restriction("G05", "G10", 120)
+        with self.assertRaises(ValueError):
+            self.service.set_restriction("G08", "G12", 80)
+
+        second = self.service.set_restriction("G11", "G12", 45)
+
+        self.assertEqual(second["id"], "TSR-002")
 
     def test_reversed_or_unknown_range_is_rejected(self):
         with self.assertRaises(ValueError):

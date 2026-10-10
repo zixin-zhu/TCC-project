@@ -17,6 +17,15 @@ class TemporarySpeedService:
         speed = int(speed_kmh)
         if speed <= 0:
             raise ValueError("限速值必须大于 0")
+        overlap = self.find_overlap(start_section, end_section)
+        if overlap is not None:
+            raise ValueError(
+                f"新限速 {start_section}～{end_section}（{speed} km/h）"
+                f"与已生效限速 {overlap['id']}："
+                f"{overlap['start_section']}～{overlap['end_section']}"
+                f"（{overlap['speed_kmh']} km/h）存在区段重叠；"
+                "请先取消冲突限速或重新选择不重叠的区段。"
+            )
         restriction_id = f"TSR-{self._next_number:03d}"
         self._next_number += 1
         restriction = {
@@ -28,6 +37,20 @@ class TemporarySpeedService:
         }
         self._restrictions[restriction_id] = restriction
         return dict(restriction)
+
+    def find_overlap(self, start_section, end_section):
+        if start_section not in self._section_index or end_section not in self._section_index:
+            raise ValueError("限速区段不存在")
+        proposed_start = self._section_index[start_section]
+        proposed_end = self._section_index[end_section]
+        for restriction in self._restrictions.values():
+            if not restriction["active"]:
+                continue
+            existing_start = self._section_index[restriction["start_section"]]
+            existing_end = self._section_index[restriction["end_section"]]
+            if proposed_start <= existing_end and existing_start <= proposed_end:
+                return dict(restriction)
+        return None
 
     def cancel_restriction(self, restriction_id):
         restriction = self._restrictions.get(restriction_id)
