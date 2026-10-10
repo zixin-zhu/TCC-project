@@ -450,21 +450,169 @@ class PhaseOneUiContractTest(unittest.TestCase):
         window.clear_all_trains()
         self.assertEqual(window.train_service.trains, {})
         self.assertEqual(window.train_service.waiting_queue, [])
-        self.assertEqual(window.route_service.active_routes(), [])
-        self.assertEqual(window.active_route_combo.currentData(), None)
+        self.assertEqual(
+            [route.display_name for route in window.route_service.active_routes()],
+            ["正线发车"],
+        )
         self.assertEqual(window.engine.simulation_time, 12.5)
         window.close()
 
-    def test_reset_clears_routes_and_preserves_route_service_binding(self):
+    def test_reset_preserves_routes_restrictions_and_unlocks_routes(self):
         window = MainWindow()
         self.mark_communication_ready(window)
-        window.route_service.establish_route("A", RouteType.MAIN_DEPART)
+        route = window.route_service.establish_route(
+            "A", RouteType.MAIN_DEPART
+        )
+        window.route_service.lock_route(route.route_id, "T001")
+        restriction = window.temporary_speed_service.set_restriction(
+            "G05", "G08", 80
+        )
+        window.train_service.add_waiting_train()
+        window.simulation_a.track_circuits["G01"].occupy()
+        window.simulation_b.track_circuits["G38"].occupy()
+        window.engine.simulation_time = 12.5
+        window.engine.start()
+        window.refresh_control_states()
 
         window.reset_simulation()
 
-        self.assertEqual(window.route_service.active_routes(), [])
+        self.assertEqual(window.route_service.active_routes(), [route])
+        self.assertEqual(route.state, "ESTABLISHED")
+        self.assertIsNone(route.train_id)
+        self.assertEqual(
+            window.temporary_speed_service.active_restrictions(),
+            [restriction],
+        )
+        self.assertEqual(window.train_service.trains, {})
+        self.assertEqual(window.engine.simulation_time, 0.0)
+        self.assertTrue(
+            all(
+                not track.occupied
+                for simulation in (window.simulation_a, window.simulation_b)
+                for track in simulation.track_circuits.values()
+            )
+        )
         self.assertIs(window.train_service.route_service, window.route_service)
-        self.assertEqual(window.active_route_combo.currentData(), None)
+        self.assertEqual(window.active_route_combo.currentData(), route.route_id)
+        window.close()
+
+    def test_empty_queue_cannot_start_simulation(self):
+        window = MainWindow()
+        self.mark_communication_ready(window)
+
+        with patch("ui.main_window.QMessageBox.warning") as warning:
+            window.start_simulation()
+
+        self.assertFalse(window.engine.timer.isActive())
+        title, message = warning.call_args.args[1:3]
+        self.assertEqual(title, "仿真启动失败")
+        self.assertIn("操作失败", message)
+        self.assertIn("当前没有待发列车", message)
+        self.assertIn("处理建议", message)
+        window.close()
+
+    def test_start_rejects_missing_or_mismatched_train_routes(self):
+        cases = (
+            (None, None, "MAIN", "MAIN", "A站", "正线发车"),
+            (
+                RouteType.MAIN_DEPART,
+                RouteType.MAIN_RECEIVE,
+                "SIDE",
+                "MAIN",
+                "A站",
+                "侧线发车",
+            ),
+            (
+                RouteType.MAIN_DEPART,
+                RouteType.MAIN_RECEIVE,
+                "MAIN",
+                "SIDE",
+                "B站",
+                "侧线接车",
+            ),
+        )
+
+        for departure_route, receive_route, departure_mode, arrival_mode, station_text, route_text in cases:
+            with self.subTest(
+                departure_mode=departure_mode,
+                arrival_mode=arrival_mode,
+            ):
+                window = MainWindow()
+                self.mark_communication_ready(window)
+                if departure_route is not None:
+                    window.route_service.establish_route("A", departure_route)
+                if receive_route is not None:
+                    window.route_service.establish_route("B", receive_route)
+                window.train_service.add_waiting_train(
+                    departure_mode, arrival_mode
+                )
+
+                with patch("ui.main_window.QMessageBox.warning") as warning:
+                    window.start_simulation()
+
+                self.assertFalse(window.engine.timer.isActive())
+                title, message = warning.call_args.args[1:3]
+                self.assertEqual(title, "仿真启动失败")
+                self.assertIn("T001", message)
+                self.assertIn(station_text, message)
+                self.assertIn(route_text, message)
+                window.close()
+
+    def test_matching_routes_start_in_both_directions(self):
+        cases = (
+            ("A_TO_B", "A", "B"),
+            ("B_TO_A", "B", "A"),
+        )
+
+        for direction, departure_station, receive_station in cases:
+            with self.subTest(direction=direction):
+                window = MainWindow()
+                self.mark_communication_ready(window)
+                window.simulation_a.set_direction(direction)
+                window.simulation_b.set_direction(direction)
+                window.route_service.establish_route(
+                    departure_station, RouteType.SIDE_DEPART
+                )
+                window.route_service.establish_route(
+                    receive_station, RouteType.MAIN_RECEIVE
+                )
+                window.train_service.add_waiting_train("SIDE", "MAIN")
+
+                window.start_simulation()
+
+                self.assertTrue(window.engine.timer.isActive())
+                window.engine.pause()
+                window.close()
+
+    def test_simulation_and_conditional_button_states(self):
+        window = MainWindow()
+        self.mark_communication_ready(window)
+
+        self.assertTrue(window.start_button.isEnabled())
+        self.assertFalse(window.pause_button.isEnabled())
+        self.assertFalse(window.reset_button.isEnabled())
+        self.assertFalse(window.clear_trains_button.isEnabled())
+        self.assertFalse(window.tsr_cancel_button.isEnabled())
+
+        window.route_service.establish_route("A", RouteType.MAIN_DEPART)
+        window.route_service.establish_route("B", RouteType.MAIN_RECEIVE)
+        window.train_service.add_waiting_train("MAIN", "MAIN")
+        window.refresh_control_states()
+        self.assertTrue(window.clear_trains_button.isEnabled())
+
+        window.temporary_speed_service.set_restriction("G05", "G08", 80)
+        window.refresh_temporary_speed_controls()
+        self.assertTrue(window.tsr_cancel_button.isEnabled())
+
+        window.start_simulation()
+        self.assertFalse(window.start_button.isEnabled())
+        self.assertTrue(window.pause_button.isEnabled())
+        self.assertTrue(window.reset_button.isEnabled())
+
+        window.pause_simulation()
+        self.assertTrue(window.start_button.isEnabled())
+        self.assertFalse(window.pause_button.isEnabled())
+        self.assertFalse(window.reset_button.isEnabled())
         window.close()
 
     def test_train_keeps_selected_departure_and_arrival_modes(self):

@@ -18,7 +18,7 @@ from services.simulation_engine import SimulationEngine
 from services.direction_manager import DirectionManager
 from services.temporary_speed_service import TemporarySpeedService
 from services.route_service import RouteService
-from services.operation_policy import OperationRuleError
+from services.operation_policy import OperationPolicy, OperationRuleError
 from models.route import RouteState, RouteType
 
 from network.message_protocol import MessageProtocol
@@ -744,6 +744,10 @@ class MainWindow(QMainWindow):
             self.cancel_temporary_speed_restriction
         )
 
+        self.active_tsr_combo.currentIndexChanged.connect(
+            lambda: self.refresh_control_states()
+        )
+
         self.route_establish_button.clicked.connect(
             self.establish_selected_route
         )
@@ -801,15 +805,11 @@ class MainWindow(QMainWindow):
         if not self.require_communication("仿真启动失败"):
             return
 
+        if not self.validate_simulation_start():
+            return
+
         self.engine.start()
-
-        self.start_button.setEnabled(
-            False
-        )
-
-        self.pause_button.setEnabled(
-            True
-        )
+        self.refresh_control_states()
 
     # ==============================
     # 暂停
@@ -821,10 +821,7 @@ class MainWindow(QMainWindow):
             return
 
         self.engine.pause()
-
-        self.start_button.setEnabled(
-            True
-        )
+        self.refresh_control_states()
 
     # ==============================
     # 倍速
@@ -883,6 +880,7 @@ class MainWindow(QMainWindow):
             index = self.active_tsr_combo.findData(current_id)
             if index >= 0:
                 self.active_tsr_combo.setCurrentIndex(index)
+        self.refresh_control_states()
 
     def establish_selected_route(self):
         if not self.require_communication("进路建立失败"):
@@ -961,7 +959,9 @@ class MainWindow(QMainWindow):
             None,
         )
         self.route_cancel_button.setEnabled(
-            route is not None and route.state == RouteState.ESTABLISHED
+            self.communication_ready()
+            and route is not None
+            and route.state == RouteState.ESTABLISHED
         )
         self.active_route_combo.setToolTip(
             self.active_route_combo.currentText()
@@ -974,14 +974,12 @@ class MainWindow(QMainWindow):
             return
         self.engine.pause()
         self.train_service.clear_all_trains()
-        self.route_service.clear_all()
         for simulation in (self.simulation_a, self.simulation_b):
             simulation.train_position = None
             for track in simulation.track_circuits.values():
                 track.release()
             simulation.close_signal()
             simulation.update_all_track_codes()
-        self.start_button.setEnabled(True)
         self.refresh_route_controls()
         self.refresh_view()
 
@@ -1054,7 +1052,7 @@ class MainWindow(QMainWindow):
 
         self.engine.pause()
 
-        self.route_service.clear_all()
+        self.route_service.reset_locks()
 
         # 重新创建列车服务（列车仿真始终挂A侧）
         self.train_service = TrainService(
@@ -1083,10 +1081,6 @@ class MainWindow(QMainWindow):
             simulation.update_all_track_codes()
 
         self.engine.reset_time()
-
-        self.start_button.setEnabled(
-            True
-        )
 
         self.refresh_route_controls()
         self.refresh_view()
@@ -1616,11 +1610,58 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(self, title, error.format_message())
         return False
 
+    def show_operation_error(self, title, error):
+        if isinstance(error, OperationRuleError):
+            message = error.format_message()
+        else:
+            message = str(error)
+        QMessageBox.warning(self, title, message)
+
+    def validate_simulation_start(self):
+        if not self.train_service.waiting_queue:
+            self.show_operation_error(
+                "仿真启动失败",
+                OperationRuleError(
+                    "当前没有待发列车",
+                    "待发列车数量为 0。",
+                    "请先选择接发车方式并点击“添加待发列车”。",
+                ),
+            )
+            return False
+
+        trains = [
+            self.train_service.trains[train_id]
+            for train_id in self.train_service.waiting_queue
+            if train_id in self.train_service.trains
+        ]
+        try:
+            OperationPolicy.validate_waiting_train_routes(
+                self.simulation_a.get_direction(),
+                trains,
+                self.route_service,
+            )
+        except OperationRuleError as error:
+            self.show_operation_error("仿真启动失败", error)
+            return False
+        return True
+
     def refresh_control_states(self):
         ready = self.communication_ready()
+        running = self.engine.timer.isActive()
         self.operation_area.setEnabled(ready)
         self.panel_a.direction_button.setEnabled(ready)
         self.panel_b.direction_button.setEnabled(ready)
+
+        self.start_button.setEnabled(ready and not running)
+        self.pause_button.setEnabled(ready and running)
+        self.reset_button.setEnabled(ready and running)
+        self.clear_trains_button.setEnabled(
+            ready and bool(self.train_service.waiting_queue)
+        )
+        self.tsr_cancel_button.setEnabled(
+            ready and self.active_tsr_combo.currentData() is not None
+        )
+        self._sync_route_cancel_button()
 
         for station in ("A", "B"):
             panel = self.get_panel_by_role(station)
