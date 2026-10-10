@@ -550,6 +550,22 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertEqual(window.engine.simulation_time, 12.5)
         window.close()
 
+    def test_clear_all_trains_unlocks_preserved_routes(self):
+        window = MainWindow()
+        self.mark_communication_ready(window)
+        route = window.route_service.establish_route(
+            "A", RouteType.MAIN_DEPART
+        )
+        train = window.train_service.add_waiting_train("MAIN", "MAIN")
+        window.route_service.lock_route(route.route_id, train.train_id)
+
+        window.clear_all_trains()
+
+        self.assertEqual(window.route_service.active_routes(), [route])
+        self.assertEqual(route.state, "ESTABLISHED")
+        self.assertIsNone(route.train_id)
+        window.close()
+
     def test_reset_preserves_routes_restrictions_and_unlocks_routes(self):
         window = MainWindow()
         self.mark_communication_ready(window)
@@ -676,6 +692,23 @@ class PhaseOneUiContractTest(unittest.TestCase):
                 self.assertTrue(window.engine.timer.isActive())
                 window.engine.pause()
                 window.close()
+
+    def test_paused_active_train_can_resume_with_empty_waiting_queue(self):
+        window = MainWindow()
+        self.mark_communication_ready(window)
+        window.route_service.establish_route("A", RouteType.MAIN_DEPART)
+        window.route_service.establish_route("B", RouteType.MAIN_RECEIVE)
+        train = window.train_service.add_waiting_train("MAIN", "MAIN")
+        self.assertTrue(window.train_service.dispatch_train(train))
+        window.train_service.waiting_queue.clear()
+
+        with patch("ui.main_window.QMessageBox.warning") as warning:
+            window.start_simulation()
+
+        self.assertTrue(window.engine.timer.isActive())
+        warning.assert_not_called()
+        window.engine.pause()
+        window.close()
 
     def test_simulation_and_conditional_button_states(self):
         window = MainWindow()

@@ -980,6 +980,9 @@ class MainWindow(QMainWindow):
             return
         self.engine.pause()
         self.train_service.clear_all_trains()
+        # 列车全部移除后，保留既有进路，但解除列车造成的锁闭，
+        # 避免进路继续引用已经不存在的列车。
+        self.route_service.reset_locks()
         for simulation in (self.simulation_a, self.simulation_b):
             simulation.train_position = None
             for track in simulation.track_circuits.values():
@@ -1628,7 +1631,11 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(self, title, message)
 
     def validate_simulation_start(self):
-        if not self.train_service.waiting_queue:
+        active_trains = any(
+            train.status in ("RUNNING", "STOPPED")
+            for train in self.train_service.trains.values()
+        )
+        if not self.train_service.waiting_queue and not active_trains:
             self.show_operation_error(
                 "仿真启动失败",
                 OperationRuleError(
@@ -1638,6 +1645,11 @@ class MainWindow(QMainWindow):
                 ),
             )
             return False
+
+        # 暂停后继续运行时，列车可能已全部发出，待发队列为空。
+        # 这时无需重新校验接发进路，直接恢复现有列车即可。
+        if not self.train_service.waiting_queue:
+            return True
 
         trains = [
             self.train_service.trains[train_id]
