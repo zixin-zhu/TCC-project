@@ -43,6 +43,7 @@ class TccOverviewWidget(QWidget):
     foreground_color = QColor("#d7e2ee")
     muted_color = QColor("#76879a")
     rail_color = QColor("#9eb2c7")
+    occupied_rail_color = QColor("#ef3d48")
 
     CODE_COLORS = {
         "L5": QColor("#087f32"),
@@ -54,8 +55,21 @@ class TccOverviewWidget(QWidget):
         "U": QColor("#f5dc32"),
         "HU": QColor("#ef6c26"),
         "UUS": QColor("#d8c936"),
-        "B": QColor("#ef3d48"),
+        "B": QColor("#f5f7fa"),
         "-": QColor("#394552"),
+    }
+    CODE_SPEEDS = {
+        "HU": 0,
+        "UUS": 45,
+        "U": 45,
+        "LU": 80,
+        "L": 100,
+        "L2": 110,
+        "L3": 120,
+        "L4": 120,
+        "L5": 120,
+        "B": 0,
+        "-": 0,
     }
 
     def __init__(self, parent=None):
@@ -83,6 +97,9 @@ class TccOverviewWidget(QWidget):
         self.signal_b = "红灯"
         self._active_balise_hitboxes = {}
         self._station_code_rects = {}
+        self._balise_symbols = []
+        self._interval_boundary_markers = []
+        self._interval_code_segments = []
 
     @staticmethod
     def layout_contract():
@@ -136,6 +153,33 @@ class TccOverviewWidget(QWidget):
             "active_balise_count": 3,
             "active_balise_groups": active_balise_groups,
             "passive_balise_count": 2,
+        }
+
+    @staticmethod
+    def station_render_contract(station):
+        if station not in ("A", "B"):
+            raise ValueError("非法车站")
+        outer_right_name = "SN" if station == "A" else "S"
+        return {
+            "signal_styles": {
+                "X": "MAIN_EXTENDED",
+                "S3": "SIDE_SHORT",
+                "S1": "MAIN_EXTENDED",
+                "X3": "SIDE_SHORT",
+                "X1": "MAIN_EXTENDED",
+                outer_right_name: "MAIN_EXTENDED",
+            },
+            "rail_at_signal": "GAPPED",
+            "signal_head_post": "GAPPED",
+            "turnout_connections": "GAPPED",
+            "balise_fill_patterns": {
+                "JZ": (False, False, True),
+                "FJZ": (True, False, False),
+                "CZ": (False, False, True),
+                "FCZ": (True, False, False),
+                "DD": (False, False),
+            },
+            "clickable_balise": "FILLED_ONLY",
         }
 
     @staticmethod
@@ -217,6 +261,9 @@ class TccOverviewWidget(QWidget):
 
         self._active_balise_hitboxes = {}
         self._station_code_rects = {}
+        self._balise_symbols = []
+        self._interval_boundary_markers = []
+        self._interval_code_segments = []
         self._draw_station(painter, a_left, interval_left, rail_y, code_y, "A")
         self._draw_interval(painter, interval_left, rail_y, code_y)
         self._draw_station(painter, interval_right, b_right, rail_y, code_y, "B")
@@ -225,6 +272,7 @@ class TccOverviewWidget(QWidget):
 
     def _draw_station(self, painter, left, right, rail_y, code_y, station):
         contract = self.station_layout_contract(station)
+        render_contract = self.station_render_contract(station)
         core_left = left + 10
         core_right = right - 10
 
@@ -236,9 +284,29 @@ class TccOverviewWidget(QWidget):
         main_right_throat = core_right - 48
 
         painter.setPen(QPen(self.rail_color, 2))
-        painter.drawLine(int(siding_left), side_y, int(siding_right), side_y)
-        painter.drawLine(int(main_left_throat), rail_y, int(siding_left), side_y)
-        painter.drawLine(int(siding_right), side_y, int(main_right_throat), rail_y)
+        connection_gap = 5
+        painter.drawLine(
+            int(siding_left + connection_gap),
+            side_y,
+            int(siding_right - connection_gap),
+            side_y,
+        )
+        self._draw_gapped_connection(
+            painter,
+            main_left_throat,
+            rail_y,
+            siding_left,
+            side_y,
+            connection_gap,
+        )
+        self._draw_gapped_connection(
+            painter,
+            siding_right,
+            side_y,
+            main_right_throat,
+            rail_y,
+            connection_gap,
+        )
 
         self._draw_route_highlights(
             painter,
@@ -252,6 +320,8 @@ class TccOverviewWidget(QWidget):
             main_left_throat,
             main_right_throat,
         )
+        self._erase_rail_gap(painter, main_left_throat, rail_y, connection_gap)
+        self._erase_rail_gap(painter, main_right_throat, rail_y, connection_gap)
 
         painter.setPen(self.foreground_color)
         painter.setFont(QFont("PingFang SC", 8, QFont.Bold))
@@ -286,6 +356,7 @@ class TccOverviewWidget(QWidget):
                 signal_name,
                 signal_status,
                 direction=signal_direction,
+                extend_below_track=(track_y == rail_y),
             )
 
         self._draw_station_code_bands(
@@ -319,6 +390,7 @@ class TccOverviewWidget(QWidget):
                 count=contract["active_balise_count"],
                 spacing=self.BALISE_GROUP_SPACING,
                 label=label,
+                fill_pattern=render_contract["balise_fill_patterns"][label],
             )
         self._draw_balise_group(
             painter,
@@ -328,6 +400,26 @@ class TccOverviewWidget(QWidget):
             active=False,
             count=contract["passive_balise_count"],
             label="",
+            fill_pattern=render_contract["balise_fill_patterns"]["DD"],
+        )
+
+    def _draw_gapped_connection(self, painter, x1, y1, x2, y2, gap):
+        dx = x2 - x1
+        dy = y2 - y1
+        length = max((dx * dx + dy * dy) ** 0.5, 1.0)
+        ux = dx / length
+        uy = dy / length
+        painter.drawLine(
+            int(x1 + ux * gap),
+            int(y1 + uy * gap),
+            int(x2 - ux * gap),
+            int(y2 - uy * gap),
+        )
+
+    def _erase_rail_gap(self, painter, x, y, half_width=4):
+        painter.fillRect(
+            QRectF(x - half_width, y - 3, half_width * 2, 6),
+            self.background_color,
         )
 
     def _draw_station_code_bands(
@@ -352,28 +444,29 @@ class TccOverviewWidget(QWidget):
             painter.setBrush(self.CODE_COLORS.get(code, self.CODE_COLORS["-"]))
             painter.setPen(QPen(QColor("#101820"), 1))
             painter.drawRect(rect)
-            painter.setPen(QColor("#071009") if code not in ("B", "-") else QColor("#ffffff"))
+            painter.setPen(self._code_text_color(code))
             painter.setFont(QFont("PingFang SC", 7, QFont.Bold))
             painter.drawText(int(rect.x() + 4), int(rect.y() + 15), str(code))
 
         if station == "A":
             throat_rect = QRectF(right - section_width, code_y, section_width, band_height)
-            main_rect = QRectF(right - section_width * 2, code_y, section_width, band_height)
-            outer_rect = QRectF(right - section_width * 3, code_y, section_width, band_height)
+            track_rect = QRectF(right - section_width * 2, code_y, section_width, band_height)
         else:
             throat_rect = QRectF(left, code_y, section_width, band_height)
-            main_rect = QRectF(left + section_width, code_y, section_width, band_height)
-            outer_rect = QRectF(left + section_width * 2, code_y, section_width, band_height)
+            track_rect = QRectF(left + section_width, code_y, section_width, band_height)
 
-        draw_band(f"{station}_OUTER", outer_rect, "HU")
-        draw_band(f"{station}_1G", main_rect, codes.get("1G", "HU"))
+        route = next(
+            (item for item in self.routes if item.get("station") == station),
+            None,
+        )
+        route_track = route.get("track") if route else None
+        track_code = codes.get(route_track, "HU") if route_track in ("1G", "3G") else "HU"
+        draw_band(f"{station}_TRACK", track_rect, track_code)
         draw_band(f"{station}_THROAT", throat_rect, codes.get("THROAT", "HU"))
 
-        side_left = station_center - section_width
-        side_rect_1 = QRectF(side_left, side_y + 30, section_width, band_height)
-        side_rect_2 = QRectF(side_left + section_width, side_y + 30, section_width, band_height)
-        draw_band(f"{station}_3G_LEFT", side_rect_1, codes.get("3G", "HU"))
-        draw_band(f"{station}_3G_RIGHT", side_rect_2, codes.get("3G", "HU"))
+    @staticmethod
+    def _code_text_color(code):
+        return QColor("#071009") if code != "-" else QColor("#ffffff")
 
     def _draw_route_highlights(
         self,
@@ -430,7 +523,6 @@ class TccOverviewWidget(QWidget):
         state_by_code = {
             item.get("track_code") or item.get("code"): item for item in self.tracks
         }
-        default_codes = ["L5", "L4", "L3", "L2", "L", "LU", "U", "HU"]
 
         painter.setPen(QColor("#8fa2b4"))
         painter.setFont(QFont("PingFang SC", 8, QFont.Bold))
@@ -442,22 +534,9 @@ class TccOverviewWidget(QWidget):
             track_id = f"G{index + 1:02d}"
             item = state_by_code.get(track_id, {})
             occupied = item.get("status") == "占用"
-            code = item.get("signal_code") or item.get("code_level")
-            if not code:
-                distance_from_end = self.SECTION_COUNT - index - 1
-                code = default_codes[min(distance_from_end, len(default_codes) - 1)]
 
-            painter.setPen(QPen(self.CODE_COLORS["B"] if occupied else self.rail_color, 4 if occupied else 2))
+            painter.setPen(QPen(self.occupied_rail_color if occupied else self.rail_color, 4 if occupied else 2))
             painter.drawLine(int(x1), rail_y, int(x2), rail_y)
-            painter.setPen(QPen(QColor("#4b6072"), 1))
-            painter.drawLine(int(x2), rail_y - 9, int(x2), rail_y + 9)
-
-            painter.setBrush(self.CODE_COLORS.get(code, self.CODE_COLORS["-"]))
-            painter.setPen(QPen(QColor("#101820"), 1))
-            painter.drawRect(int(x1), code_y, self.SECTION_WIDTH, 22)
-            painter.setPen(QColor("#071009") if code not in ("B", "-") else QColor("#ffffff"))
-            painter.setFont(QFont("PingFang SC", 7, QFont.Bold))
-            painter.drawText(int(x1 + 4), code_y + 15, str(code))
             painter.setPen(self.muted_color)
             painter.setFont(QFont("PingFang SC", 7))
             painter.drawText(int(x1 + 4), rail_y - 10, track_id)
@@ -467,21 +546,138 @@ class TccOverviewWidget(QWidget):
                 painter.setFont(QFont("PingFang SC", 6, QFont.Bold))
                 painter.drawText(int(x1 + 2), rail_y + 17, equipment_name)
 
-            if (index + 1) % self.SECTIONS_PER_BLOCK == 0 and index < self.SECTION_COUNT - 1:
-                block_no = (index + 1) // self.SECTIONS_PER_BLOCK
-                boundary_x = x2
+            if index < self.SECTION_COUNT - 1:
+                self._draw_interval_boundary(painter, x2, rail_y)
+
+        for segment in self.interval_code_layout():
+            x = left + segment["start_index"] * self.SECTION_WIDTH
+            width = segment["span_sections"] * self.SECTION_WIDTH
+            code = segment["code"]
+            rect = QRectF(x, code_y, width, 22)
+            painter.setBrush(self.CODE_COLORS.get(code, self.CODE_COLORS["-"]))
+            painter.setPen(QPen(QColor("#101820"), 1))
+            painter.drawRect(rect)
+            painter.setPen(self._code_text_color(code))
+            painter.setFont(QFont("PingFang SC", 7, QFont.Bold))
+            painter.drawText(int(x + 5), code_y + 15, str(code))
+            self._interval_code_segments.append({**segment, "rect": QRectF(rect)})
+
+        for block_index in range(self.BLOCK_COUNT):
+            block_left = left + block_index * self.SECTIONS_PER_BLOCK * self.SECTION_WIDTH
+            block_right = block_left + self.SECTIONS_PER_BLOCK * self.SECTION_WIDTH
+            block_no = block_index + 1
+            if block_no < self.BLOCK_COUNT:
                 self._draw_signal(
                     painter,
-                    boundary_x,
+                    block_right,
                     rail_y,
                     f"S{block_no:02d}",
                     "绿灯",
                     compact=True,
                     direction="RIGHT",
+                    extend_below_track=True,
                 )
-                painter.setPen(QColor("#60798e"))
-                painter.setFont(QFont("PingFang SC", 6))
-                painter.drawText(int(x1 - self.SECTION_WIDTH + 4), code_y + 38, f"闭塞{block_no:02d}")
+            painter.setPen(QColor("#60798e"))
+            painter.setFont(QFont("PingFang SC", 6))
+            painter.drawText(int(block_left + 4), code_y + 38, f"闭塞{block_no:02d}")
+
+    def _draw_interval_boundary(self, painter, x, rail_y):
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor("#b9c9d8"))
+        radius = 2
+        points = ((x, rail_y - 5), (x, rail_y + 5))
+        for center_x, center_y in points:
+            painter.drawEllipse(
+                int(center_x - radius),
+                int(center_y - radius),
+                radius * 2,
+                radius * 2,
+            )
+        self._interval_boundary_markers.append(
+            {"kind": "DOUBLE_DOT", "points": points}
+        )
+
+    def interval_code_layout(self):
+        state_by_code = {
+            item.get("track_code") or item.get("code"): item for item in self.tracks
+        }
+        default_codes = ["L5", "L4", "L3", "L2", "L", "LU", "U", "HU"]
+
+        def track_code(index):
+            track_id = f"G{index + 1:02d}"
+            item = state_by_code.get(track_id, {})
+            code = item.get("signal_code") or item.get("code_level")
+            if code:
+                return code
+            distance_from_end = self.SECTION_COUNT - index - 1
+            return default_codes[min(distance_from_end, len(default_codes) - 1)]
+
+        layout = []
+        active_trains = [
+            train
+            for train in self.trains
+            if train.get("status") in ("RUNNING", "STOPPED")
+        ]
+        for block_index in range(self.BLOCK_COUNT):
+            start_index = block_index * self.SECTIONS_PER_BLOCK
+            physical_indices = (start_index, start_index + 1)
+            track_ids = tuple(f"G{index + 1:02d}" for index in physical_indices)
+            codes = [track_code(index) for index in physical_indices]
+            block_code = min(codes, key=lambda code: self.CODE_SPEEDS.get(code, 0))
+
+            split_train = None
+            passed_index = None
+            current_index = None
+            for train in active_trains:
+                current_track = train.get("current_track")
+                if current_track not in track_ids:
+                    continue
+                direction = train.get("direction") or self.direction
+                ordered_indices = (
+                    physical_indices
+                    if direction == "A_TO_B"
+                    else tuple(reversed(physical_indices))
+                )
+                train_index = int(current_track[1:]) - 1
+                if train_index == ordered_indices[1]:
+                    split_train = train
+                    passed_index = ordered_indices[0]
+                    current_index = ordered_indices[1]
+                    break
+
+            if split_train is None:
+                layout.append(
+                    {
+                        "block_no": block_index + 1,
+                        "track_ids": track_ids,
+                        "start_index": start_index,
+                        "span_sections": 2,
+                        "code": block_code,
+                        "role": "BLOCK",
+                    }
+                )
+                continue
+
+            split_segments = (
+                {
+                    "block_no": block_index + 1,
+                    "track_ids": (f"G{passed_index + 1:02d}",),
+                    "start_index": passed_index,
+                    "span_sections": 1,
+                    "code": "B",
+                    "role": "PASSED",
+                },
+                {
+                    "block_no": block_index + 1,
+                    "track_ids": (f"G{current_index + 1:02d}",),
+                    "start_index": current_index,
+                    "span_sections": 1,
+                    "code": block_code,
+                    "role": "CURRENT",
+                },
+            )
+            layout.extend(sorted(split_segments, key=lambda item: item["start_index"]))
+        return layout
 
     def _draw_restrictions(self, painter, interval_left, code_y):
         for restriction in self.restrictions:
@@ -510,6 +706,7 @@ class TccOverviewWidget(QWidget):
         status,
         compact=False,
         direction="RIGHT",
+        extend_below_track=True,
     ):
         stem_height = 26 if compact else 34
         radius = 4 if compact else 5
@@ -517,8 +714,19 @@ class TccOverviewWidget(QWidget):
         arm_length = 9 if compact else 12
         lamp_center_x = x + direction_sign * (arm_length + radius)
         lamp_center_y = rail_y - stem_height
+        lower_stem_top = lamp_center_y + (8 if compact else 10)
+        upper_stem_bottom = lamp_center_y + (4 if compact else 5)
+        stem_bottom = rail_y + (5 if extend_below_track else 0)
+
+        self._erase_rail_gap(painter, x, rail_y, 3)
         painter.setPen(QPen(QColor("#aebdca"), 1))
-        painter.drawLine(int(x), rail_y + 5, int(x), rail_y - stem_height)
+        painter.drawLine(int(x), int(stem_bottom), int(x), int(lower_stem_top))
+        painter.drawLine(
+            int(x),
+            int(upper_stem_bottom),
+            int(x),
+            int(lamp_center_y - radius - 2),
+        )
         painter.drawLine(
             int(x),
             int(lamp_center_y),
@@ -556,12 +764,17 @@ class TccOverviewWidget(QWidget):
         count=2,
         spacing=14,
         label=None,
+        fill_pattern=None,
     ):
         spacing = self.BALISE_GROUP_SPACING if active else spacing
         half_width = self.BALISE_HALF_WIDTH
         half_height = self.BALISE_HEIGHT / 2
         offsets = [(index - (count - 1) / 2) * spacing for index in range(count)]
-        for offset in offsets:
+        pattern = tuple(fill_pattern or ((active,) * count))
+        if len(pattern) != count:
+            raise ValueError("应答器填充样式数量与应答器数量不一致")
+        filled_offsets = []
+        for index, (offset, filled) in enumerate(zip(offsets, pattern)):
             points = QPolygon(
                 [
                     QPoint(int(x + offset), int(y - half_height)),
@@ -569,21 +782,31 @@ class TccOverviewWidget(QWidget):
                     QPoint(int(x + offset + half_width), int(y + half_height)),
                 ]
             )
-            painter.setPen(QPen(QColor("#7dd3fc") if active else QColor("#bdcad5"), 1))
-            painter.setBrush(QColor("#38bdf8") if active else Qt.NoBrush)
+            painter.setPen(QPen(QColor("#7dd3fc") if filled else QColor("#bdcad5"), 1))
+            painter.setBrush(QColor("#38bdf8") if filled else Qt.NoBrush)
             painter.drawPolygon(points)
+            self._balise_symbols.append(
+                {
+                    "group": name,
+                    "index": index,
+                    "filled": bool(filled),
+                    "center": (x + offset, y),
+                }
+            )
+            if filled:
+                filled_offsets.append(offset)
         display_label = name if label is None else label
         if display_label:
             painter.setPen(QColor("#83a2ba"))
             painter.setFont(QFont("PingFang SC", 5))
             painter.drawText(int(x + 13), int(y + 3), display_label)
-        if active:
-            hit_width = max(30, (count - 1) * spacing + 14)
+        if filled_offsets:
+            filled_offset = filled_offsets[0]
             self._active_balise_hitboxes[name] = QRectF(
-                x - hit_width / 2,
-                y - 12,
-                hit_width,
-                24,
+                x + filled_offset - 3.5,
+                y - 6,
+                7,
+                12,
             )
 
     def _draw_train_markers(self, painter, interval_left, rail_y):

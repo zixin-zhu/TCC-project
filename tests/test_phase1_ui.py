@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt5.QtCore import QObject, QPointF, pyqtSignal
 from PyQt5.QtGui import QColor, QPalette
 from PyQt5.QtWidgets import (
     QApplication,
@@ -381,6 +381,144 @@ class PhaseOneUiContractTest(unittest.TestCase):
                 "placement": "BETWEEN_RAIL_AND_CODE_BAND",
             },
         )
+        view.close()
+
+    def test_station_render_contract_distinguishes_main_side_signals_and_balises(self):
+        view = TccOverviewWidget()
+
+        contract = view.station_render_contract("A")
+
+        self.assertEqual(
+            contract["signal_styles"],
+            {
+                "X": "MAIN_EXTENDED",
+                "S1": "MAIN_EXTENDED",
+                "X1": "MAIN_EXTENDED",
+                "SN": "MAIN_EXTENDED",
+                "S3": "SIDE_SHORT",
+                "X3": "SIDE_SHORT",
+            },
+        )
+        self.assertEqual(contract["rail_at_signal"], "GAPPED")
+        self.assertEqual(contract["signal_head_post"], "GAPPED")
+        self.assertEqual(contract["turnout_connections"], "GAPPED")
+        self.assertEqual(
+            contract["balise_fill_patterns"],
+            {
+                "JZ": (False, False, True),
+                "FJZ": (True, False, False),
+                "CZ": (False, False, True),
+                "FCZ": (True, False, False),
+                "DD": (False, False),
+            },
+        )
+        self.assertEqual(contract["clickable_balise"], "FILLED_ONLY")
+
+    def test_interval_code_layout_shares_one_band_per_block(self):
+        view = TccOverviewWidget()
+        view.tracks = [
+            {
+                "track_code": f"G{index:02d}",
+                "status": "空闲",
+                "signal_code": "L5" if index % 2 else "LU",
+            }
+            for index in range(1, 39)
+        ]
+
+        layout = view.interval_code_layout()
+
+        self.assertEqual(len(layout), 19)
+        self.assertEqual(layout[0]["track_ids"], ("G01", "G02"))
+        self.assertEqual(layout[0]["span_sections"], 2)
+        self.assertEqual(layout[0]["code"], "LU")
+        self.assertEqual(layout[0]["role"], "BLOCK")
+
+    def test_interval_code_layout_splits_passed_half_to_white_b(self):
+        view = TccOverviewWidget()
+        view.tracks = [
+            {
+                "track_code": f"G{index:02d}",
+                "status": "占用" if index == 2 else "空闲",
+                "signal_code": "LU" if index <= 2 else "L5",
+            }
+            for index in range(1, 39)
+        ]
+        view.trains = [
+            {
+                "train_id": "T001",
+                "direction": "A_TO_B",
+                "current_track": "G02",
+                "status": "RUNNING",
+            }
+        ]
+
+        first_block = [
+            segment
+            for segment in view.interval_code_layout()
+            if segment["block_no"] == 1
+        ]
+
+        self.assertEqual(
+            first_block,
+            [
+                {
+                    "block_no": 1,
+                    "track_ids": ("G01",),
+                    "start_index": 0,
+                    "span_sections": 1,
+                    "code": "B",
+                    "role": "PASSED",
+                },
+                {
+                    "block_no": 1,
+                    "track_ids": ("G02",),
+                    "start_index": 1,
+                    "span_sections": 1,
+                    "code": "LU",
+                    "role": "CURRENT",
+                },
+            ],
+        )
+        self.assertEqual(view.CODE_COLORS["B"], QColor("#f5f7fa"))
+
+    def test_white_b_code_does_not_replace_red_occupied_rail(self):
+        view = TccOverviewWidget()
+
+        self.assertEqual(view.CODE_COLORS["B"], QColor("#f5f7fa"))
+        self.assertEqual(view.occupied_rail_color, QColor("#ef3d48"))
+
+    def test_painted_overview_uses_double_dot_boundaries_and_two_station_codes(self):
+        view = TccOverviewWidget()
+        view.resize(view.minimumWidth(), 360)
+        view.show()
+        self.app.processEvents()
+        view.grab()
+
+        self.assertEqual(len(view._interval_boundary_markers), 37)
+        self.assertTrue(
+            all(marker["kind"] == "DOUBLE_DOT" for marker in view._interval_boundary_markers)
+        )
+        self.assertEqual(
+            set(view._station_code_rects),
+            {"A_TRACK", "A_THROAT", "B_TRACK", "B_THROAT"},
+        )
+        self.assertEqual(len(view._interval_code_segments), 19)
+        self.assertEqual(
+            {symbol["filled"] for symbol in view._balise_symbols},
+            {False, True},
+        )
+        self.assertEqual(
+            len(view._active_balise_hitboxes),
+            sum(symbol["filled"] for symbol in view._balise_symbols),
+        )
+        for symbol in view._balise_symbols:
+            hitbox = view._active_balise_hitboxes.get(symbol["group"])
+            point = QPointF(*symbol["center"])
+            if symbol["filled"]:
+                self.assertIsNotNone(hitbox)
+                self.assertTrue(hitbox.contains(point))
+            elif hitbox is not None:
+                self.assertFalse(hitbox.contains(point))
         view.close()
 
     def test_overview_uses_black_background(self):
