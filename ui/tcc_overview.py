@@ -24,7 +24,9 @@ class TccOverviewWidget(QWidget):
     BLOCK_COUNT = 19
     SECTIONS_PER_BLOCK = 2
     SECTION_WIDTH = 34
-    STATION_WIDTH = 390
+    STATION_SECTION_WIDTH = 184
+    STATION_OUTER_MARGIN = 32
+    STATION_WIDTH = STATION_OUTER_MARGIN + STATION_SECTION_WIDTH * 3
     APPROACH_SECTION_WIDTH = 34
     SIDE_MARGIN = 28
     BALISE_HALF_WIDTH = 3
@@ -97,6 +99,7 @@ class TccOverviewWidget(QWidget):
         self.signal_b = "红灯"
         self._active_balise_hitboxes = {}
         self._station_code_rects = {}
+        self._station_signal_positions = {}
         self._balise_symbols = []
         self._interval_boundary_markers = []
         self._interval_code_segments = []
@@ -200,6 +203,42 @@ class TccOverviewWidget(QWidget):
             "clickable_balise": "FILLED_ONLY",
         }
 
+    @classmethod
+    def station_geometry_contract(cls, station):
+        if station not in ("A", "B"):
+            raise ValueError("非法车站")
+        span = cls.STATION_SECTION_WIDTH
+        if station == "A":
+            signals = {
+                "X": cls.STATION_OUTER_MARGIN,
+                "S1": cls.STATION_OUTER_MARGIN + span,
+                "X1": cls.STATION_OUTER_MARGIN + span * 2,
+                "SN": cls.STATION_WIDTH,
+            }
+            code_sections = {
+                "TRACK": ("S1", "X1"),
+                "THROAT": ("X1", "SN"),
+            }
+            interval_boundary_signal = "SN"
+        else:
+            signals = {
+                "X": 0,
+                "S1": span,
+                "X1": span * 2,
+                "S": span * 3,
+            }
+            code_sections = {
+                "THROAT": ("X", "S1"),
+                "TRACK": ("S1", "X1"),
+            }
+            interval_boundary_signal = "X"
+        return {
+            "signals": signals,
+            "section_spans": (span, span, span),
+            "code_sections": code_sections,
+            "interval_boundary_signal": interval_boundary_signal,
+        }
+
     @staticmethod
     def route_highlight_contract(station, route_type):
         if station not in ("A", "B"):
@@ -279,6 +318,7 @@ class TccOverviewWidget(QWidget):
 
         self._active_balise_hitboxes = {}
         self._station_code_rects = {}
+        self._station_signal_positions = {}
         self._balise_symbols = []
         self._interval_boundary_markers = []
         self._interval_code_segments = []
@@ -291,15 +331,26 @@ class TccOverviewWidget(QWidget):
     def _draw_station(self, painter, left, right, rail_y, code_y, station):
         contract = self.station_layout_contract(station)
         render_contract = self.station_render_contract(station)
-        core_left = left + 10
-        core_right = right - 10
+        geometry = self.station_geometry_contract(station)
+        signal_positions = {
+            name: left + offset
+            for name, offset in geometry["signals"].items()
+        }
+        self._station_signal_positions[station] = dict(signal_positions)
 
-        station_center = (core_left + core_right) / 2
+        outer_right_name = "SN" if station == "A" else "S"
+        outer_left_x = signal_positions["X"]
+        inner_left_x = signal_positions["S1"]
+        inner_right_x = signal_positions["X1"]
+        outer_right_x = signal_positions[outer_right_name]
+        core_left = outer_left_x
+        core_right = outer_right_x
+        station_center = (inner_left_x + inner_right_x) / 2
         side_y = rail_y - 68
-        siding_left = core_left + 78
-        siding_right = core_right - 78
-        main_left_throat = core_left + 48
-        main_right_throat = core_right - 48
+        siding_left = inner_left_x - 20
+        siding_right = inner_right_x + 20
+        main_left_throat = inner_left_x - 50
+        main_right_throat = inner_right_x + 50
 
         painter.setPen(QPen(self.rail_color, 2))
         connection_gap = 5
@@ -338,12 +389,6 @@ class TccOverviewWidget(QWidget):
         painter.drawText(int(station_center - 13), rail_y - 10, "1G")
         painter.drawText(int(station_center - 13), side_y - 10, "3G")
         painter.drawText(int(core_left + 4), 82, f"{station}站站场")
-
-        outer_left_x = core_left + 22
-        inner_left_x = core_left + 98
-        inner_right_x = core_right - 98
-        outer_right_x = core_right - 22
-        outer_right_name = "SN" if station == "A" else "S"
 
         signal_specs = [
             (outer_left_x, rail_y, "X", "RIGHT"),
@@ -435,7 +480,6 @@ class TccOverviewWidget(QWidget):
         code_y,
     ):
         codes = self.station_codes.get(station, {})
-        section_width = self.SECTION_WIDTH
         band_height = 22
 
         def draw_band(key, rect, code):
@@ -447,12 +491,20 @@ class TccOverviewWidget(QWidget):
             painter.setFont(QFont("PingFang SC", 7, QFont.Bold))
             painter.drawText(int(rect.x() + 4), int(rect.y() + 15), str(code))
 
-        if station == "A":
-            throat_rect = QRectF(right - section_width, code_y, section_width, band_height)
-            track_rect = QRectF(right - section_width * 2, code_y, section_width, band_height)
-        else:
-            throat_rect = QRectF(left, code_y, section_width, band_height)
-            track_rect = QRectF(left + section_width, code_y, section_width, band_height)
+        geometry = self.station_geometry_contract(station)
+        positions = {
+            name: left + offset
+            for name, offset in geometry["signals"].items()
+        }
+
+        def section_rect(section_name):
+            start_name, end_name = geometry["code_sections"][section_name]
+            start_x = positions[start_name]
+            end_x = positions[end_name]
+            return QRectF(start_x, code_y, end_x - start_x, band_height)
+
+        track_rect = section_rect("TRACK")
+        throat_rect = section_rect("THROAT")
 
         route = next(
             (item for item in self.routes if item.get("station") == station),

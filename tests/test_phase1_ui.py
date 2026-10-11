@@ -331,6 +331,26 @@ class PhaseOneUiContractTest(unittest.TestCase):
             },
         )
 
+    def test_station_main_sections_use_equal_reference_span(self):
+        view = TccOverviewWidget()
+        station_a = view.station_geometry_contract("A")
+        station_b = view.station_geometry_contract("B")
+
+        self.assertEqual(view.STATION_SECTION_WIDTH, 184)
+        self.assertEqual(
+            view.STATION_WIDTH,
+            view.STATION_OUTER_MARGIN + view.STATION_SECTION_WIDTH * 3,
+        )
+        self.assertEqual(station_a["section_spans"], (184, 184, 184))
+        self.assertEqual(station_b["section_spans"], (184, 184, 184))
+        self.assertEqual(station_a["interval_boundary_signal"], "SN")
+        self.assertEqual(station_b["interval_boundary_signal"], "X")
+        self.assertEqual(
+            station_a["signals"]["SN"],
+            view.STATION_WIDTH,
+        )
+        self.assertEqual(station_b["signals"]["X"], 0)
+
     def test_all_station_active_balise_groups_have_click_targets(self):
         view = TccOverviewWidget()
         view.resize(view.minimumWidth(), 360)
@@ -366,7 +386,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertEqual(view._station_code_rects["A_THROAT"].top(), code_y)
         self.assertEqual(view._station_code_rects["B_THROAT"].top(), code_y)
         for rect in view._station_code_rects.values():
-            self.assertEqual(rect.width(), view.SECTION_WIDTH)
+            self.assertEqual(rect.width(), view.STATION_SECTION_WIDTH)
         self.assertEqual(
             view._station_code_rects["A_TRACK"].right(),
             view._station_code_rects["A_THROAT"].left(),
@@ -379,6 +399,24 @@ class PhaseOneUiContractTest(unittest.TestCase):
         first_interval = view._interval_code_segments[0]["rect"]
         self.assertEqual(first_interval.left(), interval_left)
         self.assertEqual(first_interval.width(), view.SECTION_WIDTH * 2)
+
+        station_span = view.STATION_SECTION_WIDTH
+        self.assertEqual(view._station_code_rects["A_TRACK"].width(), station_span)
+        self.assertEqual(view._station_code_rects["A_THROAT"].width(), station_span)
+        self.assertEqual(view._station_code_rects["B_TRACK"].width(), station_span)
+        self.assertEqual(view._station_code_rects["B_THROAT"].width(), station_span)
+        self.assertEqual(
+            view._station_code_rects["A_THROAT"].right(),
+            first_interval.left(),
+        )
+        self.assertEqual(
+            view._station_signal_positions["A"]["SN"],
+            first_interval.left(),
+        )
+        self.assertEqual(
+            view._station_signal_positions["B"]["X"],
+            interval_right,
+        )
 
         for balise_id, hitbox in view._active_balise_hitboxes.items():
             track_y = side_y if "3G_DD" in balise_id else rail_y
