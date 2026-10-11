@@ -1,5 +1,7 @@
 class Train:
 
+    ALLOWED_MAX_SPEEDS = (80, 120, 160, 200, 250, 300, 350)
+
     def __init__(
         self,
         train_id,
@@ -87,23 +89,45 @@ class Train:
         self.station_track = "1G" if departure_mode == "MAIN" else "3G"
         self.arrival_track = "1G" if arrival_mode == "MAIN" else "3G"
 
-    def reset_to_departure(self):
+    def set_max_speed(self, speed):
+        speed = float(speed)
+        if speed not in self.ALLOWED_MAX_SPEEDS:
+            allowed = "、".join(str(value) for value in self.ALLOWED_MAX_SPEEDS)
+            raise ValueError(
+                f"最大速度 {speed:g} km/h 不可用，允许值为 {allowed} km/h"
+            )
+        self.max_speed = speed
+
+    def reset_to_departure(self, preserve_configuration=True):
+        departure_mode = self.departure_mode
+        arrival_mode = self.arrival_mode
+        max_speed = self.max_speed
         self.current_track = None
         self.position = 0.0
         self.speed = 0.0
         self.target_speed = 0.0
         self.status = "WAITING"
         self.route_id = None
-        self.max_speed = 120.0
+        self.max_speed = max_speed if preserve_configuration else 120.0
         self.block_speed = 120.0
         self.line_speed = 120.0
         self.active_balise_speed = 120.0
         self.temporary_speed = 120.0
         self.block_code = "L5"
-        self.departure_mode = None
-        self.arrival_mode = None
-        self.station_track = None
-        self.arrival_track = None
+        if preserve_configuration:
+            self.departure_mode = departure_mode
+            self.arrival_mode = arrival_mode
+            self.station_track = "1G" if departure_mode == "MAIN" else (
+                "3G" if departure_mode == "SIDE" else None
+            )
+            self.arrival_track = "1G" if arrival_mode == "MAIN" else (
+                "3G" if arrival_mode == "SIDE" else None
+            )
+        else:
+            self.departure_mode = None
+            self.arrival_mode = None
+            self.station_track = None
+            self.arrival_track = None
         self.last_balise = None
         self.next_track = None
         self.next_line_speed = None
@@ -163,6 +187,11 @@ class Train:
 
             "target_speed": round(
                 self.target_speed,
+                2
+            ),
+
+            "max_speed": round(
+                self.max_speed,
                 2
             ),
 
