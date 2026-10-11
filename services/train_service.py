@@ -39,6 +39,9 @@ class TrainService:
         # 只有用户在“查看列车”中选中并点击开始的列车才允许自动发车
         self.dispatch_target_id = None
 
+        # 用户执行全局暂停后，即使误触发一次更新周期也不得自动恢复列车。
+        self.globally_paused = False
+
         # 下一辆列车编号
         self.next_train_number = 1
 
@@ -250,6 +253,7 @@ class TrainService:
         return None
 
     def pause_all(self):
+        self.globally_paused = True
         paused = []
         for train in self.trains.values():
             if train.status == "RUNNING":
@@ -258,6 +262,7 @@ class TrainService:
         return paused
 
     def resume_all(self):
+        self.globally_paused = False
         resumed = []
         for train in self.trains.values():
             if train.status == "STOPPED":
@@ -279,6 +284,7 @@ class TrainService:
             if train.train_id not in self.waiting_queue:
                 self.waiting_queue.append(train.train_id)
         self.dispatch_target_id = None
+        self.globally_paused = True
         self.sync_track_circuits()
         return reset
 
@@ -458,6 +464,10 @@ class TrainService:
 
     def update_all(self, delta_time):
 
+        if self.globally_paused:
+            self.sync_track_circuits()
+            return None
+
         # ==========================================
         # 1. 根据当前列车位置同步轨道状态
         # ==========================================
@@ -489,9 +499,18 @@ class TrainService:
         # 4. 所有列车按照新的目标速度运动
         # ==========================================
 
-        for train in list(
-                self.trains.values()
-        ):
+        snapshot = self.build_movement_snapshot()
+        running_trains = [
+            train
+            for train in self.trains.values()
+            if train.status == "RUNNING"
+        ]
+        running_trains.sort(
+            key=lambda train: snapshot[train.train_id]["absolute_position"],
+            reverse=True,
+        )
+
+        for train in running_trains:
             self.update_train(
                 train,
                 delta_time
@@ -1071,26 +1090,32 @@ class TrainService:
         if train.current_track is None:
             return None
 
-        try:
-            track_number = int(
-                train.current_track[1:]
-            )
-        except ValueError:
+        order = self.get_track_order(train.direction)
+        if train.current_track not in order:
             return None
 
-        if train.direction == "A_TO_B":
+        return (
+            order.index(train.current_track) * self.default_track_length
+            + train.position
+        )
 
-            return (
-                    (track_number - 1) * 1000.0
-                    + train.position
-            )
-
-        else:
-
-            return (
-                    (8 - track_number) * 1000.0
-                    + train.position
-            )
+    def build_movement_snapshot(self):
+        """冻结本周期全部活动列车的位置，供统一排序和安全判断。"""
+        snapshot = {}
+        for train in self.trains.values():
+            if train.status not in ("RUNNING", "STOPPED"):
+                continue
+            absolute_position = self.get_absolute_position(train)
+            if absolute_position is None:
+                continue
+            snapshot[train.train_id] = {
+                "track": train.current_track,
+                "position": train.position,
+                "absolute_position": absolute_position,
+                "status": train.status,
+                "direction": train.direction,
+            }
+        return snapshot
 
     def get_distance_to_train_ahead(self, train):
         """

@@ -221,5 +221,105 @@ class MultiTrainLifecycleTest(unittest.TestCase):
         self.assertTrue(engine.is_paused)
 
 
+class MultiTrainMovementTest(unittest.TestCase):
+    def setUp(self):
+        self.routes = RouteService()
+        self.simulation = SimulationService("A", route_service=self.routes)
+        self.service = TrainService(self.simulation, route_service=self.routes)
+
+    def add_running_train(self, track, position, speed=36.0, direction="A_TO_B"):
+        train = self.service.create_train("MAIN", "MAIN")
+        train.direction = direction
+        train.enter_track(track)
+        train.position = position
+        train.speed = speed
+        train.target_speed = speed
+        return train
+
+    def test_movement_snapshot_uses_all_active_trains_and_38_section_order(self):
+        forward = self.add_running_train("G03", 250.0)
+        reverse = self.add_running_train("G36", 400.0, direction="B_TO_A")
+
+        snapshot = self.service.build_movement_snapshot()
+
+        self.assertEqual(snapshot[forward.train_id]["absolute_position"], 2250.0)
+        self.assertEqual(snapshot[reverse.train_id]["absolute_position"], 2400.0)
+        self.assertEqual(snapshot[reverse.train_id]["track"], "G36")
+
+    def test_two_running_trains_advance_in_the_same_tick(self):
+        rear = self.add_running_train("G01", 100.0)
+        front = self.add_running_train("G05", 200.0)
+
+        self.service.update_all(1.0)
+
+        self.assertGreater(rear.position, 100.0)
+        self.assertGreater(front.position, 200.0)
+        self.assertEqual(rear.status, "RUNNING")
+        self.assertEqual(front.status, "RUNNING")
+
+    def test_adjacent_boundary_crossing_never_overlaps_or_overtakes(self):
+        rear = self.add_running_train("G01", 999.0, speed=120.0)
+        front = self.add_running_train("G02", 999.0, speed=120.0)
+
+        self.service.update_all(1.0)
+
+        occupied = [
+            train.current_track
+            for train in (rear, front)
+            if train.current_track is not None
+        ]
+        self.assertEqual(len(occupied), len(set(occupied)))
+        self.assertLess(
+            self.service.get_absolute_position(rear),
+            self.service.get_absolute_position(front),
+        )
+
+    def test_live_max_speed_reduces_target_without_instant_speed_jump(self):
+        train = self.add_running_train("G10", 100.0, speed=160.0)
+        train.set_max_speed(250)
+        self.service.update_train_speed_limit(train)
+        speed_before_change = train.speed
+
+        train.set_max_speed(80)
+        self.service.update_train_speed_limit(train)
+
+        self.assertLessEqual(train.target_speed, 80.0)
+        self.assertEqual(train.speed, speed_before_change)
+        self.service.update_all(1.0)
+        self.assertLess(train.speed, speed_before_change)
+        self.assertGreater(train.speed, 80.0)
+
+    def test_globally_paused_trains_do_not_move_if_update_is_called(self):
+        first = self.add_running_train("G03", 200.0)
+        second = self.add_running_train("G08", 300.0)
+        self.service.pause_all()
+        original = {
+            first.train_id: first.position,
+            second.train_id: second.position,
+        }
+
+        self.service.update_all(5.0)
+
+        self.assertEqual(first.position, original[first.train_id])
+        self.assertEqual(second.position, original[second.train_id])
+        self.assertEqual(first.status, "STOPPED")
+        self.assertEqual(second.status, "STOPPED")
+
+    def test_multiple_occupancies_generate_independent_protection_codes(self):
+        self.routes.establish_route("A", RouteType.MAIN_DEPART)
+        self.add_running_train("G03", 100.0)
+        self.add_running_train("G08", 100.0)
+
+        self.service.sync_track_circuits()
+
+        self.assertEqual(self.simulation.track_circuits["G03"].signal_code, "HU")
+        self.assertEqual(self.simulation.track_circuits["G08"].signal_code, "HU")
+        self.assertEqual(self.simulation.track_circuits["G02"].signal_code, "HU")
+        self.assertEqual(self.simulation.track_circuits["G01"].signal_code, "U")
+        self.assertEqual(self.simulation.track_circuits["G07"].signal_code, "HU")
+        self.assertEqual(self.simulation.track_circuits["G06"].signal_code, "U")
+        self.assertEqual(self.simulation.signal_states["S01"], "黄绿灯")
+
+
 if __name__ == "__main__":
     unittest.main()
