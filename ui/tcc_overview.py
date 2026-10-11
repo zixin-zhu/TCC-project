@@ -117,7 +117,18 @@ class TccOverviewWidget(QWidget):
             "section_equipment_aliases": dict(
                 TccOverviewWidget.SECTION_EQUIPMENT_ALIASES
             ),
-            "active_balise_groups": ["JZ", "FJZ", "CZ", "FCZ"],
+            "active_balise_groups": [
+                "A站3G_DD",
+                "A站_SN_FJZ",
+                "B站3G_DD",
+                "B站_X_JZ",
+            ],
+            "displayed_balise_groups": [
+                "A站3G_DD",
+                "A站_SN_FJZ",
+                "B站3G_DD",
+                "B站_X_JZ",
+            ],
         }
 
     @staticmethod
@@ -129,21 +140,20 @@ class TccOverviewWidget(QWidget):
             "X3": "RIGHT",
             "X1": "RIGHT",
         }
-        active_balise_groups = {
-            "JZ": {"signal": "X", "side": "LEFT", "count": 3},
-            "FJZ": {"signal": "S", "side": "RIGHT", "count": 3},
-            "X1_CZ": {"signal": "X1", "side": "LEFT", "count": 3},
-            "X3_CZ": {"signal": "X3", "side": "LEFT", "count": 3},
-            "S1_FCZ": {"signal": "S1", "side": "RIGHT", "count": 3},
-            "S3_FCZ": {"signal": "S3", "side": "RIGHT", "count": 3},
-        }
         if station == "A":
             return {
                 "signals": {**common_signals, "SN": "LEFT"},
                 "approach_sections": ["X1LQ", "X2LQ", "X3LQ"],
                 "approach_side": "AFTER_SN",
                 "active_balise_count": 3,
-                "active_balise_groups": active_balise_groups,
+                "displayed_balise_groups": {
+                    "3G_DD": {"track": "3G", "count": 2},
+                    "SN_FJZ": {"signal": "SN", "side": "RIGHT", "count": 3},
+                },
+                "active_balise_groups": {
+                    "3G_DD": {"track": "3G", "count": 2},
+                    "SN_FJZ": {"signal": "SN", "side": "RIGHT", "count": 3},
+                },
                 "passive_balise_count": 2,
             }
         return {
@@ -151,7 +161,14 @@ class TccOverviewWidget(QWidget):
             "approach_sections": ["X1JG", "X2JG", "X3JG"],
             "approach_side": "BEFORE_X",
             "active_balise_count": 3,
-            "active_balise_groups": active_balise_groups,
+            "displayed_balise_groups": {
+                "3G_DD": {"track": "3G", "count": 2},
+                "X_JZ": {"signal": "X", "side": "LEFT", "count": 3},
+            },
+            "active_balise_groups": {
+                "3G_DD": {"track": "3G", "count": 2},
+                "X_JZ": {"signal": "X", "side": "LEFT", "count": 3},
+            },
             "passive_balise_count": 2,
         }
 
@@ -169,15 +186,16 @@ class TccOverviewWidget(QWidget):
                 "X1": "MAIN_EXTENDED",
                 outer_right_name: "MAIN_EXTENDED",
             },
-            "rail_at_signal": "GAPPED",
+            "rail_at_signal": "CONTINUOUS",
             "signal_head_post": "GAPPED",
-            "turnout_connections": "GAPPED",
+            "turnout_upper_connection": "CONTINUOUS",
+            "turnout_lower_connection": "GAPPED",
+            "side_signal_head": "FLUSH_TO_POST",
             "balise_fill_patterns": {
-                "JZ": (False, False, True),
-                "FJZ": (True, False, False),
-                "CZ": (False, False, True),
-                "FCZ": (True, False, False),
-                "DD": (False, False),
+                "A_3G_DD": (False, True),
+                "A_SN_FJZ": (True, False, False),
+                "B_3G_DD": (True, False),
+                "B_X_JZ": (False, False, True),
             },
             "clickable_balise": "FILLED_ONLY",
         }
@@ -285,13 +303,8 @@ class TccOverviewWidget(QWidget):
 
         painter.setPen(QPen(self.rail_color, 2))
         connection_gap = 5
-        painter.drawLine(
-            int(siding_left + connection_gap),
-            side_y,
-            int(siding_right - connection_gap),
-            side_y,
-        )
-        self._draw_gapped_connection(
+        painter.drawLine(int(siding_left), side_y, int(siding_right), side_y)
+        self._draw_lower_gapped_connection(
             painter,
             main_left_throat,
             rail_y,
@@ -299,12 +312,12 @@ class TccOverviewWidget(QWidget):
             side_y,
             connection_gap,
         )
-        self._draw_gapped_connection(
+        self._draw_lower_gapped_connection(
             painter,
-            siding_right,
-            side_y,
             main_right_throat,
             rail_y,
+            siding_right,
+            side_y,
             connection_gap,
         )
 
@@ -320,9 +333,6 @@ class TccOverviewWidget(QWidget):
             main_left_throat,
             main_right_throat,
         )
-        self._erase_rail_gap(painter, main_left_throat, rail_y, connection_gap)
-        self._erase_rail_gap(painter, main_right_throat, rail_y, connection_gap)
-
         painter.setPen(self.foreground_color)
         painter.setFont(QFont("PingFang SC", 8, QFont.Bold))
         painter.drawText(int(station_center - 13), rail_y - 10, "1G")
@@ -372,54 +382,43 @@ class TccOverviewWidget(QWidget):
             code_y,
         )
 
-        balise_specs = (
-            (outer_left_x - 34, rail_y + 15, f"{station}站_X_JZ", "JZ"),
-            (outer_right_x + 34, rail_y + 15, f"{station}站_{outer_right_name}_FJZ", "FJZ"),
-            (inner_right_x - 26, rail_y + 15, f"{station}站_X1_CZ", "CZ"),
-            (inner_right_x - 26, side_y + 15, f"{station}站_X3_CZ", "CZ"),
-            (inner_left_x + 26, rail_y + 15, f"{station}站_S1_FCZ", "FCZ"),
-            (inner_left_x + 26, side_y + 15, f"{station}站_S3_FCZ", "FCZ"),
-        )
-        for balise_x, balise_y, balise_id, label in balise_specs:
+        if station == "A":
+            balise_specs = (
+                (station_center, side_y + 15, "A站3G_DD", "", "A_3G_DD"),
+                (outer_right_x + 34, rail_y + 15, "A站_SN_FJZ", "FJZ", "A_SN_FJZ"),
+            )
+        else:
+            balise_specs = (
+                (station_center, side_y + 15, "B站3G_DD", "", "B_3G_DD"),
+                (outer_left_x - 34, rail_y + 15, "B站_X_JZ", "JZ", "B_X_JZ"),
+            )
+        for balise_x, balise_y, balise_id, label, pattern_key in balise_specs:
+            fill_pattern = render_contract["balise_fill_patterns"][pattern_key]
             self._draw_balise_group(
                 painter,
                 balise_x,
                 balise_y,
                 balise_id,
                 active=True,
-                count=contract["active_balise_count"],
+                count=len(fill_pattern),
                 spacing=self.BALISE_GROUP_SPACING,
                 label=label,
-                fill_pattern=render_contract["balise_fill_patterns"][label],
+                fill_pattern=fill_pattern,
             )
-        self._draw_balise_group(
-            painter,
-            station_center,
-            side_y + 15,
-            f"{station}站3G_DD",
-            active=False,
-            count=contract["passive_balise_count"],
-            label="",
-            fill_pattern=render_contract["balise_fill_patterns"]["DD"],
-        )
 
-    def _draw_gapped_connection(self, painter, x1, y1, x2, y2, gap):
-        dx = x2 - x1
-        dy = y2 - y1
+    def _draw_lower_gapped_connection(
+        self, painter, lower_x, lower_y, upper_x, upper_y, gap
+    ):
+        dx = upper_x - lower_x
+        dy = upper_y - lower_y
         length = max((dx * dx + dy * dy) ** 0.5, 1.0)
         ux = dx / length
         uy = dy / length
         painter.drawLine(
-            int(x1 + ux * gap),
-            int(y1 + uy * gap),
-            int(x2 - ux * gap),
-            int(y2 - uy * gap),
-        )
-
-    def _erase_rail_gap(self, painter, x, y, half_width=4):
-        painter.fillRect(
-            QRectF(x - half_width, y - 3, half_width * 2, 6),
-            self.background_color,
+            int(lower_x + ux * gap),
+            int(lower_y + uy * gap),
+            int(upper_x),
+            int(upper_y),
         )
 
     def _draw_station_code_bands(
@@ -436,7 +435,7 @@ class TccOverviewWidget(QWidget):
         code_y,
     ):
         codes = self.station_codes.get(station, {})
-        section_width = 70
+        section_width = self.SECTION_WIDTH
         band_height = 22
 
         def draw_band(key, rect, code):
@@ -503,20 +502,24 @@ class TccOverviewWidget(QWidget):
 
             painter.drawLine(int(siding_left), side_y, int(siding_right), side_y)
             if contract["interval_throat"] == "RIGHT":
-                painter.drawLine(
-                    int(siding_right),
-                    side_y,
-                    int(main_right_throat),
+                self._draw_lower_gapped_connection(
+                    painter,
+                    main_right_throat,
                     rail_y,
+                    siding_right,
+                    side_y,
+                    5,
                 )
                 painter.drawLine(int(main_right_throat), rail_y, int(core_right), rail_y)
             else:
                 painter.drawLine(int(core_left), rail_y, int(main_left_throat), rail_y)
-                painter.drawLine(
-                    int(main_left_throat),
+                self._draw_lower_gapped_connection(
+                    painter,
+                    main_left_throat,
                     rail_y,
-                    int(siding_left),
+                    siding_left,
                     side_y,
+                    5,
                 )
 
     def _draw_interval(self, painter, left, rail_y, code_y):
@@ -711,14 +714,14 @@ class TccOverviewWidget(QWidget):
         stem_height = 26 if compact else 34
         radius = 4 if compact else 5
         direction_sign = 1 if direction == "RIGHT" else -1
-        arm_length = 9 if compact else 12
+        is_side_signal = not extend_below_track
+        arm_length = 0 if is_side_signal else (9 if compact else 12)
         lamp_center_x = x + direction_sign * (arm_length + radius)
         lamp_center_y = rail_y - stem_height
         lower_stem_top = lamp_center_y + (8 if compact else 10)
         upper_stem_bottom = lamp_center_y + (4 if compact else 5)
         stem_bottom = rail_y + (5 if extend_below_track else 0)
 
-        self._erase_rail_gap(painter, x, rail_y, 3)
         painter.setPen(QPen(QColor("#aebdca"), 1))
         painter.drawLine(int(x), int(stem_bottom), int(x), int(lower_stem_top))
         painter.drawLine(
@@ -727,12 +730,13 @@ class TccOverviewWidget(QWidget):
             int(x),
             int(lamp_center_y - radius - 2),
         )
-        painter.drawLine(
-            int(x),
-            int(lamp_center_y),
-            int(x + direction_sign * arm_length),
-            int(lamp_center_y),
-        )
+        if arm_length:
+            painter.drawLine(
+                int(x),
+                int(lamp_center_y),
+                int(x + direction_sign * arm_length),
+                int(lamp_center_y),
+            )
         colors = {
             "绿灯": [QColor("#35e463")],
             "L灯": [QColor("#35e463")],

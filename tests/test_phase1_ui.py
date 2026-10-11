@@ -260,7 +260,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertEqual(contract["track_sections_per_block"], 2)
         self.assertTrue(contract["continuous_layout"])
         self.assertEqual(contract["display_direction"], "下行")
-        self.assertGreaterEqual(len(contract["active_balise_groups"]), 2)
+        self.assertEqual(len(contract["displayed_balise_groups"]), 4)
 
     def test_station_yards_follow_word_signal_and_balise_layout(self):
         view = TccOverviewWidget()
@@ -299,16 +299,20 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertEqual(station_b["passive_balise_count"], 2)
         self.assertEqual(view.layout_contract()["interval_signal_direction"], "RIGHT_FIXED")
 
-        expected_active_groups = {
-            "JZ": {"signal": "X", "side": "LEFT", "count": 3},
-            "FJZ": {"signal": "S", "side": "RIGHT", "count": 3},
-            "X1_CZ": {"signal": "X1", "side": "LEFT", "count": 3},
-            "X3_CZ": {"signal": "X3", "side": "LEFT", "count": 3},
-            "S1_FCZ": {"signal": "S1", "side": "RIGHT", "count": 3},
-            "S3_FCZ": {"signal": "S3", "side": "RIGHT", "count": 3},
-        }
-        self.assertEqual(station_a["active_balise_groups"], expected_active_groups)
-        self.assertEqual(station_b["active_balise_groups"], expected_active_groups)
+        self.assertEqual(
+            station_a["displayed_balise_groups"],
+            {
+                "3G_DD": {"track": "3G", "count": 2},
+                "SN_FJZ": {"signal": "SN", "side": "RIGHT", "count": 3},
+            },
+        )
+        self.assertEqual(
+            station_b["displayed_balise_groups"],
+            {
+                "3G_DD": {"track": "3G", "count": 2},
+                "X_JZ": {"signal": "X", "side": "LEFT", "count": 3},
+            },
+        )
 
     def test_interval_uses_uniform_sections_with_equipment_aliases(self):
         view = TccOverviewWidget()
@@ -335,18 +339,13 @@ class PhaseOneUiContractTest(unittest.TestCase):
         view.grab()
 
         expected = {
-            f"{station}站_{signal}_{group}"
-            for station in ("A", "B")
-            for signal, group in (
-                ("X", "JZ"),
-                (("SN" if station == "A" else "S"), "FJZ"),
-                ("X1", "CZ"),
-                ("X3", "CZ"),
-                ("S1", "FCZ"),
-                ("S3", "FCZ"),
-            )
+            "A站3G_DD",
+            "A站_SN_FJZ",
+            "B站3G_DD",
+            "B站_X_JZ",
         }
         self.assertEqual(set(view._active_balise_hitboxes), expected)
+        self.assertEqual(len(view._balise_symbols), 10)
         view.close()
 
     def test_station_code_bands_connect_to_interval_and_balises_fit_between(self):
@@ -366,9 +365,23 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertEqual(view._station_code_rects["B_THROAT"].left(), interval_right)
         self.assertEqual(view._station_code_rects["A_THROAT"].top(), code_y)
         self.assertEqual(view._station_code_rects["B_THROAT"].top(), code_y)
+        for rect in view._station_code_rects.values():
+            self.assertEqual(rect.width(), view.SECTION_WIDTH)
+        self.assertEqual(
+            view._station_code_rects["A_TRACK"].right(),
+            view._station_code_rects["A_THROAT"].left(),
+        )
+        self.assertEqual(
+            view._station_code_rects["B_THROAT"].right(),
+            view._station_code_rects["B_TRACK"].left(),
+        )
+
+        first_interval = view._interval_code_segments[0]["rect"]
+        self.assertEqual(first_interval.left(), interval_left)
+        self.assertEqual(first_interval.width(), view.SECTION_WIDTH * 2)
 
         for balise_id, hitbox in view._active_balise_hitboxes.items():
-            track_y = side_y if "X3_CZ" in balise_id or "S3_FCZ" in balise_id else rail_y
+            track_y = side_y if "3G_DD" in balise_id else rail_y
             self.assertGreater(hitbox.center().y(), track_y)
             self.assertLess(hitbox.center().y(), track_y + 30)
 
@@ -399,17 +412,18 @@ class PhaseOneUiContractTest(unittest.TestCase):
                 "X3": "SIDE_SHORT",
             },
         )
-        self.assertEqual(contract["rail_at_signal"], "GAPPED")
+        self.assertEqual(contract["rail_at_signal"], "CONTINUOUS")
         self.assertEqual(contract["signal_head_post"], "GAPPED")
-        self.assertEqual(contract["turnout_connections"], "GAPPED")
+        self.assertEqual(contract["turnout_upper_connection"], "CONTINUOUS")
+        self.assertEqual(contract["turnout_lower_connection"], "GAPPED")
+        self.assertEqual(contract["side_signal_head"], "FLUSH_TO_POST")
         self.assertEqual(
             contract["balise_fill_patterns"],
             {
-                "JZ": (False, False, True),
-                "FJZ": (True, False, False),
-                "CZ": (False, False, True),
-                "FCZ": (True, False, False),
-                "DD": (False, False),
+                "A_3G_DD": (False, True),
+                "A_SN_FJZ": (True, False, False),
+                "B_3G_DD": (True, False),
+                "B_X_JZ": (False, False, True),
             },
         )
         self.assertEqual(contract["clickable_balise"], "FILLED_ONLY")
