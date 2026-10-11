@@ -24,6 +24,7 @@ from services.temporary_speed_service import TemporarySpeedService
 from services.route_service import RouteService
 from services.operation_policy import OperationPolicy, OperationRuleError
 from models.route import RouteState, RouteType
+from models.train import Train
 
 from network.message_protocol import MessageProtocol
 from network.network_worker import (
@@ -146,6 +147,9 @@ class MainWindow(QMainWindow):
         self.network_server_station = None
         self.connected_stations = set()
         self._network_resetting = False
+
+        # 待发列车的界面草稿独立保存；添加列车时不写入接发方式。
+        self._train_control_drafts = {}
 
         # 站间同步节拍计数
         self.network_tick = 0
@@ -509,6 +513,17 @@ class MainWindow(QMainWindow):
         self.arrival_mode_combo.addItems(["正线接车", "侧线接车"])
         self.arrival_mode_combo.setMinimumWidth(120)
         self.train_selector_layout.addWidget(self.arrival_mode_combo)
+        self.train_selector_layout.addSpacing(10)
+
+        self.train_selector_layout.addWidget(QLabel("最大速度："))
+        self.max_speed_combo = QComboBox()
+        self.max_speed_combo.setObjectName("train_max_speed")
+        self.max_speed_combo.addItems(
+            [f"{speed} km/h" for speed in Train.ALLOWED_MAX_SPEEDS]
+        )
+        self.max_speed_combo.setCurrentText("120 km/h")
+        self.max_speed_combo.setMinimumWidth(105)
+        self.train_selector_layout.addWidget(self.max_speed_combo)
         self.train_selector_layout.addStretch()
         train_info_layout.addLayout(self.train_selector_layout)
 
@@ -636,7 +651,7 @@ class MainWindow(QMainWindow):
         )
 
         self.start_button = QPushButton(
-            "▶ 开始仿真"
+            "▶ 发车"
         )
 
         self.pause_button = QPushButton(
@@ -743,7 +758,7 @@ class MainWindow(QMainWindow):
         )
 
         self.start_button.clicked.connect(
-            self.start_simulation
+            self.dispatch_selected_train
         )
 
         self.pause_button.clicked.connect(
@@ -760,6 +775,19 @@ class MainWindow(QMainWindow):
 
         self.speed_combo.currentTextChanged.connect(
             self.change_speed
+        )
+
+        self.train_selector.currentTextChanged.connect(
+            self.on_selected_train_changed
+        )
+        self.departure_mode_combo.currentTextChanged.connect(
+            self.remember_selected_train_draft
+        )
+        self.arrival_mode_combo.currentTextChanged.connect(
+            self.remember_selected_train_draft
+        )
+        self.max_speed_combo.currentTextChanged.connect(
+            self.change_selected_train_max_speed
         )
 
         self.tsr_apply_button.clicked.connect(
@@ -831,19 +859,62 @@ class MainWindow(QMainWindow):
         self.refresh_view()
 
     # ==============================
-    # 开始
+    # 发出当前选中的一辆列车
     # ==============================
 
-    def start_simulation(self):
+    def dispatch_selected_train(self):
 
-        if not self.require_communication("仿真启动失败"):
+        if not self.require_communication("列车发车失败"):
             return
 
-        if not self.validate_simulation_start():
+        train_id = self.train_selector.currentText()
+        train = self.train_service.trains.get(train_id)
+        if train is None:
+            self.show_operation_error(
+                "列车发车失败",
+                OperationRuleError(
+                    "没有选中需要发出的列车",
+                    "“查看列车”中未选中有效列车。",
+                    "请先添加待发列车，并在下拉框中选中目标列车。",
+                ),
+            )
             return
 
+        departure_mode = (
+            "MAIN"
+            if self.departure_mode_combo.currentText() == "正线发车"
+            else "SIDE"
+        )
+        arrival_mode = (
+            "MAIN"
+            if self.arrival_mode_combo.currentText() == "正线接车"
+            else "SIDE"
+        )
+        max_speed = int(self.max_speed_combo.currentText().split()[0])
+
+        was_globally_paused = self.train_service.globally_paused
+        try:
+            self.train_service.dispatch_selected_train(
+                train_id,
+                departure_mode,
+                arrival_mode,
+                max_speed,
+            )
+        except (OperationRuleError, ValueError) as error:
+            self.show_operation_error("列车发车失败", error)
+            self.refresh_control_states()
+            return
+
+        # 暂停期间发出新车时，恢复全部已发车列车和全局时钟。
+        if was_globally_paused:
+            self.train_service.resume_all()
         self.engine.start()
-        self.refresh_control_states()
+        self.refresh_route_controls()
+        self.refresh_view()
+
+    def start_simulation(self):
+        """兼容旧调用名称；按钮语义已经统一为发车。"""
+        self.dispatch_selected_train()
 
     # ==============================
     # 暂停
@@ -854,8 +925,40 @@ class MainWindow(QMainWindow):
         if not self.require_communication("暂停仿真失败"):
             return
 
-        self.engine.pause()
-        self.refresh_control_states()
+        running = any(
+            train.status == "RUNNING"
+            for train in self.train_service.trains.values()
+        )
+        stopped = any(
+            train.status == "STOPPED"
+            for train in self.train_service.trains.values()
+        )
+
+        if not (running or stopped):
+            self.show_operation_error(
+                "仿真暂停失败",
+                OperationRuleError(
+                    "当前没有可暂停或继续的列车",
+                    "运行和暂停中的列车数量均为 0。",
+                    "请先发出一辆待发列车后再使用暂停或继续。",
+                ),
+            )
+        elif self.engine.timer.isActive():
+            self.train_service.pause_all()
+            self.engine.pause()
+        elif self.train_service.globally_paused and stopped:
+            self.train_service.resume_all()
+            self.engine.start()
+        else:
+            self.show_operation_error(
+                "仿真暂停失败",
+                OperationRuleError(
+                    "当前没有可暂停或继续的列车",
+                    "仿真未处于可继续状态。",
+                    "请先发出一辆待发列车后再使用暂停或继续。",
+                ),
+            )
+        self.refresh_view()
 
     # ==============================
     # 倍速
@@ -873,6 +976,35 @@ class MainWindow(QMainWindow):
         self.engine.set_speed_multiplier(
             value
         )
+
+    def remember_selected_train_draft(self, _text=None):
+        train_id = self.train_selector.currentText()
+        train = self.train_service.trains.get(train_id)
+        if train is None or train.status != "WAITING":
+            return
+        self._train_control_drafts[train_id] = {
+            "departure": self.departure_mode_combo.currentText(),
+            "arrival": self.arrival_mode_combo.currentText(),
+            "max_speed": self.max_speed_combo.currentText(),
+        }
+
+    def change_selected_train_max_speed(self, text):
+        train_id = self.train_selector.currentText()
+        train = self.train_service.trains.get(train_id)
+        if train is None or not text:
+            return
+        if train.status == "ARRIVED":
+            return
+        try:
+            speed = int(text.split()[0])
+            train.set_max_speed(speed)
+            if train.current_track is not None:
+                self.train_service.update_train_speed_limit(train)
+        except (ValueError, IndexError) as error:
+            self.show_operation_error("最大速度设置失败", error)
+            return
+        self.remember_selected_train_draft()
+        self.refresh_train_info(self.train_service.get_all_train_status())
 
     def apply_temporary_speed_restriction(self):
         if not self.require_communication("限速设置失败"):
@@ -1013,6 +1145,7 @@ class MainWindow(QMainWindow):
             return
         self.engine.pause()
         self.train_service.clear_all_trains()
+        self._train_control_drafts.clear()
         # 列车全部移除后，保留既有进路，但解除列车造成的锁闭，
         # 避免进路继续引用已经不存在的列车。
         self.route_service.reset_locks()
@@ -1092,23 +1225,25 @@ class MainWindow(QMainWindow):
         if not self.require_communication("仿真复位失败"):
             return
 
-        self.engine.pause()
-        train_id = self.train_selector.currentText()
-        train = self.train_service.trains.get(train_id)
-        if train is None:
+        dispatched = [
+            train
+            for train in self.train_service.trains.values()
+            if train.status in ("RUNNING", "STOPPED", "ARRIVED")
+        ]
+        if not dispatched:
             self.show_operation_error(
                 "仿真复位失败",
                 OperationRuleError(
-                    "没有可复位的当前列车",
-                    "“查看列车”中未选中有效列车。",
-                    "请先在“查看列车”下拉框中选择需要复位的列车。",
+                    "当前没有已经发车的列车",
+                    "运行、暂停和已到达列车数量均为 0。",
+                    "请先发出列车后再执行全局复位。",
                 ),
             )
             self.refresh_control_states()
             return
 
-        self.route_service.unlock_routes_for_train(train_id)
-        self.train_service.reset_train_to_departure(train_id)
+        self.engine.pause()
+        self.train_service.reset_dispatched_trains()
         for track_code, track in self.simulation_b.track_circuits.items():
             source_track = self.simulation_a.track_circuits[track_code]
             if source_track.occupied:
@@ -1212,6 +1347,7 @@ class MainWindow(QMainWindow):
         self.refresh_train_info(
             trains
         )
+        self.sync_selected_train_controls()
 
         # --------------------------
         # 统计
@@ -1478,6 +1614,64 @@ class MainWindow(QMainWindow):
             "制动距离：--"
         )
 
+    def sync_selected_train_controls(self, _train_id=None):
+        train_id = self.train_selector.currentText()
+        train = self.train_service.trains.get(train_id)
+        combos = (
+            self.departure_mode_combo,
+            self.arrival_mode_combo,
+            self.max_speed_combo,
+        )
+        for combo in combos:
+            combo.blockSignals(True)
+
+        try:
+            if train is None:
+                self.departure_mode_combo.setCurrentText("正线发车")
+                self.arrival_mode_combo.setCurrentText("正线接车")
+                self.max_speed_combo.setCurrentText("120 km/h")
+                for combo in combos:
+                    combo.setEnabled(False)
+                return
+
+            draft = self._train_control_drafts.get(train_id)
+            if draft is None:
+                draft = {
+                    "departure": (
+                        "侧线发车"
+                        if train.departure_mode == "SIDE"
+                        else "正线发车"
+                    ),
+                    "arrival": (
+                        "侧线接车"
+                        if train.arrival_mode == "SIDE"
+                        else "正线接车"
+                    ),
+                    "max_speed": f"{int(train.max_speed)} km/h",
+                }
+                self._train_control_drafts[train_id] = draft
+
+            self.departure_mode_combo.setCurrentText(draft["departure"])
+            self.arrival_mode_combo.setCurrentText(draft["arrival"])
+            self.max_speed_combo.setCurrentText(
+                f"{int(train.max_speed)} km/h"
+            )
+
+            modes_editable = train.status == "WAITING"
+            self.departure_mode_combo.setEnabled(modes_editable)
+            self.arrival_mode_combo.setEnabled(modes_editable)
+            self.max_speed_combo.setEnabled(
+                train.status in ("WAITING", "RUNNING", "STOPPED")
+            )
+        finally:
+            for combo in combos:
+                combo.blockSignals(False)
+
+    def on_selected_train_changed(self, _train_id=None):
+        self.sync_selected_train_controls()
+        self.refresh_train_info(self.train_service.get_all_train_status())
+        self.refresh_control_states()
+
     # ==========================================
     # 站别与面板
     # ==========================================
@@ -1658,74 +1852,41 @@ class MainWindow(QMainWindow):
             ).format_message()
         QMessageBox.warning(self, title, message)
 
-    def validate_simulation_start(self):
-        train_id = self.train_selector.currentText()
-        train = self.train_service.trains.get(train_id)
-        if train is None:
-            self.show_operation_error(
-                "仿真启动失败",
-                OperationRuleError(
-                    "没有选中需要启动的列车",
-                    "“查看列车”中未选中有效列车。",
-                    "请先添加列车，并在“查看列车”下拉框中选中目标列车。",
-                ),
-            )
-            return False
-
-        if train.status in ("RUNNING", "STOPPED"):
-            self.train_service.dispatch_target_id = None
-            return True
-
-        if train.status != "WAITING":
-            self.show_operation_error(
-                "仿真启动失败",
-                OperationRuleError(
-                    f"列车{train_id}当前不能启动",
-                    f"列车状态为 {train.status}。",
-                    "请复位该列车后重新选择接发方式，再点击开始仿真。",
-                ),
-            )
-            return False
-
-        departure_mode = (
-            "MAIN"
-            if self.departure_mode_combo.currentText() == "正线发车"
-            else "SIDE"
-        )
-        arrival_mode = (
-            "MAIN"
-            if self.arrival_mode_combo.currentText() == "正线接车"
-            else "SIDE"
-        )
-        try:
-            OperationPolicy.validate_train_routes(
-                self.simulation_a.get_direction(),
-                train_id,
-                departure_mode,
-                arrival_mode,
-                self.route_service,
-            )
-            self.train_service.prepare_train_for_dispatch(
-                train_id,
-                departure_mode,
-                arrival_mode,
-            )
-        except OperationRuleError as error:
-            self.show_operation_error("仿真启动失败", error)
-            return False
-        return True
-
     def refresh_control_states(self):
         ready = self.communication_ready()
-        running = self.engine.timer.isActive()
         has_trains = bool(self.train_service.trains)
+        selected_train = self.train_service.trains.get(
+            self.train_selector.currentText()
+        )
+        active_trains = [
+            train
+            for train in self.train_service.trains.values()
+            if train.status in ("RUNNING", "STOPPED")
+        ]
+        dispatched_trains = [
+            train
+            for train in self.train_service.trains.values()
+            if train.status in ("RUNNING", "STOPPED", "ARRIVED")
+        ]
         self.operation_area.setEnabled(ready)
         self.panel_a.direction_button.setEnabled(ready)
         self.panel_b.direction_button.setEnabled(ready)
 
-        self.start_button.setEnabled(ready and not running)
-        self.pause_button.setEnabled(ready and running)
-        self.reset_button.setEnabled(ready and has_trains)
+        self.start_button.setEnabled(
+            ready
+            and selected_train is not None
+            and selected_train.status == "WAITING"
+        )
+        self.pause_button.setEnabled(ready and bool(active_trains))
+        self.pause_button.setText(
+            "Ⅱ 暂停"
+            if self.engine.timer.isActive()
+            else "▶ 继续"
+            if self.train_service.globally_paused
+            and any(train.status == "STOPPED" for train in active_trains)
+            else "Ⅱ 暂停"
+        )
+        self.reset_button.setEnabled(ready and bool(dispatched_trains))
         self.clear_trains_button.setEnabled(
             ready and has_trains
         )
@@ -1733,6 +1894,7 @@ class MainWindow(QMainWindow):
             ready and self.active_tsr_combo.currentData() is not None
         )
         self._sync_route_cancel_button()
+        self.sync_selected_train_controls()
 
         for station in ("A", "B"):
             panel = self.get_panel_by_role(station)
@@ -1810,6 +1972,7 @@ class MainWindow(QMainWindow):
             return
 
         self._network_resetting = True
+        self.train_service.pause_all()
         self.engine.pause()
         self.connected_stations.clear()
         workers = list(self.network_workers.values())

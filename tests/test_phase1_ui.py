@@ -427,6 +427,23 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertEqual(window.departure_mode_combo.itemText(1), "侧线发车")
         self.assertEqual(window.arrival_mode_combo.itemText(0), "正线接车")
         self.assertEqual(window.arrival_mode_combo.itemText(1), "侧线接车")
+        self.assertEqual(window.start_button.text(), "▶ 发车")
+        self.assertEqual(
+            [
+                window.max_speed_combo.itemText(index)
+                for index in range(window.max_speed_combo.count())
+            ],
+            [
+                "80 km/h",
+                "120 km/h",
+                "160 km/h",
+                "200 km/h",
+                "250 km/h",
+                "300 km/h",
+                "350 km/h",
+            ],
+        )
+        self.assertEqual(window.max_speed_combo.currentText(), "120 km/h")
         self.assertEqual(window.clear_trains_button.text(), "一键清车")
 
         for object_name in (
@@ -567,7 +584,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertIsNone(route.train_id)
         window.close()
 
-    def test_reset_returns_selected_train_to_departure_and_preserves_routes(self):
+    def test_reset_returns_all_dispatched_trains_to_departure_and_preserves_routes(self):
         window = MainWindow()
         self.mark_communication_ready(window)
         route = window.route_service.establish_route(
@@ -582,6 +599,10 @@ class PhaseOneUiContractTest(unittest.TestCase):
         train = window.train_service.add_waiting_train("MAIN", "MAIN")
         self.assertTrue(window.train_service.dispatch_train(train))
         window.train_service.waiting_queue.clear()
+        second = window.train_service.create_train("MAIN", "MAIN")
+        second.enter_track("G10")
+        second.position = 220.0
+        second.speed = 60.0
         train.current_track = "G05"
         train.position = 420.0
         train.speed = 80.0
@@ -611,6 +632,9 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertIsNone(train.current_track)
         self.assertEqual(train.position, 0.0)
         self.assertEqual(train.speed, 0.0)
+        self.assertEqual(second.status, "WAITING")
+        self.assertIsNone(second.current_track)
+        self.assertIn(second.train_id, window.train_service.waiting_queue)
         self.assertEqual(train.block_code, "L5")
         self.assertIsNone(train.last_balise)
         self.assertIn(train.train_id, window.train_service.waiting_queue)
@@ -626,18 +650,18 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertEqual(window.active_route_combo.currentData(), route.route_id)
         window.close()
 
-    def test_empty_queue_cannot_start_simulation(self):
+    def test_no_selected_train_cannot_dispatch(self):
         window = MainWindow()
         self.mark_communication_ready(window)
 
         with patch("ui.main_window.QMessageBox.warning") as warning:
-            window.start_simulation()
+            window.dispatch_selected_train()
 
         self.assertFalse(window.engine.timer.isActive())
         title, message = warning.call_args.args[1:3]
-        self.assertEqual(title, "仿真启动失败")
+        self.assertEqual(title, "列车发车失败")
         self.assertIn("操作失败", message)
-        self.assertIn("没有选中需要启动的列车", message)
+        self.assertIn("没有选中", message)
         self.assertIn("处理建议", message)
         window.close()
 
@@ -684,11 +708,11 @@ class PhaseOneUiContractTest(unittest.TestCase):
                 )
 
                 with patch("ui.main_window.QMessageBox.warning") as warning:
-                    window.start_simulation()
+                    window.dispatch_selected_train()
 
                 self.assertFalse(window.engine.timer.isActive())
                 title, message = warning.call_args.args[1:3]
-                self.assertEqual(title, "仿真启动失败")
+                self.assertEqual(title, "列车发车失败")
                 self.assertIn("T001", message)
                 self.assertIn(station_text, message)
                 self.assertIn(route_text, message)
@@ -718,13 +742,15 @@ class PhaseOneUiContractTest(unittest.TestCase):
                 window.departure_mode_combo.setCurrentText("侧线发车")
                 window.arrival_mode_combo.setCurrentText("正线接车")
 
-                window.start_simulation()
+                window.dispatch_selected_train()
 
                 self.assertTrue(window.engine.timer.isActive())
+                self.assertEqual(train.status, "RUNNING")
+                self.assertNotIn(train.train_id, window.train_service.waiting_queue)
                 window.engine.pause()
                 window.close()
 
-    def test_paused_active_train_can_resume_with_empty_waiting_queue(self):
+    def test_pause_button_toggles_all_active_trains(self):
         window = MainWindow()
         self.mark_communication_ready(window)
         window.route_service.establish_route("A", RouteType.MAIN_DEPART)
@@ -734,16 +760,25 @@ class PhaseOneUiContractTest(unittest.TestCase):
         window.train_service.waiting_queue.clear()
         window.refresh_view()
         window.train_selector.setCurrentText(train.train_id)
+        window.engine.start()
 
         with patch("ui.main_window.QMessageBox.warning") as warning:
-            window.start_simulation()
+            window.pause_simulation()
+
+        self.assertFalse(window.engine.timer.isActive())
+        self.assertEqual(train.status, "STOPPED")
+        self.assertEqual(window.pause_button.text(), "▶ 继续")
+
+        window.pause_simulation()
 
         self.assertTrue(window.engine.timer.isActive())
+        self.assertEqual(train.status, "RUNNING")
+        self.assertEqual(window.pause_button.text(), "Ⅱ 暂停")
         warning.assert_not_called()
         window.engine.pause()
         window.close()
 
-    def test_resume_selected_running_train_ignores_later_waiting_train(self):
+    def test_pausing_active_train_ignores_later_waiting_train(self):
         window = MainWindow()
         self.mark_communication_ready(window)
         window.route_service.establish_route("A", RouteType.MAIN_DEPART)
@@ -760,22 +795,18 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertEqual(window.train_selector.currentText(), running.train_id)
         window.pause_simulation()
 
-        with patch("ui.main_window.QMessageBox.warning") as warning:
-            window.start_simulation()
-
-        self.assertTrue(window.engine.timer.isActive())
-        warning.assert_not_called()
-        self.assertIsNone(window.train_service.dispatch_target_id)
+        self.assertFalse(window.engine.timer.isActive())
+        self.assertEqual(running.status, "STOPPED")
+        self.assertEqual(later.status, "WAITING")
         self.assertIsNone(later.departure_mode)
         self.assertIsNone(later.arrival_mode)
-        window.engine.pause()
         window.close()
 
     def test_simulation_and_conditional_button_states(self):
         window = MainWindow()
         self.mark_communication_ready(window)
 
-        self.assertTrue(window.start_button.isEnabled())
+        self.assertFalse(window.start_button.isEnabled())
         self.assertFalse(window.pause_button.isEnabled())
         self.assertFalse(window.reset_button.isEnabled())
         self.assertFalse(window.clear_trains_button.isEnabled())
@@ -786,20 +817,22 @@ class PhaseOneUiContractTest(unittest.TestCase):
         train = window.train_service.add_waiting_train()
         window.refresh_view()
         window.train_selector.setCurrentText(train.train_id)
+        self.assertTrue(window.start_button.isEnabled())
         self.assertTrue(window.clear_trains_button.isEnabled())
 
         window.temporary_speed_service.set_restriction("G05", "G08", 80)
         window.refresh_temporary_speed_controls()
         self.assertTrue(window.tsr_cancel_button.isEnabled())
 
-        window.start_simulation()
+        window.dispatch_selected_train()
         self.assertFalse(window.start_button.isEnabled())
         self.assertTrue(window.pause_button.isEnabled())
         self.assertTrue(window.reset_button.isEnabled())
 
         window.pause_simulation()
-        self.assertTrue(window.start_button.isEnabled())
-        self.assertFalse(window.pause_button.isEnabled())
+        self.assertFalse(window.start_button.isEnabled())
+        self.assertTrue(window.pause_button.isEnabled())
+        self.assertEqual(window.pause_button.text(), "▶ 继续")
         self.assertTrue(window.reset_button.isEnabled())
         self.assertTrue(window.clear_trains_button.isEnabled())
         window.close()
@@ -832,15 +865,84 @@ class PhaseOneUiContractTest(unittest.TestCase):
         window.arrival_mode_combo.setCurrentText("正线接车")
 
         with patch("ui.main_window.QMessageBox.warning") as warning:
-            window.start_simulation()
+            window.dispatch_selected_train()
 
         self.assertTrue(window.engine.timer.isActive())
         warning.assert_not_called()
+        self.assertEqual(first.status, "RUNNING")
         self.assertEqual(first.departure_mode, "SIDE")
         self.assertEqual(first.arrival_mode, "MAIN")
-        self.assertEqual(window.train_service.dispatch_target_id, first.train_id)
+        self.assertFalse(hasattr(window.train_service, "dispatch_target_id"))
         self.assertIsNone(second.departure_mode)
         self.assertIsNone(second.arrival_mode)
+        window.engine.pause()
+        window.close()
+
+    def test_selected_train_controls_follow_status_and_live_max_speed(self):
+        window = MainWindow()
+        self.mark_communication_ready(window)
+        waiting = window.train_service.add_waiting_train()
+        running = window.train_service.create_train("SIDE", "MAIN")
+        running.set_max_speed(250)
+        running.enter_track("G05")
+        window.refresh_view()
+
+        window.train_selector.setCurrentText(waiting.train_id)
+        window.sync_selected_train_controls()
+        self.assertTrue(window.departure_mode_combo.isEnabled())
+        self.assertTrue(window.arrival_mode_combo.isEnabled())
+        self.assertTrue(window.max_speed_combo.isEnabled())
+        self.assertEqual(window.max_speed_combo.currentText(), "120 km/h")
+
+        window.train_selector.setCurrentText(running.train_id)
+        window.sync_selected_train_controls()
+        self.assertFalse(window.departure_mode_combo.isEnabled())
+        self.assertFalse(window.arrival_mode_combo.isEnabled())
+        self.assertTrue(window.max_speed_combo.isEnabled())
+        self.assertEqual(window.departure_mode_combo.currentText(), "侧线发车")
+        self.assertEqual(window.arrival_mode_combo.currentText(), "正线接车")
+        self.assertEqual(window.max_speed_combo.currentText(), "250 km/h")
+
+        current_speed = running.speed
+        window.max_speed_combo.setCurrentText("80 km/h")
+        self.assertEqual(running.max_speed, 80.0)
+        self.assertEqual(running.speed, current_speed)
+        self.assertLessEqual(running.target_speed, 80.0)
+
+        running.status = "ARRIVED"
+        window.sync_selected_train_controls()
+        self.assertFalse(window.max_speed_combo.isEnabled())
+        window.close()
+
+    def test_dispatch_button_can_send_second_selected_train_while_engine_runs(self):
+        window = MainWindow()
+        self.mark_communication_ready(window)
+        departure = window.route_service.establish_route(
+            "A", RouteType.MAIN_DEPART
+        )
+        window.route_service.establish_route("B", RouteType.MAIN_RECEIVE)
+        first = window.train_service.add_waiting_train()
+        second = window.train_service.add_waiting_train()
+        window.refresh_view()
+
+        window.train_selector.setCurrentText(first.train_id)
+        window.dispatch_selected_train()
+        self.assertEqual(first.status, "RUNNING")
+
+        first.current_track = "G03"
+        first.position = 200.0
+        window.route_service.unlock_route(departure.route_id)
+        first.route_id = None
+        window.train_service.sync_track_circuits()
+        window.train_selector.setCurrentText(second.train_id)
+        window.refresh_control_states()
+        self.assertTrue(window.start_button.isEnabled())
+
+        window.dispatch_selected_train()
+
+        self.assertEqual(second.status, "RUNNING")
+        self.assertTrue(window.engine.timer.isActive())
+        self.assertNotEqual(first.current_track, second.current_track)
         window.engine.pause()
         window.close()
 

@@ -36,8 +36,6 @@ class TrainService:
         self.trains = {}
         # 待发列车队列
         self.waiting_queue = []
-        # 只有用户在“查看列车”中选中并点击开始的列车才允许自动发车
-        self.dispatch_target_id = None
 
         # 用户执行全局暂停后，即使误触发一次更新周期也不得自动恢复列车。
         self.globally_paused = False
@@ -94,23 +92,7 @@ class TrainService:
         """清除运行及待发列车，并释放由列车造成的区段占用。"""
         self.trains.clear()
         self.waiting_queue.clear()
-        self.dispatch_target_id = None
         self.sync_track_circuits()
-
-    def prepare_train_for_dispatch(
-        self,
-        train_id,
-        departure_mode,
-        arrival_mode,
-    ):
-        train = self.trains.get(train_id)
-        if train is None or train.status != "WAITING":
-            raise ValueError("所选列车不是待发列车")
-        if train_id not in self.waiting_queue:
-            self.waiting_queue.append(train_id)
-        train.configure_operation_modes(departure_mode, arrival_mode)
-        self.dispatch_target_id = train_id
-        return train
 
     def dispatch_selected_train(
         self,
@@ -283,7 +265,6 @@ class TrainService:
             train.reset_to_departure(preserve_configuration=True)
             if train.train_id not in self.waiting_queue:
                 self.waiting_queue.append(train.train_id)
-        self.dispatch_target_id = None
         self.globally_paused = True
         self.sync_track_circuits()
         return reset
@@ -295,8 +276,6 @@ class TrainService:
         train.reset_to_departure()
         if train_id not in self.waiting_queue:
             self.waiting_queue.append(train_id)
-        if self.dispatch_target_id == train_id:
-            self.dispatch_target_id = None
         self.sync_track_circuits()
         return train
 
@@ -522,23 +501,7 @@ class TrainService:
 
         self.sync_track_circuits()
 
-        # ==========================================
-        # 6. 判断是否可以自动发送下一辆列车
-        # ==========================================
-
-        dispatched_train = (
-            self.try_auto_dispatch()
-        )
-
-        if dispatched_train is not None:
-            self.sync_track_circuits()
-
-            # 新列车进入以后立即计算一次速度约束
-            self.update_train_speed_limit(
-                dispatched_train
-            )
-
-        return dispatched_train
+        return None
 
     # ==================================================
     # 获取所有列车状态
@@ -674,53 +637,6 @@ class TrainService:
         self.waiting_queue.append(
             train.train_id
         )
-
-        return train
-
-    def try_auto_dispatch(self):
-        """
-        检查待发队列。
-
-        如果满足自动闭塞发车条件，
-        自动发送队首列车。
-        """
-
-        if not self.waiting_queue or self.dispatch_target_id is None:
-            return None
-
-        train_id = self.dispatch_target_id
-
-        if train_id not in self.waiting_queue:
-            self.dispatch_target_id = None
-            return None
-
-        train = self.trains.get(
-            train_id
-        )
-
-        if train is None:
-            self.waiting_queue.remove(train_id)
-            self.dispatch_target_id = None
-            return None
-
-        # 判断是否满足安全发车条件
-        if not self.can_dispatch_new_train(
-                train.direction,
-                train.departure_mode,
-        ):
-            return None
-
-        # 正式发车
-        result = self.dispatch_train(
-            train
-        )
-
-        if not result:
-            return None
-
-        # 从待发队列删除
-        self.waiting_queue.remove(train_id)
-        self.dispatch_target_id = None
 
         return train
 
