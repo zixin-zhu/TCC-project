@@ -21,6 +21,8 @@ class SimulationEngine(QObject):
         # 仿真累计时间
         self.simulation_time = 0.0
 
+        self.is_paused = True
+
         self.timer = QTimer(self)
 
         self.timer.setInterval(
@@ -32,11 +34,13 @@ class SimulationEngine(QObject):
         )
 
     def start(self):
+        self.is_paused = False
         if not self.timer.isActive():
             self.timer.start()
 
     def pause(self):
         self.timer.stop()
+        self.is_paused = True
 
     def reset_time(self):
         self.simulation_time = 0.0

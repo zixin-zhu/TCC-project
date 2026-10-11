@@ -1,5 +1,6 @@
 from models.train import Train
 from models.route import RouteState
+from services.operation_policy import OperationPolicy, OperationRuleError
 from services.passive_balise_service import PassiveBaliseService
 
 class TrainService:
@@ -108,6 +109,179 @@ class TrainService:
         self.dispatch_target_id = train_id
         return train
 
+    def dispatch_selected_train(
+        self,
+        train_id,
+        departure_mode,
+        arrival_mode,
+        max_speed,
+    ):
+        """校验并立即发出用户明确选中的一辆待发列车。"""
+        train = self.trains.get(train_id)
+        if train is None:
+            raise OperationRuleError(
+                "没有选中有效列车",
+                f"列车编号 {train_id or '为空'} 不存在。",
+                "请在“查看列车”中选择一辆待发列车后重试。",
+            )
+        if train.status != "WAITING":
+            raise OperationRuleError(
+                f"列车{train_id}不能重复发车",
+                f"列车当前状态为 {train.status}。",
+                "请选择状态为待发的列车；如需重新发车，请先执行复位。",
+            )
+        if train_id not in self.waiting_queue:
+            raise OperationRuleError(
+                f"列车{train_id}不在待发队列",
+                "列车状态与待发队列不一致。",
+                "请复位该列车或重新添加待发列车后重试。",
+            )
+
+        OperationPolicy.validate_train_routes(
+            train.direction,
+            train_id,
+            departure_mode,
+            arrival_mode,
+            self.route_service,
+        )
+        try:
+            requested_speed = float(max_speed)
+        except (TypeError, ValueError):
+            requested_speed = -1.0
+        if requested_speed not in Train.ALLOWED_MAX_SPEEDS:
+            allowed = "、".join(str(value) for value in Train.ALLOWED_MAX_SPEEDS)
+            raise OperationRuleError(
+                f"列车{train_id}的最大速度无效",
+                f"请求值为 {max_speed} km/h。",
+                f"请选择 {allowed} km/h 中的一个固定速度。",
+            )
+
+        departure_station = self.get_departure_station(train.direction)
+        arrival_station = self.get_arrival_station(train.direction)
+        departure_track = self.mode_to_track(departure_mode)
+        arrival_track = self.mode_to_track(arrival_mode)
+        departure_route = self.route_service.departure_route_for(
+            departure_station,
+            departure_track,
+        )
+        receive_route = self.route_service.receive_route_for(
+            arrival_station,
+            arrival_track,
+        )
+        for route, movement in (
+            (departure_route, "发车"),
+            (receive_route, "接车"),
+        ):
+            if route.state == RouteState.LOCKED and route.train_id != train_id:
+                raise OperationRuleError(
+                    f"列车{train_id}使用的{movement}进路已被占用",
+                    f"{route.station}站{route.display_name}正由列车"
+                    f"{route.train_id}锁闭。",
+                    "请等待前车通过并解除进路锁闭后重试。",
+                )
+
+        blocker = self._dispatch_spacing_blocker(train)
+        if blocker is not None:
+            raise blocker
+
+        train.configure_operation_modes(departure_mode, arrival_mode)
+        train.set_max_speed(requested_speed)
+        if not self.dispatch_train(train):
+            raise OperationRuleError(
+                f"列车{train_id}未能发车",
+                "发车条件在提交时发生变化。",
+                "请检查入口区段和进路状态后重试。",
+            )
+        self.waiting_queue.remove(train_id)
+        self.sync_track_circuits()
+        self.update_train_speed_limit(train)
+        return train
+
+    def get_dispatch_blocker(self, train):
+        if train is None:
+            return OperationRuleError(
+                "没有选中有效列车",
+                "当前列车对象为空。",
+                "请先选择一辆待发列车。",
+            )
+        return self._dispatch_spacing_blocker(train)
+
+    def _dispatch_spacing_blocker(self, train):
+        order = self.get_track_order(train.direction)
+        entrance_track = order[0]
+        occupying_train = next(
+            (
+                other
+                for other in self.trains.values()
+                if other.train_id != train.train_id
+                and other.status in ("RUNNING", "STOPPED")
+                and other.current_track == entrance_track
+            ),
+            None,
+        )
+        if occupying_train is not None:
+            return OperationRuleError(
+                f"列车{train.train_id}的出发入口被占用",
+                f"列车{occupying_train.train_id}仍在入口区段{entrance_track}。",
+                "请等待前车驶离入口并形成两个完整轨道区段的间隔后重试。",
+            )
+
+        nearest_train = None
+        nearest_index = None
+        for other in self.trains.values():
+            if (
+                other.train_id == train.train_id
+                or other.direction != train.direction
+                or other.status not in ("RUNNING", "STOPPED")
+                or other.current_track not in order
+            ):
+                continue
+            index = order.index(other.current_track)
+            if nearest_index is None or index < nearest_index:
+                nearest_train = other
+                nearest_index = index
+        if nearest_train is not None and nearest_index < 2:
+            return OperationRuleError(
+                f"列车{train.train_id}与前车间隔不足",
+                f"前车{nearest_train.train_id}位于{nearest_train.current_track}，"
+                "尚未越过第三个区段。",
+                "请等待前车前进，入口后保留两个完整轨道区段后重试。",
+            )
+        return None
+
+    def pause_all(self):
+        paused = []
+        for train in self.trains.values():
+            if train.status == "RUNNING":
+                train.status = "STOPPED"
+                paused.append(train)
+        return paused
+
+    def resume_all(self):
+        resumed = []
+        for train in self.trains.values():
+            if train.status == "STOPPED":
+                train.status = "RUNNING"
+                self.update_train_speed_limit(train)
+                resumed.append(train)
+        return resumed
+
+    def reset_dispatched_trains(self):
+        reset = [
+            train
+            for train in self.trains.values()
+            if train.status in ("RUNNING", "STOPPED", "ARRIVED")
+        ]
+        for train in reset:
+            if self.route_service is not None:
+                self.route_service.unlock_routes_for_train(train.train_id)
+            train.reset_to_departure(preserve_configuration=True)
+            if train.train_id not in self.waiting_queue:
+                self.waiting_queue.append(train.train_id)
+        self.dispatch_target_id = None
+        self.sync_track_circuits()
+        return reset
+
     def reset_train_to_departure(self, train_id):
         train = self.trains.get(train_id)
         if train is None:
@@ -150,7 +324,6 @@ class TrainService:
         entrance_track = self.get_entrance_track(
             train.direction
         )
-        train.max_speed = 120.0
         train.block_speed = 120.0
         train.line_speed = 120.0
         train.active_balise_speed = 120.0
