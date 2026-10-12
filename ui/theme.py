@@ -87,4 +87,14 @@ QComboBox QAbstractItemView::item:hover {
     color: #1d2a36;
     background-color: #dceefe;
 }
+
+QLabel#train_route_value, QLabel#train_state_value {
+    min-height: 28px;
+    padding: 0 8px;
+    border: 1px solid #d7e0e8;
+    border-radius: 5px;
+    background: #f7fafc;
+    color: #28445d;
+    font-weight: 600;
+}
 """

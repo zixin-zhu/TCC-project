@@ -103,6 +103,7 @@ class TccOverviewWidget(QWidget):
         self._balise_symbols = []
         self._interval_boundary_markers = []
         self._interval_code_segments = []
+        self._train_marker_symbols = []
 
     @staticmethod
     def layout_contract():
@@ -251,12 +252,48 @@ class TccOverviewWidget(QWidget):
         }
         if route_type not in route_tracks:
             raise ValueError("非法进路类型")
+        endpoints = {
+            ("A", RouteType.MAIN_DEPART): ("X1", "SN"),
+            ("A", RouteType.SIDE_DEPART): ("X3", "SN"),
+            ("A", RouteType.MAIN_RECEIVE): ("SN", "S1"),
+            ("A", RouteType.SIDE_RECEIVE): ("SN", "S3"),
+            ("B", RouteType.MAIN_RECEIVE): ("X", "X1"),
+            ("B", RouteType.SIDE_RECEIVE): ("X", "X3"),
+            ("B", RouteType.MAIN_DEPART): ("S1", "X"),
+            ("B", RouteType.SIDE_DEPART): ("S3", "X"),
+        }
+        start_signal, end_signal = endpoints[(station, route_type)]
         return {
             "station": station,
             "route_type": route_type,
             "track": route_tracks[route_type],
             "interval_throat": "RIGHT" if station == "A" else "LEFT",
+            "start_signal": start_signal,
+            "end_signal": end_signal,
         }
+
+    @staticmethod
+    def train_marker_contract(train, waiting_index=0):
+        direction = train.get("direction", "A_TO_B")
+        status = train.get("status")
+        phase = train.get("movement_phase")
+        if status == "WAITING":
+            return {
+                "region": "WAITING",
+                "station": "A" if direction == "A_TO_B" else "B",
+                "signal": "X" if direction == "A_TO_B" else "S",
+                "side": "RIGHT" if direction == "A_TO_B" else "LEFT",
+                "label": f"x{waiting_index + 1}",
+            }
+        if phase in ("RECEIVING", "STATION_RUNNING", "EXITING"):
+            position = max(0.0, min(float(train.get("station_position") or 0), 3000.0))
+            return {
+                "region": "STATION",
+                "station": "B" if direction == "A_TO_B" else "A",
+                "progress": position / 3000.0,
+                "track": train.get("arrival_track") or "1G",
+            }
+        return {"region": "INTERVAL"}
 
     @classmethod
     def balise_geometry_contract(cls):
@@ -322,6 +359,7 @@ class TccOverviewWidget(QWidget):
         self._balise_symbols = []
         self._interval_boundary_markers = []
         self._interval_code_segments = []
+        self._train_marker_symbols = []
         self._draw_station(painter, a_left, interval_left, rail_y, code_y, "A")
         self._draw_interval(painter, interval_left, rail_y, code_y)
         self._draw_station(painter, interval_right, b_right, rail_y, code_y, "B")
@@ -548,12 +586,21 @@ class TccOverviewWidget(QWidget):
                 station,
                 route.get("route_type"),
             )
+            positions = self._station_signal_positions[station]
+            start_x = positions[contract["start_signal"]]
+            end_x = positions[contract["end_signal"]]
             if contract["track"] == "1G":
-                painter.drawLine(int(core_left), rail_y, int(core_right), rail_y)
+                painter.drawLine(int(start_x), rail_y, int(end_x), rail_y)
                 continue
 
-            painter.drawLine(int(siding_left), side_y, int(siding_right), side_y)
-            if contract["interval_throat"] == "RIGHT":
+            side_signal_x = (
+                positions["X3"]
+                if "X3" in (contract["start_signal"], contract["end_signal"])
+                else positions["S3"]
+            )
+            outer_x = end_x if contract["end_signal"] in ("X", "SN", "S") else start_x
+            if outer_x > side_signal_x:
+                painter.drawLine(int(side_signal_x), side_y, int(siding_right), side_y)
                 self._draw_lower_gapped_connection(
                     painter,
                     main_right_throat,
@@ -562,9 +609,9 @@ class TccOverviewWidget(QWidget):
                     side_y,
                     5,
                 )
-                painter.drawLine(int(main_right_throat), rail_y, int(core_right), rail_y)
+                painter.drawLine(int(main_right_throat), rail_y, int(outer_x), rail_y)
             else:
-                painter.drawLine(int(core_left), rail_y, int(main_left_throat), rail_y)
+                painter.drawLine(int(outer_x), rail_y, int(main_left_throat), rail_y)
                 self._draw_lower_gapped_connection(
                     painter,
                     main_left_throat,
@@ -573,6 +620,7 @@ class TccOverviewWidget(QWidget):
                     side_y,
                     5,
                 )
+                painter.drawLine(int(siding_left), side_y, int(side_signal_x), side_y)
 
     def _draw_interval(self, painter, left, rail_y, code_y):
         state_by_code = {
@@ -866,9 +914,36 @@ class TccOverviewWidget(QWidget):
             )
 
     def _draw_train_markers(self, painter, interval_left, rail_y):
+        waiting_count = 0
         for train in self.trains:
+            contract = self.train_marker_contract(train, waiting_count)
+            if contract["region"] == "WAITING":
+                waiting_count += 1
+                signal_x = self._station_signal_positions[contract["station"]][
+                    contract["signal"]
+                ]
+                direction_sign = 1 if contract["side"] == "RIGHT" else -1
+                x = signal_x + direction_sign * (18 + (waiting_count - 1) * 22)
+                y = rail_y
+                self._draw_train_marker(painter, x, y, contract["label"])
+                continue
+
             if train.get("status") not in ("RUNNING", "STOPPED"):
                 continue
+
+            if contract["region"] == "STATION":
+                positions = self._station_signal_positions[contract["station"]]
+                if train.get("direction") == "A_TO_B":
+                    start_x, end_x = positions["X"], positions["S"]
+                else:
+                    start_x, end_x = positions["SN"], positions["X"]
+                progress = contract["progress"]
+                x = start_x + (end_x - start_x) * progress
+                side_progress = 0.18 < progress < 0.82
+                y = rail_y - 68 if contract["track"] == "3G" and side_progress else rail_y
+                self._draw_train_marker(painter, x, y, train.get("train_id", ""))
+                continue
+
             track_code = train.get("current_track") or ""
             try:
                 index = int(track_code[1:]) - 1
@@ -876,9 +951,17 @@ class TccOverviewWidget(QWidget):
                 continue
             ratio = max(0.0, min(float(train.get("position", 0)) / 1000.0, 1.0))
             x = interval_left + (index + ratio) * self.SECTION_WIDTH
-            painter.setBrush(QColor("#e8f1f8"))
-            painter.setPen(QPen(QColor("#4aaee8"), 1))
-            painter.drawRoundedRect(QRectF(x - 14, rail_y - 20, 28, 12), 3, 3)
+            self._draw_train_marker(painter, x, rail_y, train.get("train_id", ""))
+
+    def _draw_train_marker(self, painter, x, rail_y, label):
+        rect = QRectF(x - 13, rail_y - 21, 26, 11)
+        painter.setBrush(QColor("#e8f1f8"))
+        painter.setPen(QPen(QColor("#4aaee8"), 1))
+        painter.drawRoundedRect(rect, 3, 3)
+        painter.setPen(QColor("#8fd7ff"))
+        painter.setFont(QFont("PingFang SC", 7, QFont.Bold))
+        painter.drawText(int(x - 11), int(rail_y - 25), str(label))
+        self._train_marker_symbols.append({"x": x, "rail_y": rail_y, "label": str(label)})
 
     def mousePressEvent(self, event):
         for balise_id, hitbox in self._active_balise_hitboxes.items():

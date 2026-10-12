@@ -502,20 +502,27 @@ class MainWindow(QMainWindow):
         self.train_selector_layout.addSpacing(10)
 
         self.train_selector_layout.addWidget(QLabel("发车方式："))
-        self.departure_mode_combo = QComboBox()
-        self.departure_mode_combo.addItems(["正线发车", "侧线发车"])
-        self.departure_mode_combo.setMinimumWidth(120)
-        self.train_selector_layout.addWidget(self.departure_mode_combo)
+        self.departure_mode_value = QLabel("发车进路尚未建立")
+        self.departure_mode_value.setObjectName("train_route_value")
+        self.departure_mode_value.setMinimumWidth(132)
+        self.train_selector_layout.addWidget(self.departure_mode_value)
         self.train_selector_layout.addSpacing(10)
 
         self.train_selector_layout.addWidget(QLabel("接车方式："))
-        self.arrival_mode_combo = QComboBox()
-        self.arrival_mode_combo.addItems(["正线接车", "侧线接车"])
-        self.arrival_mode_combo.setMinimumWidth(120)
-        self.train_selector_layout.addWidget(self.arrival_mode_combo)
+        self.arrival_mode_value = QLabel("接车进路尚未建立")
+        self.arrival_mode_value.setObjectName("train_route_value")
+        self.arrival_mode_value.setMinimumWidth(132)
+        self.train_selector_layout.addWidget(self.arrival_mode_value)
         self.train_selector_layout.addSpacing(10)
 
-        self.train_selector_layout.addWidget(QLabel("最大速度："))
+        self.train_selector_layout.addWidget(QLabel("当前列车状态："))
+        self.train_state_value = QLabel("--")
+        self.train_state_value.setObjectName("train_state_value")
+        self.train_state_value.setMinimumWidth(92)
+        self.train_selector_layout.addWidget(self.train_state_value)
+        self.train_selector_layout.addSpacing(10)
+
+        self.train_selector_layout.addWidget(QLabel("设置速度："))
         self.max_speed_combo = QComboBox()
         self.max_speed_combo.setObjectName("train_max_speed")
         self.max_speed_combo.addItems(
@@ -536,16 +543,20 @@ class MainWindow(QMainWindow):
             "当前分区：--"
         )
 
-        self.info_position = QLabel(
-            "分区位置：--"
-        )
-
         self.info_speed = QLabel(
             "当前速度：--"
         )
 
-        self.info_target = QLabel(
-            "目标速度：--"
+        self.info_safety = QLabel(
+            "安全状态：--"
+        )
+
+        self.info_distance = QLabel(
+            "前车距离：--"
+        )
+
+        self.info_braking = QLabel(
+            "制动距离：--"
         )
 
         self.train_status_grid.addWidget(
@@ -555,7 +566,7 @@ class MainWindow(QMainWindow):
         )
 
         self.train_status_grid.addWidget(
-            self.info_position,
+            self.info_safety,
             0,
             1
         )
@@ -566,13 +577,9 @@ class MainWindow(QMainWindow):
             2
         )
 
-        self.train_status_grid.addWidget(
-            self.info_target,
-            0,
-            3
-        )
+        self.train_status_grid.addWidget(self.info_distance, 0, 3)
 
-        # 第二行
+        # 第三行（状态网格第二行）
         self.info_code = QLabel(
             "当前码序：--"
         )
@@ -583,10 +590,6 @@ class MainWindow(QMainWindow):
 
         self.info_balise = QLabel(
             "最后应答器：--"
-        )
-
-        self.info_safety = QLabel(
-            "安全状态：--"
         )
 
         self.train_status_grid.addWidget(
@@ -607,32 +610,7 @@ class MainWindow(QMainWindow):
             2
         )
 
-        self.train_status_grid.addWidget(
-            self.info_safety,
-            1,
-            3
-        )
-
-        # 第三行
-        self.info_distance = QLabel(
-            "前车距离：--"
-        )
-
-        self.info_braking = QLabel(
-            "制动距离：--"
-        )
-
-        self.train_status_grid.addWidget(
-            self.info_distance,
-            0,
-            4
-        )
-
-        self.train_status_grid.addWidget(
-            self.info_braking,
-            1,
-            4
-        )
+        self.train_status_grid.addWidget(self.info_braking, 1, 3)
 
         train_info_layout.addLayout(self.train_status_grid)
 
@@ -780,12 +758,6 @@ class MainWindow(QMainWindow):
         self.train_selector.currentTextChanged.connect(
             self.on_selected_train_changed
         )
-        self.departure_mode_combo.currentTextChanged.connect(
-            self.remember_selected_train_draft
-        )
-        self.arrival_mode_combo.currentTextChanged.connect(
-            self.remember_selected_train_draft
-        )
         self.max_speed_combo.currentTextChanged.connect(
             self.change_selected_train_max_speed
         )
@@ -880,24 +852,12 @@ class MainWindow(QMainWindow):
             )
             return
 
-        departure_mode = (
-            "MAIN"
-            if self.departure_mode_combo.currentText() == "正线发车"
-            else "SIDE"
-        )
-        arrival_mode = (
-            "MAIN"
-            if self.arrival_mode_combo.currentText() == "正线接车"
-            else "SIDE"
-        )
         max_speed = int(self.max_speed_combo.currentText().split()[0])
 
         was_globally_paused = self.train_service.globally_paused
         try:
             self.train_service.dispatch_selected_train(
                 train_id,
-                departure_mode,
-                arrival_mode,
                 max_speed,
             )
         except (OperationRuleError, ValueError) as error:
@@ -983,8 +943,6 @@ class MainWindow(QMainWindow):
         if train is None or train.status != "WAITING":
             return
         self._train_control_drafts[train_id] = {
-            "departure": self.departure_mode_combo.currentText(),
-            "arrival": self.arrival_mode_combo.currentText(),
             "max_speed": self.max_speed_combo.currentText(),
         }
 
@@ -1065,7 +1023,9 @@ class MainWindow(QMainWindow):
                 station,
                 route_type,
             )
-            self.route_service.establish_route(station, route_type)
+            route = self.route_service.establish_route(station, route_type)
+            if route.movement == "RECEIVE":
+                self.train_service.assign_receive_route(route)
         except (OperationRuleError, ValueError) as error:
             self.show_operation_error("进路建立失败", error)
             return
@@ -1465,24 +1425,17 @@ class MainWindow(QMainWindow):
         # 基本运行信息
         # ==========================================
 
-        self.info_track.setText(
-            f"当前分区："
-            f"{selected_train.get('current_track') or '--'}"
-        )
-
-        self.info_position.setText(
-            f"分区位置："
-            f"{selected_train.get('position', 0):.0f} m"
-        )
+        current_section = selected_train.get("current_track")
+        if current_section is None and selected_train.get("movement_phase") in (
+            "RECEIVING", "STATION_RUNNING", "EXITING"
+        ):
+            station = "B站" if selected_train.get("direction") == "A_TO_B" else "A站"
+            current_section = f"{station}{selected_train.get('arrival_track') or ''}"
+        self.info_track.setText(f"当前分区：{current_section or '--'}")
 
         self.info_speed.setText(
             f"当前速度："
             f"{selected_train.get('speed', 0):.1f} km/h"
-        )
-
-        self.info_target.setText(
-            f"目标速度："
-            f"{selected_train.get('target_speed', 0):.1f} km/h"
         )
 
         # ==========================================
@@ -1578,16 +1531,8 @@ class MainWindow(QMainWindow):
             "当前分区：--"
         )
 
-        self.info_position.setText(
-            "分区位置：--"
-        )
-
         self.info_speed.setText(
             "当前速度：--"
-        )
-
-        self.info_target.setText(
-            "目标速度：--"
         )
 
         self.info_code.setText(
@@ -1617,55 +1562,63 @@ class MainWindow(QMainWindow):
     def sync_selected_train_controls(self, _train_id=None):
         train_id = self.train_selector.currentText()
         train = self.train_service.trains.get(train_id)
-        combos = (
-            self.departure_mode_combo,
-            self.arrival_mode_combo,
-            self.max_speed_combo,
-        )
-        for combo in combos:
-            combo.blockSignals(True)
+        self.max_speed_combo.blockSignals(True)
 
         try:
             if train is None:
-                self.departure_mode_combo.setCurrentText("正线发车")
-                self.arrival_mode_combo.setCurrentText("正线接车")
+                self.departure_mode_value.setText("发车进路尚未建立")
+                self.arrival_mode_value.setText("接车进路尚未建立")
+                self.train_state_value.setText("--")
                 self.max_speed_combo.setCurrentText("120 km/h")
-                for combo in combos:
-                    combo.setEnabled(False)
+                self.max_speed_combo.setEnabled(False)
                 return
 
             draft = self._train_control_drafts.get(train_id)
             if draft is None:
                 draft = {
-                    "departure": (
-                        "侧线发车"
-                        if train.departure_mode == "SIDE"
-                        else "正线发车"
-                    ),
-                    "arrival": (
-                        "侧线接车"
-                        if train.arrival_mode == "SIDE"
-                        else "正线接车"
-                    ),
                     "max_speed": f"{int(train.max_speed)} km/h",
                 }
                 self._train_control_drafts[train_id] = draft
 
-            self.departure_mode_combo.setCurrentText(draft["departure"])
-            self.arrival_mode_combo.setCurrentText(draft["arrival"])
+            departure_mode = train.departure_mode
+            if departure_mode is None and train.status == "WAITING":
+                route = self.route_service.departure_route(
+                    self.train_service.get_departure_station(train.direction)
+                )
+                if route is not None:
+                    departure_mode = "MAIN" if route.track == "1G" else "SIDE"
+            self.departure_mode_value.setText(
+                "正线发车" if departure_mode == "MAIN" else
+                "侧线发车" if departure_mode == "SIDE" else
+                "发车进路尚未建立"
+            )
+            self.arrival_mode_value.setText(
+                "正线接车" if train.arrival_mode == "MAIN" else
+                "侧线接车" if train.arrival_mode == "SIDE" else
+                "接车进路尚未建立"
+            )
+            phase_labels = {
+                "WAITING": "待发",
+                "DEPARTING": "发车进路运行",
+                "INTERVAL_RUNNING": "区间运行",
+                "WAITING_RECEIVE_ROUTE": "等待接车进路",
+                "RECEIVING": "接车进路运行",
+                "STATION_RUNNING": "站内运行",
+                "EXITING": "驶出车站",
+                "ARRIVED": "运行完成",
+            }
+            self.train_state_value.setText(
+                phase_labels.get(train.movement_phase, train.status)
+            )
             self.max_speed_combo.setCurrentText(
                 f"{int(train.max_speed)} km/h"
             )
 
-            modes_editable = train.status == "WAITING"
-            self.departure_mode_combo.setEnabled(modes_editable)
-            self.arrival_mode_combo.setEnabled(modes_editable)
             self.max_speed_combo.setEnabled(
                 train.status in ("WAITING", "RUNNING", "STOPPED")
             )
         finally:
-            for combo in combos:
-                combo.blockSignals(False)
+            self.max_speed_combo.blockSignals(False)
 
     def on_selected_train_changed(self, _train_id=None):
         self.sync_selected_train_controls()

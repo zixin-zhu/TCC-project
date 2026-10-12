@@ -70,6 +70,112 @@ class PhaseOneUiContractTest(unittest.TestCase):
         window.connected_stations.update({"A", "B"})
         window.refresh_control_states()
 
+    def test_train_status_area_uses_route_derived_labels_and_two_by_four_grid(self):
+        window = MainWindow()
+
+        self.assertIsInstance(window.departure_mode_value, QLabel)
+        self.assertIsInstance(window.arrival_mode_value, QLabel)
+        self.assertIsInstance(window.train_state_value, QLabel)
+        self.assertFalse(hasattr(window, "departure_mode_combo"))
+        self.assertFalse(hasattr(window, "arrival_mode_combo"))
+        self.assertFalse(hasattr(window, "info_position"))
+        self.assertFalse(hasattr(window, "info_target"))
+
+        expected_positions = {
+            window.info_track: (0, 0),
+            window.info_safety: (0, 1),
+            window.info_speed: (0, 2),
+            window.info_distance: (0, 3),
+            window.info_code: (1, 0),
+            window.info_line_speed: (1, 1),
+            window.info_balise: (1, 2),
+            window.info_braking: (1, 3),
+        }
+        for widget, expected in expected_positions.items():
+            index = window.train_status_grid.indexOf(widget)
+            self.assertEqual(
+                window.train_status_grid.getItemPosition(index)[:2], expected
+            )
+        window.close()
+
+    def test_route_highlights_use_exact_signal_endpoints(self):
+        cases = (
+            ("A", RouteType.MAIN_DEPART, ("X1", "SN")),
+            ("A", RouteType.SIDE_DEPART, ("X3", "SN")),
+            ("B", RouteType.MAIN_RECEIVE, ("X", "X1")),
+            ("B", RouteType.SIDE_RECEIVE, ("X", "X3")),
+            ("B", RouteType.MAIN_DEPART, ("S1", "X")),
+            ("B", RouteType.SIDE_DEPART, ("S3", "X")),
+            ("A", RouteType.MAIN_RECEIVE, ("SN", "S1")),
+            ("A", RouteType.SIDE_RECEIVE, ("SN", "S3")),
+        )
+        for station, route_type, endpoints in cases:
+            with self.subTest(station=station, route_type=route_type):
+                contract = TccOverviewWidget.route_highlight_contract(
+                    station, route_type
+                )
+                self.assertEqual(
+                    (contract["start_signal"], contract["end_signal"]),
+                    endpoints,
+                )
+
+    def test_establishing_receive_route_assigns_and_resumes_front_train(self):
+        window = MainWindow()
+        self.mark_communication_ready(window)
+        train = window.train_service.create_train()
+        train.enter_track("G38")
+        train.position = window.train_service.default_track_length + 1
+        window.train_service.handle_track_transition(train)
+        window.refresh_view()
+        window.train_selector.setCurrentText(train.train_id)
+        window.route_station_combo.setCurrentText("B站")
+        window.route_type_combo.setCurrentText("正线接车")
+
+        window.establish_selected_route()
+
+        route = window.route_service.receive_route("B")
+        self.assertIsNotNone(route)
+        self.assertEqual(route.train_id, train.train_id)
+        self.assertEqual(train.receive_route_id, route.route_id)
+        self.assertEqual(train.status, "RUNNING")
+        self.assertEqual(window.arrival_mode_value.text(), "正线接车")
+        window.close()
+
+    def test_train_marker_contract_places_waiting_and_station_trains(self):
+        forward_waiting = TccOverviewWidget.train_marker_contract(
+            {"status": "WAITING", "direction": "A_TO_B"}, 0
+        )
+        reverse_waiting = TccOverviewWidget.train_marker_contract(
+            {"status": "WAITING", "direction": "B_TO_A"}, 1
+        )
+        station_start = TccOverviewWidget.train_marker_contract(
+            {
+                "status": "RUNNING",
+                "direction": "A_TO_B",
+                "movement_phase": "RECEIVING",
+                "station_position": 500,
+            }
+        )
+        station_later = TccOverviewWidget.train_marker_contract(
+            {
+                "status": "RUNNING",
+                "direction": "A_TO_B",
+                "movement_phase": "STATION_RUNNING",
+                "station_position": 2200,
+            }
+        )
+
+        self.assertEqual(forward_waiting["station"], "A")
+        self.assertEqual(forward_waiting["signal"], "X")
+        self.assertEqual(forward_waiting["side"], "RIGHT")
+        self.assertEqual(forward_waiting["label"], "x1")
+        self.assertEqual(reverse_waiting["station"], "B")
+        self.assertEqual(reverse_waiting["signal"], "S")
+        self.assertEqual(reverse_waiting["side"], "LEFT")
+        self.assertEqual(reverse_waiting["label"], "x2")
+        self.assertEqual(station_start["region"], "STATION")
+        self.assertLess(station_start["progress"], station_later["progress"])
+
     def assert_complete_warning(self, warning, expected_title):
         title, message = warning.call_args.args[1:3]
         self.assertEqual(title, expected_title)
@@ -612,11 +718,8 @@ class PhaseOneUiContractTest(unittest.TestCase):
         visible_labels = [label.text() for label in window.findChildren(QLabel)]
         self.assertFalse(any("通信角色" in text for text in visible_labels))
 
-        self.assertEqual(window.departure_mode_combo.count(), 2)
-        self.assertEqual(window.departure_mode_combo.itemText(0), "正线发车")
-        self.assertEqual(window.departure_mode_combo.itemText(1), "侧线发车")
-        self.assertEqual(window.arrival_mode_combo.itemText(0), "正线接车")
-        self.assertEqual(window.arrival_mode_combo.itemText(1), "侧线接车")
+        self.assertEqual(window.departure_mode_value.text(), "发车进路尚未建立")
+        self.assertEqual(window.arrival_mode_value.text(), "接车进路尚未建立")
         self.assertEqual(window.start_button.text(), "▶ 发车")
         self.assertEqual(
             [
@@ -893,8 +996,8 @@ class PhaseOneUiContractTest(unittest.TestCase):
                 train = window.train_service.add_waiting_train()
                 window.refresh_view()
                 window.train_selector.setCurrentText(train.train_id)
-                window.departure_mode_combo.setCurrentText("侧线发车")
-                window.arrival_mode_combo.setCurrentText("正线接车")
+                window.sync_selected_train_controls()
+                self.assertEqual(window.departure_mode_value.text(), "侧线发车")
 
                 window.dispatch_selected_train()
 
@@ -994,8 +1097,6 @@ class PhaseOneUiContractTest(unittest.TestCase):
     def test_adding_train_does_not_capture_departure_or_arrival_mode(self):
         window = MainWindow()
         self.mark_communication_ready(window)
-        window.departure_mode_combo.setCurrentText("侧线发车")
-        window.arrival_mode_combo.setCurrentText("正线接车")
 
         window.add_waiting_train()
 
@@ -1015,8 +1116,6 @@ class PhaseOneUiContractTest(unittest.TestCase):
         second = window.train_service.add_waiting_train()
         window.refresh_view()
         window.train_selector.setCurrentText(first.train_id)
-        window.departure_mode_combo.setCurrentText("侧线发车")
-        window.arrival_mode_combo.setCurrentText("正线接车")
 
         with patch("ui.main_window.QMessageBox.warning") as warning:
             window.dispatch_selected_train()
@@ -1043,18 +1142,16 @@ class PhaseOneUiContractTest(unittest.TestCase):
 
         window.train_selector.setCurrentText(waiting.train_id)
         window.sync_selected_train_controls()
-        self.assertTrue(window.departure_mode_combo.isEnabled())
-        self.assertTrue(window.arrival_mode_combo.isEnabled())
+        self.assertEqual(window.departure_mode_value.text(), "发车进路尚未建立")
+        self.assertEqual(window.arrival_mode_value.text(), "接车进路尚未建立")
         self.assertTrue(window.max_speed_combo.isEnabled())
         self.assertEqual(window.max_speed_combo.currentText(), "120 km/h")
 
         window.train_selector.setCurrentText(running.train_id)
         window.sync_selected_train_controls()
-        self.assertFalse(window.departure_mode_combo.isEnabled())
-        self.assertFalse(window.arrival_mode_combo.isEnabled())
         self.assertTrue(window.max_speed_combo.isEnabled())
-        self.assertEqual(window.departure_mode_combo.currentText(), "侧线发车")
-        self.assertEqual(window.arrival_mode_combo.currentText(), "正线接车")
+        self.assertEqual(window.departure_mode_value.text(), "侧线发车")
+        self.assertEqual(window.arrival_mode_value.text(), "正线接车")
         self.assertEqual(window.max_speed_combo.currentText(), "250 km/h")
 
         current_speed = running.speed
@@ -1138,8 +1235,8 @@ class PhaseOneUiContractTest(unittest.TestCase):
 
         distance_index = window.train_status_grid.indexOf(window.info_distance)
         braking_index = window.train_status_grid.indexOf(window.info_braking)
-        self.assertEqual(window.train_status_grid.getItemPosition(distance_index)[:2], (0, 4))
-        self.assertEqual(window.train_status_grid.getItemPosition(braking_index)[:2], (1, 4))
+        self.assertEqual(window.train_status_grid.getItemPosition(distance_index)[:2], (0, 3))
+        self.assertEqual(window.train_status_grid.getItemPosition(braking_index)[:2], (1, 3))
 
         self.assertIsInstance(window.train_selector_layout, QHBoxLayout)
         self.assertLessEqual(window.train_selector_layout.spacing(), 5)
