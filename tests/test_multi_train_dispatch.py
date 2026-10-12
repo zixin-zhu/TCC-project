@@ -87,6 +87,78 @@ class MultiTrainLifecycleTest(unittest.TestCase):
         receive = self.routes.establish_route("B", RouteType.MAIN_RECEIVE)
         return departure, receive
 
+    def test_dispatch_requires_only_departure_route_and_derives_side_mode(self):
+        departure = self.routes.establish_route("A", RouteType.SIDE_DEPART)
+        selected = self.service.add_waiting_train()
+
+        dispatched = self.service.dispatch_selected_train(
+            selected.train_id,
+            160,
+        )
+
+        self.assertIs(dispatched, selected)
+        self.assertEqual(selected.status, "RUNNING")
+        self.assertEqual(selected.current_track, "G01")
+        self.assertEqual(selected.departure_mode, "SIDE")
+        self.assertEqual(selected.station_track, "3G")
+        self.assertIsNone(selected.arrival_mode)
+        self.assertEqual(selected.movement_phase, "INTERVAL_RUNNING")
+        self.assertIsNone(selected.departure_route_id)
+        self.assertNotIn(departure, self.routes.active_routes())
+
+    def test_reverse_dispatch_uses_b_station_departure_route(self):
+        self.simulation.set_direction("B_TO_A")
+        departure = self.routes.establish_route("B", RouteType.MAIN_DEPART)
+        selected = self.service.add_waiting_train()
+
+        self.service.dispatch_selected_train(selected.train_id, 120)
+
+        self.assertEqual(selected.direction, "B_TO_A")
+        self.assertEqual(selected.current_track, "G38")
+        self.assertEqual(selected.departure_mode, "MAIN")
+        self.assertNotIn(departure, self.routes.active_routes())
+
+    def test_next_train_requires_a_rebuilt_departure_route(self):
+        self.routes.establish_route("A", RouteType.MAIN_DEPART)
+        first = self.service.add_waiting_train()
+        second = self.service.add_waiting_train()
+        self.service.dispatch_selected_train(first.train_id, 120)
+        first.current_track = "G03"
+        self.service.sync_track_circuits()
+
+        with self.assertRaises(OperationRuleError) as raised:
+            self.service.dispatch_selected_train(second.train_id, 120)
+
+        self.assertIn("发车进路尚未建立", raised.exception.format_message())
+        self.assertEqual(second.status, "WAITING")
+
+    def test_receive_route_is_assigned_only_to_the_frontmost_train(self):
+        rear = self.service.create_train()
+        rear.enter_track("G20")
+        front = self.service.create_train()
+        front.enter_track("G30")
+        receive = self.routes.establish_route("B", RouteType.SIDE_RECEIVE)
+
+        assigned = self.service.assign_receive_route(receive)
+
+        self.assertIs(assigned, front)
+        self.assertEqual(receive.state, RouteState.LOCKED)
+        self.assertEqual(receive.train_id, front.train_id)
+        self.assertEqual(front.receive_route_id, receive.route_id)
+        self.assertEqual(front.arrival_mode, "SIDE")
+        self.assertIsNone(rear.receive_route_id)
+        self.assertIsNone(rear.arrival_mode)
+
+    def test_receive_route_without_an_active_candidate_remains_established(self):
+        self.service.add_waiting_train()
+        receive = self.routes.establish_route("B", RouteType.MAIN_RECEIVE)
+
+        assigned = self.service.assign_receive_route(receive)
+
+        self.assertIsNone(assigned)
+        self.assertEqual(receive.state, RouteState.ESTABLISHED)
+        self.assertIsNone(receive.train_id)
+
     def test_dispatch_selected_train_leaves_other_waiting_train_untouched(self):
         departure, _ = self.establish_main_routes()
         first = self.service.add_waiting_train()
@@ -141,8 +213,7 @@ class MultiTrainLifecycleTest(unittest.TestCase):
         self.service.dispatch_selected_train(front.train_id, "MAIN", "MAIN", 120)
         front.current_track = "G02"
         front.position = 100.0
-        self.routes.unlock_route(departure.route_id)
-        front.route_id = None
+        departure = self.routes.establish_route("A", RouteType.MAIN_DEPART)
         self.service.sync_track_circuits()
 
         with self.assertRaises(OperationRuleError) as raised:

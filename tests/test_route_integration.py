@@ -45,18 +45,18 @@ class RouteTrainIntegrationTest(unittest.TestCase):
         self.assertFalse(self.trains.dispatch_train(train))
         self.assertEqual(train.status, "WAITING")
 
-    def test_matching_departure_route_dispatches_and_locks(self):
+    def test_matching_departure_route_dispatches_and_is_consumed(self):
         route = self.routes.establish_route("A", RouteType.MAIN_DEPART)
         train = self.trains.add_waiting_train("MAIN")
 
         self.assertTrue(self.trains.dispatch_train(train))
         self.assertEqual(train.current_track, "G01")
         self.assertEqual(train.station_track, "1G")
-        self.assertEqual(train.route_id, route.route_id)
-        self.assertEqual(route.state, RouteState.LOCKED)
-        self.assertEqual(route.train_id, train.train_id)
+        self.assertIsNone(train.route_id)
+        self.assertIsNone(train.departure_route_id)
+        self.assertNotIn(route, self.routes.active_routes())
 
-    def test_departure_route_remains_established_after_train_enters_second_section(self):
+    def test_departure_route_is_not_restored_after_train_enters_second_section(self):
         route = self.routes.establish_route("A", RouteType.SIDE_DEPART)
         train = self.trains.add_waiting_train("SIDE")
         self.assertTrue(self.trains.dispatch_train(train))
@@ -66,11 +66,9 @@ class RouteTrainIntegrationTest(unittest.TestCase):
 
         self.assertEqual(train.current_track, "G02")
         self.assertIsNone(train.route_id)
-        self.assertIn(route, self.routes.active_routes())
-        self.assertEqual(route.state, RouteState.ESTABLISHED)
-        self.assertIsNone(route.train_id)
+        self.assertNotIn(route, self.routes.active_routes())
 
-    def test_receive_route_locks_at_terminal_section_and_remains_after_arrival(self):
+    def test_receive_route_can_be_assigned_independently_after_departure(self):
         self.simulation.set_direction("B_TO_A")
         departure = self.routes.establish_route("B", RouteType.SIDE_DEPART)
         receive = self.routes.establish_route("A", RouteType.SIDE_RECEIVE)
@@ -79,25 +77,13 @@ class RouteTrainIntegrationTest(unittest.TestCase):
 
         train.position = self.trains.default_track_length + 1
         self.trains.handle_track_transition(train)
-        self.assertIn(departure, self.routes.active_routes())
-        self.assertEqual(departure.state, RouteState.ESTABLISHED)
+        self.assertNotIn(departure, self.routes.active_routes())
+        assigned = self.trains.assign_receive_route(receive)
 
-        train.current_track = "G02"
-        train.position = self.trains.default_track_length + 1
-        self.trains.handle_track_transition(train)
-
-        self.assertEqual(train.current_track, "G01")
+        self.assertIs(assigned, train)
         self.assertEqual(train.route_id, receive.route_id)
+        self.assertEqual(train.receive_route_id, receive.route_id)
         self.assertEqual(receive.state, RouteState.LOCKED)
-
-        train.position = self.trains.default_track_length + 1
-        self.trains.handle_track_transition(train)
-
-        self.assertEqual(train.status, "ARRIVED")
-        self.assertIsNone(train.route_id)
-        self.assertIn(receive, self.routes.active_routes())
-        self.assertEqual(receive.state, RouteState.ESTABLISHED)
-        self.assertIsNone(receive.train_id)
 
 
 class RouteSignalIntegrationTest(unittest.TestCase):

@@ -130,8 +130,14 @@ class RouteService:
     def departure_route_for(self, station: str, track: str) -> Route | None:
         return self._route_for(station, track, "DEPART")
 
+    def departure_route(self, station: str) -> Route | None:
+        return self._movement_route(station, "DEPART")
+
     def receive_route_for(self, station: str, track: str) -> Route | None:
         return self._route_for(station, track, "RECEIVE")
+
+    def receive_route(self, station: str) -> Route | None:
+        return self._movement_route(station, "RECEIVE")
 
     def has_departure_route(self, station: str) -> bool:
         return any(
@@ -142,5 +148,11 @@ class RouteService:
     def _route_for(self, station: str, track: str, movement: str) -> Route | None:
         for route in self.active_routes(station):
             if route.track == track and route.movement == movement:
+                return route
+        return None
+
+    def _movement_route(self, station: str, movement: str) -> Route | None:
+        for route in self.active_routes(station):
+            if route.movement == movement:
                 return route
         return None

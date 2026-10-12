@@ -131,6 +131,20 @@ class OperationPolicy:
                 "或修改列车的接车方式。",
             )
 
+    @classmethod
+    def validate_departure_route(cls, direction: str, train_id: str, route_service):
+        if direction not in cls.ALLOWED_ROUTES:
+            cls.validate_route_request(direction, "A", RouteType.MAIN_DEPART)
+        departure_station = "A" if direction == "A_TO_B" else "B"
+        route = route_service.departure_route(departure_station)
+        if route is None:
+            raise OperationRuleError(
+                f"列车{train_id}不能发车",
+                f"{departure_station}站发车进路尚未建立。",
+                f"请先建立{departure_station}站正线或侧线发车进路后重试。",
+            )
+        return route
+
     @staticmethod
     def _mode_to_track(mode: str) -> str:
         if mode not in ("MAIN", "SIDE"):

@@ -17,6 +17,10 @@ class Train:
         self.arrival_mode = None
         self.station_track = None
         self.arrival_track = None
+        self.departure_route_id = None
+        self.receive_route_id = None
+        self.receive_waiting_reason = None
+        self.movement_phase = "WAITING"
         if departure_mode is not None:
             self.configure_operation_modes(
                 departure_mode,
@@ -79,15 +83,29 @@ class Train:
         # 下一分区线路限速
         self.next_line_speed = None
 
-    def configure_operation_modes(self, departure_mode, arrival_mode):
+    def configure_operation_modes(self, departure_mode, arrival_mode=None):
         if departure_mode not in ("MAIN", "SIDE"):
             raise ValueError("非法发车方式")
-        if arrival_mode not in ("MAIN", "SIDE"):
+        if arrival_mode is not None and arrival_mode not in ("MAIN", "SIDE"):
             raise ValueError("非法接车方式")
         self.departure_mode = departure_mode
         self.arrival_mode = arrival_mode
         self.station_track = "1G" if departure_mode == "MAIN" else "3G"
-        self.arrival_track = "1G" if arrival_mode == "MAIN" else "3G"
+        self.arrival_track = (
+            "1G" if arrival_mode == "MAIN" else
+            "3G" if arrival_mode == "SIDE" else None
+        )
+
+    def configure_departure_route(self, route_id, track):
+        self.departure_route_id = route_id
+        self.departure_mode = "MAIN" if track == "1G" else "SIDE"
+        self.station_track = track
+
+    def configure_receive_route(self, route_id, track):
+        self.receive_route_id = route_id
+        self.arrival_mode = "MAIN" if track == "1G" else "SIDE"
+        self.arrival_track = track
+        self.receive_waiting_reason = None
 
     def set_max_speed(self, speed):
         speed = float(speed)
@@ -108,6 +126,10 @@ class Train:
         self.target_speed = 0.0
         self.status = "WAITING"
         self.route_id = None
+        self.departure_route_id = None
+        self.receive_route_id = None
+        self.receive_waiting_reason = None
+        self.movement_phase = "WAITING"
         self.max_speed = max_speed if preserve_configuration else 120.0
         self.block_speed = 120.0
         self.line_speed = 120.0
@@ -143,6 +165,7 @@ class Train:
         self.position = 0.0
 
         self.status = "RUNNING"
+        self.movement_phase = "INTERVAL_RUNNING"
 
     def leave_section(self):
 
@@ -173,6 +196,10 @@ class Train:
             "station_track": self.station_track,
             "arrival_track": self.arrival_track,
             "route_id": self.route_id,
+            "departure_route_id": self.departure_route_id,
+            "receive_route_id": self.receive_route_id,
+            "receive_waiting_reason": self.receive_waiting_reason,
+            "movement_phase": self.movement_phase,
             "current_track": self.current_track,
 
             "position": round(

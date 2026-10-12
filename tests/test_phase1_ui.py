@@ -774,7 +774,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertIsNone(route.train_id)
         window.close()
 
-    def test_reset_returns_all_dispatched_trains_to_departure_and_preserves_routes(self):
+    def test_reset_returns_all_dispatched_trains_without_restoring_consumed_route(self):
         window = MainWindow()
         self.mark_communication_ready(window)
         route = window.route_service.establish_route(
@@ -808,11 +808,8 @@ class PhaseOneUiContractTest(unittest.TestCase):
 
         window.reset_simulation()
 
-        self.assertEqual(
-            window.route_service.active_routes(), [route, receive_route]
-        )
-        self.assertEqual(route.state, "ESTABLISHED")
-        self.assertIsNone(route.train_id)
+        self.assertEqual(window.route_service.active_routes(), [receive_route])
+        self.assertNotIn(route, window.route_service.active_routes())
         self.assertEqual(
             window.temporary_speed_service.active_restrictions(),
             [restriction],
@@ -837,7 +834,9 @@ class PhaseOneUiContractTest(unittest.TestCase):
             )
         )
         self.assertIs(window.train_service.route_service, window.route_service)
-        self.assertEqual(window.active_route_combo.currentData(), route.route_id)
+        self.assertEqual(
+            window.active_route_combo.currentData(), receive_route.route_id
+        )
         window.close()
 
     def test_no_selected_train_cannot_dispatch(self):
@@ -855,58 +854,23 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertIn("处理建议", message)
         window.close()
 
-    def test_start_rejects_missing_or_mismatched_train_routes(self):
-        cases = (
-            (None, None, "MAIN", "MAIN", "A站", "正线发车"),
-            (
-                RouteType.MAIN_DEPART,
-                RouteType.MAIN_RECEIVE,
-                "SIDE",
-                "MAIN",
-                "A站",
-                "侧线发车",
-            ),
-            (
-                RouteType.MAIN_DEPART,
-                RouteType.MAIN_RECEIVE,
-                "MAIN",
-                "SIDE",
-                "B站",
-                "侧线接车",
-            ),
-        )
+    def test_start_rejects_missing_departure_route_without_requiring_receive(self):
+        window = MainWindow()
+        self.mark_communication_ready(window)
+        train = window.train_service.add_waiting_train()
+        window.refresh_view()
+        window.train_selector.setCurrentText(train.train_id)
 
-        for departure_route, receive_route, departure_mode, arrival_mode, station_text, route_text in cases:
-            with self.subTest(
-                departure_mode=departure_mode,
-                arrival_mode=arrival_mode,
-            ):
-                window = MainWindow()
-                self.mark_communication_ready(window)
-                if departure_route is not None:
-                    window.route_service.establish_route("A", departure_route)
-                if receive_route is not None:
-                    window.route_service.establish_route("B", receive_route)
-                train = window.train_service.add_waiting_train()
-                window.refresh_view()
-                window.train_selector.setCurrentText(train.train_id)
-                window.departure_mode_combo.setCurrentText(
-                    "正线发车" if departure_mode == "MAIN" else "侧线发车"
-                )
-                window.arrival_mode_combo.setCurrentText(
-                    "正线接车" if arrival_mode == "MAIN" else "侧线接车"
-                )
+        with patch("ui.main_window.QMessageBox.warning") as warning:
+            window.dispatch_selected_train()
 
-                with patch("ui.main_window.QMessageBox.warning") as warning:
-                    window.dispatch_selected_train()
-
-                self.assertFalse(window.engine.timer.isActive())
-                title, message = warning.call_args.args[1:3]
-                self.assertEqual(title, "列车发车失败")
-                self.assertIn("T001", message)
-                self.assertIn(station_text, message)
-                self.assertIn(route_text, message)
-                window.close()
+        self.assertFalse(window.engine.timer.isActive())
+        title, message = warning.call_args.args[1:3]
+        self.assertEqual(title, "列车发车失败")
+        self.assertIn("T001", message)
+        self.assertIn("A站", message)
+        self.assertIn("发车进路尚未建立", message)
+        window.close()
 
     def test_matching_routes_start_in_both_directions(self):
         cases = (
@@ -1042,7 +1006,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertIsNone(train.arrival_track)
         window.close()
 
-    def test_start_uses_modes_for_selected_waiting_train_only(self):
+    def test_start_uses_established_departure_route_for_selected_train_only(self):
         window = MainWindow()
         self.mark_communication_ready(window)
         window.route_service.establish_route("A", RouteType.SIDE_DEPART)
@@ -1061,7 +1025,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
         warning.assert_not_called()
         self.assertEqual(first.status, "RUNNING")
         self.assertEqual(first.departure_mode, "SIDE")
-        self.assertEqual(first.arrival_mode, "MAIN")
+        self.assertIsNone(first.arrival_mode)
         self.assertFalse(hasattr(window.train_service, "dispatch_target_id"))
         self.assertIsNone(second.departure_mode)
         self.assertIsNone(second.arrival_mode)
@@ -1107,7 +1071,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
     def test_dispatch_button_can_send_second_selected_train_while_engine_runs(self):
         window = MainWindow()
         self.mark_communication_ready(window)
-        departure = window.route_service.establish_route(
+        window.route_service.establish_route(
             "A", RouteType.MAIN_DEPART
         )
         window.route_service.establish_route("B", RouteType.MAIN_RECEIVE)
@@ -1121,8 +1085,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
 
         first.current_track = "G03"
         first.position = 200.0
-        window.route_service.unlock_route(departure.route_id)
-        first.route_id = None
+        window.route_service.establish_route("A", RouteType.MAIN_DEPART)
         window.train_service.sync_track_circuits()
         window.train_selector.setCurrentText(second.train_id)
         window.refresh_control_states()
