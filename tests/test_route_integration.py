@@ -108,6 +108,111 @@ class RouteSignalIntegrationTest(unittest.TestCase):
         routes = RouteService()
         return routes, SimulationService(station, routes)
 
+    def test_aspect_for_code_covers_all_codes_and_fails_safe(self):
+        _, simulation = self.make_simulation()
+        expected = {
+            "L5": "绿灯",
+            "L4": "绿灯",
+            "L3": "绿灯",
+            "L2": "绿灯",
+            "L": "绿灯",
+            "LU": "黄绿灯",
+            "U": "黄灯",
+            "HU": "红灯",
+            "UUS": "L灯",
+            None: "红灯",
+            "INVALID": "红灯",
+        }
+
+        self.assertEqual(
+            {code: simulation.aspect_for_code(code) for code in expected},
+            expected,
+        )
+
+    def test_station_signal_aspects_follow_active_route_and_track_codes(self):
+        cases = (
+            ("A", "A_TO_B", RouteType.MAIN_DEPART, {"X1": "绿灯", "SN": "黄灯"}),
+            ("A", "A_TO_B", RouteType.SIDE_DEPART, {"X3": "L灯", "SN": "黄灯"}),
+            ("A", "B_TO_A", RouteType.MAIN_RECEIVE, {"SN": "黄灯", "S1": "绿灯"}),
+            ("A", "B_TO_A", RouteType.SIDE_RECEIVE, {"SN": "黄灯", "S3": "L灯"}),
+            ("B", "A_TO_B", RouteType.MAIN_RECEIVE, {"X": "黄灯", "X1": "绿灯"}),
+            ("B", "A_TO_B", RouteType.SIDE_RECEIVE, {"X": "黄灯", "X3": "L灯"}),
+            ("B", "B_TO_A", RouteType.MAIN_DEPART, {"S1": "绿灯", "S": "黄灯"}),
+            ("B", "B_TO_A", RouteType.SIDE_DEPART, {"S3": "L灯", "S": "黄灯"}),
+        )
+        station_codes = {"1G": "L5", "3G": "UUS", "THROAT": "U"}
+
+        for station, direction, route_type, expected_open in cases:
+            with self.subTest(station=station, route_type=route_type):
+                routes, simulation = self.make_simulation(station)
+                simulation.set_direction(direction)
+                routes.establish_route(station, route_type)
+                with patch.object(
+                    simulation,
+                    "get_station_track_codes",
+                    return_value=station_codes,
+                ):
+                    aspects = simulation.get_station_signal_aspects()
+
+                self.assertEqual(
+                    {name: aspect for name, aspect in aspects.items() if aspect != "红灯"},
+                    expected_open,
+                )
+
+    def test_station_signal_aspects_fail_safe_for_wrong_direction_and_occupied_exit(self):
+        routes, simulation = self.make_simulation("A")
+        routes.establish_route("A", RouteType.MAIN_DEPART)
+        station_codes = {"1G": "L5", "3G": "UUS", "THROAT": "L5"}
+
+        simulation.set_direction("B_TO_A")
+        with patch.object(simulation, "get_station_track_codes", return_value=station_codes):
+            wrong_direction = simulation.get_station_signal_aspects()
+
+        simulation.set_direction("A_TO_B")
+        simulation.track_circuits["G01"].occupy()
+        with patch.object(simulation, "get_station_track_codes", return_value=station_codes):
+            occupied_exit = simulation.get_station_signal_aspects()
+
+        self.assertTrue(all(aspect == "红灯" for aspect in wrong_direction.values()))
+        self.assertTrue(all(aspect == "红灯" for aspect in occupied_exit.values()))
+
+    def test_interval_signal_aspects_use_most_restrictive_protected_code(self):
+        _, simulation = self.make_simulation("A")
+        simulation.set_direction("A_TO_B")
+        for code, track_code in (
+            ("G03", "L5"),
+            ("G04", "L3"),
+            ("G05", "L5"),
+            ("G06", "LU"),
+            ("G07", "L5"),
+            ("G08", "U"),
+            ("G09", "L5"),
+            ("G10", "HU"),
+        ):
+            simulation.track_circuits[code].set_track_code(track_code)
+
+        aspects = simulation.get_interval_signal_aspects()
+
+        self.assertEqual(aspects["S01"], "绿灯")
+        self.assertEqual(aspects["S02"], "黄绿灯")
+        self.assertEqual(aspects["S03"], "黄灯")
+        self.assertEqual(aspects["S04"], "红灯")
+
+    def test_interval_signal_aspects_fail_safe_for_occupancy_unknown_code_and_direction(self):
+        _, simulation = self.make_simulation("A")
+        simulation.set_direction("A_TO_B")
+        simulation.track_circuits["G03"].occupy()
+        simulation.track_circuits["G05"].set_track_code("INVALID")
+
+        aspects = simulation.get_interval_signal_aspects()
+
+        self.assertEqual(aspects["S01"], "红灯")
+        self.assertEqual(aspects["S02"], "红灯")
+
+        simulation.set_direction("B_TO_A")
+        reverse_aspects = simulation.get_interval_signal_aspects()
+        self.assertEqual(set(reverse_aspects.values()), {"红灯"})
+
     def test_departure_signal_requires_route_direction_and_clear_entry(self):
         cases = (
             (None, "A_TO_B", False, "红灯"),

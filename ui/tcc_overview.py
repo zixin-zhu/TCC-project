@@ -99,6 +99,8 @@ class TccOverviewWidget(QWidget):
         self.direction = "A_TO_B"
         self.signal_a = "红灯"
         self.signal_b = "红灯"
+        self.station_signals = {"A": {}, "B": {}}
+        self.interval_signals = {}
         self._active_balise_hitboxes = {}
         self._station_code_rects = {}
         self._station_signal_positions = {}
@@ -106,6 +108,7 @@ class TccOverviewWidget(QWidget):
         self._interval_boundary_markers = []
         self._interval_code_segments = []
         self._train_marker_symbols = []
+        self._signal_symbols = []
 
     @staticmethod
     def layout_contract():
@@ -435,6 +438,8 @@ class TccOverviewWidget(QWidget):
         restrictions=None,
         routes=None,
         station_codes=None,
+        station_signals=None,
+        interval_signals=None,
     ):
         self.tracks = tracks or []
         self.trains = trains or []
@@ -448,6 +453,13 @@ class TccOverviewWidget(QWidget):
                 station: dict(codes)
                 for station, codes in station_codes.items()
             }
+        if station_signals is not None:
+            self.station_signals = {
+                station: dict(aspects)
+                for station, aspects in station_signals.items()
+            }
+        if interval_signals is not None:
+            self.interval_signals = dict(interval_signals)
         self.update()
 
     def paintEvent(self, event):
@@ -481,6 +493,7 @@ class TccOverviewWidget(QWidget):
         self._interval_boundary_markers = []
         self._interval_code_segments = []
         self._train_marker_symbols = []
+        self._signal_symbols = []
         self._draw_station(painter, a_left, interval_left, rail_y, code_y, "A")
         self._draw_interval(painter, interval_left, rail_y, code_y)
         self._draw_station(painter, interval_right, b_right, rail_y, code_y, "B")
@@ -558,11 +571,10 @@ class TccOverviewWidget(QWidget):
             (outer_right_x, rail_y, outer_right_name, "LEFT"),
         ]
         for signal_x, track_y, signal_name, signal_direction in signal_specs:
-            signal_status = "红灯"
-            if station == "A" and signal_name == "SN":
-                signal_status = self.signal_a
-            elif station == "B" and signal_name == "X":
-                signal_status = self.signal_b
+            signal_status = self.station_signals.get(station, {}).get(
+                signal_name,
+                "红灯",
+            )
             self._draw_signal(
                 painter,
                 signal_x,
@@ -571,6 +583,7 @@ class TccOverviewWidget(QWidget):
                 signal_status,
                 direction=signal_direction,
                 extend_below_track=(track_y == rail_y),
+                signal_id=f"{station}:{signal_name}",
             )
 
         self._draw_station_code_bands(
@@ -796,10 +809,11 @@ class TccOverviewWidget(QWidget):
                     block_right,
                     rail_y,
                     f"S{block_no:02d}",
-                    "绿灯",
+                    self.interval_signals.get(f"S{block_no:02d}", "红灯"),
                     compact=True,
                     direction="RIGHT",
                     extend_below_track=True,
+                    signal_id=f"INTERVAL:S{block_no:02d}",
                 )
             painter.setPen(QColor("#60798e"))
             painter.setFont(QFont("PingFang SC", 6))
@@ -931,6 +945,7 @@ class TccOverviewWidget(QWidget):
         compact=False,
         direction="RIGHT",
         extend_below_track=True,
+        signal_id=None,
     ):
         stem_height = 26 if compact else 34
         radius = 4 if compact else 5
@@ -978,6 +993,13 @@ class TccOverviewWidget(QWidget):
         painter.setFont(QFont("PingFang SC", 6 if compact else 7))
         label_x = x - 9 if direction == "RIGHT" else x - 22
         painter.drawText(int(label_x), int(lamp_center_y - radius - 4), name)
+        self._signal_symbols.append(
+            {
+                "signal_id": signal_id or name,
+                "name": name,
+                "status": status,
+            }
+        )
 
     def _draw_balise_group(
         self,

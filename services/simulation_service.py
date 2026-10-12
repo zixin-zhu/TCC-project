@@ -25,7 +25,20 @@ class SimulationService:
         "L": "绿灯",
         "LU": "黄绿灯",
         "U": "黄灯",
-        "HU": "红灯"
+        "HU": "红灯",
+        "UUS": "L灯",
+    }
+
+    CODE_RESTRICTIVENESS = {
+        "HU": 0,
+        "UUS": 1,
+        "U": 1,
+        "LU": 2,
+        "L": 3,
+        "L2": 3,
+        "L3": 3,
+        "L4": 3,
+        "L5": 3,
     }
 
     def __init__(self, station_type, route_service=None):
@@ -450,15 +463,22 @@ class SimulationService:
     # 信号机自动联动
     # ==========================================
 
-    def get_aspect_by_code(self, code):
+    def aspect_for_code(self, code):
         """
-        根据自动闭塞码序得到信号机灯色。
+        根据轨道电路码序得到信号机灯色。
+
+        未知码序和空值按故障安全原则显示红灯。
         """
 
         return self.CODE_ASPECTS.get(
             code,
             "红灯"
         )
+
+    def get_aspect_by_code(self, code):
+        """兼容旧调用，统一委托给码序灯色映射。"""
+
+        return self.aspect_for_code(code)
 
     def get_entry_track_code(self):
         """
@@ -501,6 +521,92 @@ class SimulationService:
             codes["THROAT"] = "UUS"
 
         return codes
+
+    def get_station_signal_aspects(self):
+        """返回本站六架信号机的灯色快照。
+
+        只有与当前区间方向一致的已建立进路才允许开放对应的
+        两架信号机；无进路、方向冲突或发车口被占用时全部红灯。
+        """
+        signal_names = (
+            ("X", "S3", "S1", "X3", "X1", "SN")
+            if self.station_type == "A"
+            else ("X", "S3", "S1", "X3", "X1", "S")
+        )
+        aspects = {name: "红灯" for name in signal_names}
+        if self.route_service is None:
+            return aspects
+
+        routes = self.route_service.active_routes(self.station_type)
+        if not routes:
+            return aspects
+        route = routes[0]
+
+        direction = self.tcc.get_direction()
+        allowed_movement = {
+            ("A", "A_TO_B"): "DEPART",
+            ("A", "B_TO_A"): "RECEIVE",
+            ("B", "A_TO_B"): "RECEIVE",
+            ("B", "B_TO_A"): "DEPART",
+        }.get((self.station_type, direction))
+        if route.movement != allowed_movement:
+            return aspects
+
+        if route.movement == "DEPART":
+            exit_track = "G01" if self.station_type == "A" else "G38"
+            if self.track_circuits[exit_track].occupied:
+                return aspects
+
+        endpoints = {
+            ("A", RouteType.MAIN_DEPART): ("X1", "SN", "1G"),
+            ("A", RouteType.SIDE_DEPART): ("X3", "SN", "3G"),
+            ("A", RouteType.MAIN_RECEIVE): ("S1", "SN", "1G"),
+            ("A", RouteType.SIDE_RECEIVE): ("S3", "SN", "3G"),
+            ("B", RouteType.MAIN_RECEIVE): ("X1", "X", "1G"),
+            ("B", RouteType.SIDE_RECEIVE): ("X3", "X", "3G"),
+            ("B", RouteType.MAIN_DEPART): ("S1", "S", "1G"),
+            ("B", RouteType.SIDE_DEPART): ("S3", "S", "3G"),
+        }
+        endpoint = endpoints.get((self.station_type, route.route_type))
+        if endpoint is None:
+            return aspects
+
+        inner_signal, boundary_signal, station_track = endpoint
+        codes = self.get_station_track_codes()
+        aspects[inner_signal] = self.aspect_for_code(codes.get(station_track))
+        aspects[boundary_signal] = self.aspect_for_code(codes.get("THROAT"))
+        return aspects
+
+    def get_interval_signal_aspects(self):
+        """返回下行方向十八架区间信号机的灯色快照。
+
+        每架信号机防护前方一个闭塞分区（两个轨道区段），取两段
+        码序中更限制的一项；占用、未知码序和反方向均按红灯处理。
+        """
+        aspects = {f"S{i:02d}": "红灯" for i in range(1, 19)}
+        if self.tcc.get_direction() != "A_TO_B":
+            return aspects
+
+        for signal_index in range(1, 19):
+            protected = (
+                self.track_circuits[f"G{signal_index * 2 + 1:02d}"],
+                self.track_circuits[f"G{signal_index * 2 + 2:02d}"],
+            )
+            if any(track.occupied for track in protected):
+                continue
+
+            codes = [track.signal_code for track in protected]
+            if any(code not in self.CODE_RESTRICTIVENESS for code in codes):
+                continue
+            restrictive_code = min(
+                codes,
+                key=self.CODE_RESTRICTIVENESS.__getitem__,
+            )
+            aspects[f"S{signal_index:02d}"] = self.aspect_for_code(
+                restrictive_code
+            )
+
+        return aspects
 
     def update_signal_status(self):
         """

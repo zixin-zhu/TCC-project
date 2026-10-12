@@ -1298,6 +1298,13 @@ class MainWindow(QMainWindow):
                 "A": self.simulation_a.get_station_track_codes(),
                 "B": self.simulation_b.get_station_track_codes(),
             },
+            station_signals={
+                "A": self.simulation_a.get_station_signal_aspects(),
+                "B": self.simulation_b.get_station_signal_aspects(),
+            },
+            interval_signals=(
+                self.simulation_a.get_interval_signal_aspects()
+            ),
         )
 
         self.update_train_selector(

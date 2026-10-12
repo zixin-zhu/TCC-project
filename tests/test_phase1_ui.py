@@ -883,6 +883,36 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertFalse(any("查看B站应答器" in text for text in visible_text))
         window.close()
 
+    def test_main_window_refresh_passes_business_signal_snapshots_to_overview(self):
+        window = MainWindow()
+        station_a = {"SN": "黄灯", "X1": "绿灯"}
+        station_b = {"X": "L灯", "X3": "L灯"}
+        interval = {"S01": "黄绿灯", "S02": "黄灯"}
+
+        with (
+            patch.object(
+                window.simulation_a,
+                "get_station_signal_aspects",
+                return_value=station_a,
+            ),
+            patch.object(
+                window.simulation_b,
+                "get_station_signal_aspects",
+                return_value=station_b,
+            ),
+            patch.object(
+                window.simulation_a,
+                "get_interval_signal_aspects",
+                return_value=interval,
+            ),
+        ):
+            window.refresh_view()
+
+        self.assertEqual(window.simulation_view.station_signals["A"], station_a)
+        self.assertEqual(window.simulation_view.station_signals["B"], station_b)
+        self.assertEqual(window.simulation_view.interval_signals, interval)
+        window.close()
+
     def test_station_roles_disconnect_and_operation_controls(self):
         window = MainWindow()
 
@@ -1764,6 +1794,35 @@ class PhaseOneUiContractTest(unittest.TestCase):
 
         self.assertIsInstance(view.routes, tuple)
         self.assertEqual(view.routes[0]["track"], "1G")
+
+    def test_overview_draws_signal_snapshots_and_defaults_missing_signals_to_red(self):
+        view = TccOverviewWidget()
+        view.resize(view.minimumWidth(), 360)
+        view.set_state(
+            [],
+            [],
+            "A_TO_B",
+            station_signals={
+                "A": {"SN": "黄灯", "X1": "绿灯"},
+                "B": {"X": "L灯"},
+            },
+            interval_signals={"S01": "黄绿灯"},
+        )
+        view.show()
+        self.app.processEvents()
+        view.grab()
+        symbols = {
+            item["signal_id"]: item["status"]
+            for item in view._signal_symbols
+        }
+
+        self.assertEqual(symbols["A:SN"], "黄灯")
+        self.assertEqual(symbols["A:X1"], "绿灯")
+        self.assertEqual(symbols["B:X"], "L灯")
+        self.assertEqual(symbols["INTERVAL:S01"], "黄绿灯")
+        self.assertEqual(symbols["A:S1"], "红灯")
+        self.assertEqual(symbols["INTERVAL:S02"], "红灯")
+        view.close()
 
 
 if __name__ == "__main__":
