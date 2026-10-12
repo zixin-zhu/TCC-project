@@ -250,18 +250,22 @@ class TrainService:
                 resumed.append(train)
         return resumed
 
-    def reset_dispatched_trains(self):
+    def reset_dispatched_trains(self, clear_routes=True):
         reset = [
             train
             for train in self.trains.values()
             if train.status in ("RUNNING", "STOPPED", "ARRIVED")
         ]
         for train in reset:
-            if self.route_service is not None:
+            if self.route_service is not None and not clear_routes:
                 self.route_service.unlock_routes_for_train(train.train_id)
-            train.reset_to_departure(preserve_configuration=True)
+            train.reset_to_departure(
+                preserve_configuration=not clear_routes,
+            )
             if train.train_id not in self.waiting_queue:
                 self.waiting_queue.append(train.train_id)
+        if self.route_service is not None and clear_routes:
+            self.route_service.clear_all()
         self.globally_paused = True
         self.sync_track_circuits()
         return reset

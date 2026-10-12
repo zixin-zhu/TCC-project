@@ -99,6 +99,41 @@ class PhaseOneUiContractTest(unittest.TestCase):
             )
         window.close()
 
+    def test_train_status_area_uses_plain_route_and_state_labels(self):
+        window = MainWindow()
+        window.resize(1600, 760)
+        window.show()
+        self.app.processEvents()
+
+        values = (
+            window.departure_mode_value,
+            window.arrival_mode_value,
+            window.train_state_value,
+        )
+        for value in values:
+            self.assertIsInstance(value, QLabel)
+            self.assertEqual(value.styleSheet(), "")
+            self.assertFalse(value.autoFillBackground())
+        self.assertNotIn(
+            "QLabel#train_route_value, QLabel#train_state_value",
+            APP_STYLESHEET,
+        )
+
+        labels = {
+            label.text(): label
+            for label in window.findChildren(QLabel)
+            if label.text() in ("接车方式：", "当前列车状态：", "设置速度：")
+        }
+        adjacent_pairs = (
+            (window.departure_mode_value, labels["接车方式："]),
+            (window.arrival_mode_value, labels["当前列车状态："]),
+            (window.train_state_value, labels["设置速度："]),
+        )
+        for value, next_label in adjacent_pairs:
+            self.assertFalse(value.geometry().intersects(next_label.geometry()))
+            self.assertLess(value.geometry().right(), next_label.geometry().left())
+        window.close()
+
     def test_route_highlights_use_exact_signal_endpoints(self):
         cases = (
             ("A", RouteType.MAIN_DEPART, ("X1", "SN")),
@@ -1085,7 +1120,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertIsNone(route.train_id)
         window.close()
 
-    def test_reset_returns_all_dispatched_trains_without_restoring_consumed_route(self):
+    def test_reset_returns_all_dispatched_trains_and_clears_every_route(self):
         window = MainWindow()
         self.mark_communication_ready(window)
         route = window.route_service.establish_route(
@@ -1121,8 +1156,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
 
         window.reset_simulation()
 
-        self.assertEqual(window.route_service.active_routes(), [receive_route])
-        self.assertNotIn(route, window.route_service.active_routes())
+        self.assertEqual(window.route_service.active_routes(), [])
         self.assertEqual(
             window.temporary_speed_service.active_restrictions(),
             [restriction],
@@ -1130,10 +1164,19 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertIs(window.train_service.trains[train.train_id], train)
         self.assertEqual(train.status, "WAITING")
         self.assertIsNone(train.current_track)
+        self.assertIsNone(train.departure_mode)
+        self.assertIsNone(train.arrival_mode)
+        self.assertIsNone(train.station_track)
+        self.assertIsNone(train.arrival_track)
+        self.assertIsNone(train.route_id)
+        self.assertIsNone(train.departure_route_id)
+        self.assertIsNone(train.receive_route_id)
         self.assertEqual(train.position, 0.0)
         self.assertEqual(train.speed, 0.0)
         self.assertEqual(second.status, "WAITING")
         self.assertIsNone(second.current_track)
+        self.assertIsNone(second.departure_mode)
+        self.assertIsNone(second.arrival_mode)
         self.assertIn(second.train_id, window.train_service.waiting_queue)
         self.assertEqual(train.block_code, "L5")
         self.assertIsNone(train.last_balise)
@@ -1147,9 +1190,12 @@ class PhaseOneUiContractTest(unittest.TestCase):
             )
         )
         self.assertIs(window.train_service.route_service, window.route_service)
-        self.assertEqual(
-            window.active_route_combo.currentData(), receive_route.route_id
-        )
+        self.assertEqual(window.active_route_combo.count(), 0)
+        self.assertFalse(window.route_cancel_button.isEnabled())
+        self.assertEqual(window.departure_mode_value.text(), "发车进路尚未建立")
+        self.assertEqual(window.arrival_mode_value.text(), "接车进路尚未建立")
+        self.assertEqual(window.train_state_value.text(), "待发")
+        self.assertEqual(window.simulation_view.routes, ())
         window.close()
 
     def test_no_selected_train_cannot_dispatch(self):

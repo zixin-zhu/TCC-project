@@ -503,22 +503,19 @@ class MainWindow(QMainWindow):
 
         self.train_selector_layout.addWidget(QLabel("发车方式："))
         self.departure_mode_value = QLabel("发车进路尚未建立")
-        self.departure_mode_value.setObjectName("train_route_value")
-        self.departure_mode_value.setMinimumWidth(132)
+        self.departure_mode_value.setMinimumWidth(126)
         self.train_selector_layout.addWidget(self.departure_mode_value)
         self.train_selector_layout.addSpacing(10)
 
         self.train_selector_layout.addWidget(QLabel("接车方式："))
         self.arrival_mode_value = QLabel("接车进路尚未建立")
-        self.arrival_mode_value.setObjectName("train_route_value")
-        self.arrival_mode_value.setMinimumWidth(132)
+        self.arrival_mode_value.setMinimumWidth(126)
         self.train_selector_layout.addWidget(self.arrival_mode_value)
         self.train_selector_layout.addSpacing(10)
 
         self.train_selector_layout.addWidget(QLabel("当前列车状态："))
         self.train_state_value = QLabel("--")
-        self.train_state_value.setObjectName("train_state_value")
-        self.train_state_value.setMinimumWidth(92)
+        self.train_state_value.setMinimumWidth(86)
         self.train_selector_layout.addWidget(self.train_state_value)
         self.train_selector_layout.addSpacing(10)
 
@@ -1210,7 +1207,7 @@ class MainWindow(QMainWindow):
                 track.occupy()
             else:
                 track.release()
-        self.simulation_b.update_all_track_codes()
+        self.recalculate_route_dependent_state()
 
         self.engine.reset_time()
 

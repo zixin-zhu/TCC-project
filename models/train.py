@@ -132,7 +132,7 @@ class Train:
         self.receive_waiting_reason = None
         self.movement_phase = "WAITING"
         self.station_position = None
-        self.max_speed = max_speed if preserve_configuration else 120.0
+        self.max_speed = max_speed
         self.block_speed = 120.0
         self.line_speed = 120.0
         self.active_balise_speed = 120.0

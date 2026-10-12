@@ -75,6 +75,24 @@ class MultiTrainModelTest(unittest.TestCase):
         self.assertEqual(train.position, 0.0)
         self.assertEqual(train.speed, 0.0)
 
+    def test_full_reset_clears_route_configuration_but_preserves_max_speed(self):
+        train = Train("T001", "A_TO_B", "SIDE", "MAIN")
+        train.set_max_speed(250)
+        train.configure_departure_route("A-SIDE-DEPART-001", "3G")
+        train.configure_receive_route("B-MAIN-RECEIVE-002", "1G")
+        train.enter_track("G10")
+
+        train.reset_to_departure(preserve_configuration=False)
+
+        self.assertEqual(train.max_speed, 250.0)
+        self.assertIsNone(train.departure_mode)
+        self.assertIsNone(train.arrival_mode)
+        self.assertIsNone(train.station_track)
+        self.assertIsNone(train.arrival_track)
+        self.assertIsNone(train.route_id)
+        self.assertIsNone(train.departure_route_id)
+        self.assertIsNone(train.receive_route_id)
+
 
 class MultiTrainLifecycleTest(unittest.TestCase):
     def setUp(self):
@@ -293,7 +311,7 @@ class MultiTrainLifecycleTest(unittest.TestCase):
         self.assertEqual(self.service.waiting_queue, [following.train_id])
 
     def test_pause_resume_and_reset_apply_to_all_dispatched_trains(self):
-        departure, _ = self.establish_main_routes()
+        departure, receive = self.establish_main_routes()
         waiting = self.service.add_waiting_train()
         running = self.service.create_train("MAIN", "MAIN")
         running.set_max_speed(200)
@@ -307,6 +325,10 @@ class MultiTrainLifecycleTest(unittest.TestCase):
         arrived.status = "ARRIVED"
         self.routes.lock_route(departure.route_id, running.train_id)
         running.route_id = departure.route_id
+        running.departure_route_id = departure.route_id
+        self.routes.lock_route(receive.route_id, stopped.train_id)
+        stopped.route_id = receive.route_id
+        stopped.receive_route_id = receive.route_id
 
         paused = self.service.pause_all()
         self.assertEqual([train.train_id for train in paused], [running.train_id])
@@ -329,18 +351,23 @@ class MultiTrainLifecycleTest(unittest.TestCase):
         )
         self.assertEqual(waiting.status, "WAITING")
         self.assertEqual(waiting.departure_mode, None)
-        for train, max_speed, modes in (
-            (running, 200.0, ("MAIN", "MAIN")),
-            (stopped, 160.0, ("SIDE", "MAIN")),
-            (arrived, 250.0, ("MAIN", "SIDE")),
+        for train, max_speed in (
+            (running, 200.0),
+            (stopped, 160.0),
+            (arrived, 250.0),
         ):
             self.assertEqual(train.status, "WAITING")
             self.assertIsNone(train.current_track)
             self.assertEqual(train.max_speed, max_speed)
-            self.assertEqual((train.departure_mode, train.arrival_mode), modes)
+            self.assertIsNone(train.departure_mode)
+            self.assertIsNone(train.arrival_mode)
+            self.assertIsNone(train.station_track)
+            self.assertIsNone(train.arrival_track)
+            self.assertIsNone(train.route_id)
+            self.assertIsNone(train.departure_route_id)
+            self.assertIsNone(train.receive_route_id)
             self.assertIn(train.train_id, self.service.waiting_queue)
-        self.assertEqual(departure.state, RouteState.ESTABLISHED)
-        self.assertIsNone(departure.train_id)
+        self.assertEqual(self.routes.active_routes(), [])
         self.assertEqual(self.service.waiting_queue[0], waiting.train_id)
 
     def test_simulation_engine_tracks_user_pause_state(self):
