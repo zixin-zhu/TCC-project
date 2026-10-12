@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt5.QtCore import QObject, QPointF, pyqtSignal
+from PyQt5.QtCore import QObject, QPointF, Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QImage, QPainter, QPalette
 from PyQt5.QtWidgets import (
     QApplication,
@@ -21,6 +21,7 @@ from PyQt5.QtWidgets import (
     QSizePolicy,
     QWidget,
 )
+from PyQt5.QtTest import QSignalSpy, QTest
 
 from ui.main_window import MainWindow
 from ui.tcc_overview import TccOverviewWidget
@@ -358,6 +359,57 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertLess(x, 70.0)
         self.assertLess(y, 100.0)
         self.assertAlmostEqual(angle, -45.0)
+
+    def test_clicking_running_train_emits_train_id(self):
+        view = TccOverviewWidget()
+        view.resize(view.minimumWidth(), 360)
+        train = {
+            "train_id": "T007",
+            "status": "RUNNING",
+            "direction": "A_TO_B",
+            "movement_phase": "INTERVAL_RUNNING",
+            "current_track": "G10",
+            "position": 500.0,
+        }
+        view.set_state([], [train], "A_TO_B")
+        image = QImage(view.size(), QImage.Format_ARGB32)
+        view.render(image)
+        symbol = next(item for item in view._train_marker_symbols if item["label"] == "T007")
+        spy = QSignalSpy(view.train_clicked)
+
+        QTest.mouseClick(
+            view,
+            Qt.LeftButton,
+            pos=QPointF(symbol["x"], symbol["rail_y"] - 15).toPoint(),
+        )
+
+        self.assertEqual(len(spy), 1)
+        self.assertEqual(spy[0][0], "T007")
+
+    def test_stopped_train_head_touches_current_section_endpoint(self):
+        view = TccOverviewWidget()
+        left = 100.0
+        rail_y = 180.0
+        forward = {
+            "status": "STOPPED",
+            "direction": "A_TO_B",
+            "current_track": "G05",
+            "position": 999.9,
+        }
+        reverse = {
+            "status": "STOPPED",
+            "direction": "B_TO_A",
+            "current_track": "G05",
+            "position": 999.9,
+        }
+
+        forward_pose = view.interval_train_marker_pose(forward, left, rail_y)
+        reverse_pose = view.interval_train_marker_pose(reverse, left, rail_y)
+        section_left = left + 4 * view.SECTION_WIDTH
+        section_right = section_left + view.SECTION_WIDTH
+
+        self.assertEqual(forward_pose[0] + view.TRAIN_HALF_LENGTH, section_right)
+        self.assertEqual(reverse_pose[0] - view.TRAIN_HALF_LENGTH, section_left)
 
     def test_paused_side_train_keeps_same_interpolated_position(self):
         view = TccOverviewWidget()
@@ -1446,6 +1498,36 @@ class PhaseOneUiContractTest(unittest.TestCase):
             window.sync_selected_train_controls()
             self.assertEqual(window.arrival_mode_value.text(), "侧线接车")
 
+        window.close()
+
+    def test_route_combo_is_not_rebuilt_during_unchanged_realtime_refresh(self):
+        window = MainWindow()
+        self.mark_communication_ready(window)
+        window.route_service.establish_route("A", RouteType.MAIN_DEPART)
+        receive = window.route_service.establish_route("B", RouteType.MAIN_RECEIVE)
+        window.refresh_route_controls()
+        window.active_route_combo.setCurrentIndex(
+            window.active_route_combo.findData(receive.route_id)
+        )
+
+        with patch.object(window.active_route_combo, "clear") as clear:
+            window.refresh_route_controls()
+
+        clear.assert_not_called()
+        self.assertEqual(window.active_route_combo.currentData(), receive.route_id)
+        window.close()
+
+    def test_main_window_selects_train_clicked_in_overview(self):
+        window = MainWindow()
+        self.mark_communication_ready(window)
+        first = window.train_service.add_waiting_train()
+        second = window.train_service.add_waiting_train()
+        window.refresh_view()
+        window.train_selector.setCurrentText(first.train_id)
+
+        window.simulation_view.train_clicked.emit(second.train_id)
+
+        self.assertEqual(window.train_selector.currentText(), second.train_id)
         window.close()
 
     def test_running_train_arrival_label_updates_after_receive_route_cancelled(self):

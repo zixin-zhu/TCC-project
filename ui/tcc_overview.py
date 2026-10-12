@@ -21,6 +21,7 @@ class TccOverviewWidget(QWidget):
     """把 A站、38 个区间轨道区段和 B站绘成一张连续长图。"""
 
     balise_clicked = pyqtSignal(str)
+    train_clicked = pyqtSignal(str)
 
     SECTION_COUNT = 38
     BLOCK_COUNT = 19
@@ -34,6 +35,7 @@ class TccOverviewWidget(QWidget):
     BALISE_HALF_WIDTH = 3
     BALISE_HEIGHT = 6
     BALISE_GROUP_SPACING = 6
+    TRAIN_HALF_LENGTH = 13
     SECTION_EQUIPMENT_ALIASES = {
         "G01": "X1LQ",
         "G02": "X2LQ",
@@ -57,6 +59,7 @@ class TccOverviewWidget(QWidget):
         "L": QColor("#23df53"),
         "LU": QColor("#9eea2d"),
         "U": QColor("#f5dc32"),
+        "U2S": QColor("#c9bd28"),
         "HU": QColor("#ef6c26"),
         "UUS": QColor("#d8c936"),
         "B": QColor("#f5f7fa"),
@@ -65,6 +68,7 @@ class TccOverviewWidget(QWidget):
     CODE_SPEEDS = {
         "HU": 0,
         "UUS": 45,
+        "U2S": 45,
         "U": 45,
         "LU": 80,
         "L": 100,
@@ -108,6 +112,7 @@ class TccOverviewWidget(QWidget):
         self._interval_boundary_markers = []
         self._interval_code_segments = []
         self._train_marker_symbols = []
+        self._train_hitboxes = {}
         self._signal_symbols = []
 
     @staticmethod
@@ -501,6 +506,7 @@ class TccOverviewWidget(QWidget):
         self._interval_boundary_markers = []
         self._interval_code_segments = []
         self._train_marker_symbols = []
+        self._train_hitboxes = {}
         self._signal_symbols = []
         self._draw_station(painter, a_left, interval_left, rail_y, code_y, "A")
         self._draw_interval(painter, interval_left, rail_y, code_y)
@@ -691,6 +697,11 @@ class TccOverviewWidget(QWidget):
             None,
         )
         route_track = route.get("track") if route else None
+        if route_track is None:
+            route_track = next(
+                (track for track in ("1G", "3G") if codes.get(track) == "B"),
+                None,
+            )
         track_code = codes.get(route_track, "HU") if route_track in ("1G", "3G") else "HU"
         draw_band(f"{station}_TRACK", track_rect, track_code)
         draw_band(f"{station}_THROAT", throat_rect, codes.get("THROAT", "HU"))
@@ -985,6 +996,7 @@ class TccOverviewWidget(QWidget):
             "绿灯": [QColor("#35e463")],
             "L灯": [QColor("#35e463")],
             "黄灯": [QColor("#ffd930")],
+            "双黄灯": [QColor("#ffd930"), QColor("#ffd930")],
             "黄绿灯": [QColor("#35e463"), QColor("#ffd930")],
         }.get(status, [QColor("#ff3b45")])
         for index, color in enumerate(colors):
@@ -1102,19 +1114,53 @@ class TccOverviewWidget(QWidget):
                     y,
                     train.get("train_id", ""),
                     angle,
+                    clickable=True,
                 )
                 continue
 
-            track_code = train.get("current_track") or ""
-            try:
-                index = int(track_code[1:]) - 1
-            except (ValueError, TypeError):
+            pose = self.interval_train_marker_pose(train, interval_left, rail_y)
+            if pose is None:
                 continue
-            ratio = max(0.0, min(float(train.get("position", 0)) / 1000.0, 1.0))
-            x = interval_left + (index + ratio) * self.SECTION_WIDTH
-            self._draw_train_marker(painter, x, rail_y, train.get("train_id", ""))
+            x, y, angle = pose
+            self._draw_train_marker(
+                painter,
+                x,
+                y,
+                train.get("train_id", ""),
+                angle,
+                clickable=True,
+            )
 
-    def _draw_train_marker(self, painter, x, rail_y, label, angle=0.0):
+    def interval_train_marker_pose(self, train, interval_left, rail_y):
+        track_code = train.get("current_track") or ""
+        try:
+            index = int(track_code[1:]) - 1
+        except (ValueError, TypeError):
+            return None
+        ratio = max(0.0, min(float(train.get("position", 0)) / 1000.0, 1.0))
+        reverse = train.get("direction") == "B_TO_A"
+        if reverse:
+            x = interval_left + (index + 1 - ratio) * self.SECTION_WIDTH
+        else:
+            x = interval_left + (index + ratio) * self.SECTION_WIDTH
+        if train.get("status") == "STOPPED" and ratio >= 0.999:
+            endpoint = interval_left + (
+                index if reverse else index + 1
+            ) * self.SECTION_WIDTH
+            x = endpoint + (
+                self.TRAIN_HALF_LENGTH if reverse else -self.TRAIN_HALF_LENGTH
+            )
+        return x, rail_y, 0.0
+
+    def _draw_train_marker(
+        self,
+        painter,
+        x,
+        rail_y,
+        label,
+        angle=0.0,
+        clickable=False,
+    ):
         painter.save()
         painter.translate(x, rail_y - 15.5)
         painter.rotate(angle)
@@ -1134,8 +1180,20 @@ class TccOverviewWidget(QWidget):
                 "angle": float(angle),
             }
         )
+        if clickable:
+            self._train_hitboxes[str(label)] = QRectF(
+                x - 17,
+                rail_y - 29,
+                34,
+                26,
+            )
 
     def mousePressEvent(self, event):
+        for train_id, hitbox in self._train_hitboxes.items():
+            if hitbox.contains(event.pos()):
+                self.train_clicked.emit(train_id)
+                event.accept()
+                return
         for balise_id, hitbox in self._active_balise_hitboxes.items():
             if hitbox.contains(event.pos()):
                 self.balise_clicked.emit(balise_id)

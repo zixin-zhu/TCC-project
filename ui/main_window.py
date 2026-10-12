@@ -786,6 +786,9 @@ class MainWindow(QMainWindow):
         self.simulation_view.balise_clicked.connect(
             self.show_balise_information
         )
+        self.simulation_view.train_clicked.connect(
+            self.select_train_from_overview
+        )
 
         self.refresh_route_controls()
 
@@ -1046,16 +1049,27 @@ class MainWindow(QMainWindow):
         self.refresh_view()
 
     def recalculate_route_dependent_state(self):
+        trains = self.train_service.get_all_train_status()
         for simulation in (self.simulation_a, self.simulation_b):
+            simulation.set_train_states(trains)
             simulation.update_all_track_codes()
 
     def refresh_route_controls(self):
         current_route_id = self.active_route_combo.currentData()
-        self.active_route_combo.blockSignals(True)
-        self.active_route_combo.clear()
-
         routes = self.route_service.active_routes()
-        if routes:
+        snapshot = tuple(
+            (
+                route.route_id,
+                route.station,
+                route.display_name,
+                route.track,
+                route.state,
+            )
+            for route in routes
+        )
+        if snapshot != getattr(self, "_route_combo_snapshot", None):
+            self.active_route_combo.blockSignals(True)
+            self.active_route_combo.clear()
             for route in routes:
                 state_text = (
                     "已锁闭"
@@ -1068,13 +1082,18 @@ class MainWindow(QMainWindow):
                     route.route_id,
                 )
 
-        if current_route_id is not None:
-            index = self.active_route_combo.findData(current_route_id)
-            if index >= 0:
-                self.active_route_combo.setCurrentIndex(index)
-
-        self.active_route_combo.blockSignals(False)
+            if current_route_id is not None:
+                index = self.active_route_combo.findData(current_route_id)
+                if index >= 0:
+                    self.active_route_combo.setCurrentIndex(index)
+            self.active_route_combo.blockSignals(False)
+            self._route_combo_snapshot = snapshot
         self._sync_route_cancel_button()
+
+    def select_train_from_overview(self, train_id):
+        index = self.train_selector.findText(train_id)
+        if index >= 0:
+            self.train_selector.setCurrentIndex(index)
 
     def _sync_route_cancel_button(self):
         route_id = self.active_route_combo.currentData()
@@ -1222,11 +1241,6 @@ class MainWindow(QMainWindow):
 
         self.refresh_route_controls()
 
-        # 线路占用以A侧（列车仿真侧）为准
-        tracks = (
-            self.simulation_a.get_all_track_status()
-        )
-
         for train in self.train_service.trains.values():
             temporary_speed = self.temporary_speed_service.speed_for(
                 train.current_track
@@ -1239,6 +1253,12 @@ class MainWindow(QMainWindow):
             train.calculate_target_speed()
 
         trains = self.train_service.get_all_train_status()
+        for simulation in (self.simulation_a, self.simulation_b):
+            simulation.set_train_states(trains)
+            simulation.update_all_track_codes()
+
+        # 线路占用以A侧（列车仿真侧）为准
+        tracks = self.simulation_a.get_all_track_status()
 
         direction = (
             self.simulation_a.get_direction()

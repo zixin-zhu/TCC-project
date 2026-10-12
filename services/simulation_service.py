@@ -25,13 +25,15 @@ class SimulationService:
         "L": "绿灯",
         "LU": "黄绿灯",
         "U": "黄灯",
+        "U2S": "黄灯",
         "HU": "红灯",
-        "UUS": "L灯",
+        "UUS": "双黄灯",
     }
 
     CODE_RESTRICTIVENESS = {
         "HU": 0,
         "UUS": 1,
+        "U2S": 1,
         "U": 1,
         "LU": 2,
         "L": 3,
@@ -161,12 +163,17 @@ class SimulationService:
 
         # None表示列车还没有进入区间
         self.train_position = None
+        self._train_states = []
 
         # 初始化全部闭塞分区编码
         self.update_all_track_codes()
 
     def get_block_section_pairs(self):
         return dict(self.block_section_pairs)
+
+    def set_train_states(self, trains):
+        """缓存列车快照，供站内占用发码和信号联动使用。"""
+        self._train_states = [dict(train) for train in (trains or [])]
 
     # ==========================================
     # G01状态
@@ -424,37 +431,44 @@ class SimulationService:
         return free_count
 
     def update_all_track_codes(self):
-        """
-        根据当前运行方向和各闭塞分区占用状态，
-        更新全部轨道电路编码。
-        """
+        """按两个轨道区段一个闭塞分区计算低频码序。"""
+        pairs = list(self.block_section_pairs.values())
+        if self.tcc.get_direction() == "B_TO_A":
+            pairs.reverse()
 
-        for track_code, track in self.track_circuits.items():
+        arrival_station = "B" if self.tcc.get_direction() == "A_TO_B" else "A"
+        receive_route = (
+            self.route_service.receive_route(arrival_station)
+            if self.route_service is not None
+            else None
+        )
+        route_extends_codes = (
+            receive_route is not None
+            and receive_route.state == RouteState.ESTABLISHED
+        )
 
-            # 当前分区本身被列车占用时，
-            # 本仿真统一显示HU
-            if track.occupied:
-                track.set_track_code(
-                    "HU"
-                )
+        for block_index, pair in enumerate(pairs):
+            free_blocks = 0
+            blocked_ahead = False
+            for ahead_pair in pairs[block_index + 1:]:
+                if any(self.track_circuits[code].occupied for code in ahead_pair):
+                    blocked_ahead = True
+                    break
+                free_blocks += 1
 
-                continue
+            code = self.calculate_track_code(free_blocks)
+            if route_extends_codes and not blocked_ahead:
+                distance_to_station = len(pairs) - block_index - 1
+                if receive_route.route_type == RouteType.SIDE_RECEIVE:
+                    if distance_to_station == 0:
+                        code = "UUS"
+                    elif distance_to_station == 1:
+                        code = "U2S"
+                else:
+                    code = self.calculate_track_code(free_blocks + 3)
 
-            # 计算前方连续空闲数量
-            free_count = (
-                self.count_forward_free_tracks(
-                    track_code
-                )
-            )
-
-            # 根据空闲数量计算编码
-            code = self.calculate_track_code(
-                free_count
-            )
-
-            track.set_track_code(
-                code
-            )
+            for track_code in pair:
+                self.track_circuits[track_code].set_track_code(code)
 
         # 码序变化后立即联动信号机
         self.update_signal_status()
@@ -499,24 +513,43 @@ class SimulationService:
         进路以股道停车目标为边界，正线股道保持 HU。
         """
         codes = {"1G": "HU", "3G": "HU", "THROAT": "HU"}
+        direction = self.tcc.get_direction()
+        arrival_station = "B" if direction == "A_TO_B" else "A"
+        arrival_here = self.station_type == arrival_station
+        for train in self._train_states:
+            train_arrival = "B" if train.get("direction") == "A_TO_B" else "A"
+            if train_arrival != self.station_type:
+                continue
+            if train.get("movement_phase") not in (
+                "RECEIVING",
+                "STATION_RUNNING",
+                "EXITING",
+            ):
+                continue
+            codes["THROAT"] = "B"
+            return codes
+
         if self.route_service is None:
+            if arrival_here:
+                codes["THROAT"] = "B"
             return codes
 
         routes = self.route_service.active_routes(self.station_type)
         if not routes:
+            if arrival_here:
+                codes["THROAT"] = "B"
             return codes
 
         route = routes[0]
+        if route.movement == "RECEIVE":
+            return codes
         if route.route_type == RouteType.MAIN_DEPART:
             adjacent_code = self.track_circuits[
                 "G01" if self.station_type == "A" else "G38"
             ].signal_code
             codes["1G"] = adjacent_code
             codes["THROAT"] = adjacent_code
-        elif route.route_type in (
-            RouteType.SIDE_RECEIVE,
-            RouteType.SIDE_DEPART,
-        ):
+        elif route.route_type == RouteType.SIDE_DEPART:
             codes["3G"] = "UUS"
             codes["THROAT"] = "UUS"
 
@@ -573,7 +606,13 @@ class SimulationService:
 
         inner_signal, boundary_signal, station_track = endpoint
         codes = self.get_station_track_codes()
-        aspects[inner_signal] = self.aspect_for_code(codes.get(station_track))
+        if route.route_type in (
+            RouteType.SIDE_RECEIVE,
+            RouteType.SIDE_DEPART,
+        ):
+            aspects[inner_signal] = "L灯"
+        else:
+            aspects[inner_signal] = self.aspect_for_code(codes.get(station_track))
         aspects[boundary_signal] = self.aspect_for_code(codes.get("THROAT"))
         return aspects
 
@@ -589,12 +628,9 @@ class SimulationService:
 
         for signal_index in range(1, 19):
             protected = (
-                self.track_circuits[f"G{signal_index * 2 + 1:02d}"],
-                self.track_circuits[f"G{signal_index * 2 + 2:02d}"],
+                self.track_circuits[f"G{signal_index * 2 - 1:02d}"],
+                self.track_circuits[f"G{signal_index * 2:02d}"],
             )
-            if any(track.occupied for track in protected):
-                continue
-
             codes = [track.signal_code for track in protected]
             if any(code not in self.CODE_RESTRICTIVENESS for code in codes):
                 continue
@@ -639,28 +675,13 @@ class SimulationService:
             entry_aspect = "红灯"
 
         else:
-
-            # 入口分区空闲，
-            # 再统计其前方连续空闲分区，
-            # 两者合计决定灯色
-            free_count = (
-                    self.count_forward_free_tracks(
-                        entry_track_code
-                    )
-                    + 1
-            )
-
             if (
                 departure_route is not None
                 and departure_route.route_type == RouteType.SIDE_DEPART
             ):
                 entry_aspect = "L灯"
             else:
-                entry_aspect = self.get_aspect_by_code(
-                    self.calculate_track_code(
-                        free_count
-                    )
-                )
+                entry_aspect = self.get_aspect_by_code(entry_track.signal_code)
 
         if direction == "A_TO_B":
 
@@ -692,7 +713,10 @@ class SimulationService:
                 departure_station,
                 track,
             )
-            if route is not None and route.state == RouteState.ESTABLISHED:
+            if route is not None and route.state in (
+                RouteState.ESTABLISHED,
+                RouteState.LOCKED,
+            ):
                 return route
         return None
 

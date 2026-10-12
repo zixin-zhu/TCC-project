@@ -54,7 +54,8 @@ class RouteTrainIntegrationTest(unittest.TestCase):
         self.assertEqual(train.movement_phase, "DEPARTING")
         self.assertEqual(train.route_id, route.route_id)
         self.assertEqual(train.departure_route_id, route.route_id)
-        self.assertEqual(route.state, RouteState.ESTABLISHED)
+        self.assertEqual(route.state, RouteState.LOCKED)
+        self.assertEqual(route.train_id, train.train_id)
         self.assertIn(route, self.routes.active_routes())
 
         train.station_position = self.trains.STATION_EXIT_POSITION
@@ -148,8 +149,9 @@ class RouteSignalIntegrationTest(unittest.TestCase):
             "L": "绿灯",
             "LU": "黄绿灯",
             "U": "黄灯",
+            "U2S": "黄灯",
             "HU": "红灯",
-            "UUS": "L灯",
+            "UUS": "双黄灯",
             None: "红灯",
             "INVALID": "红灯",
         }
@@ -158,6 +160,86 @@ class RouteSignalIntegrationTest(unittest.TestCase):
             {code: simulation.aspect_for_code(code) for code in expected},
             expected,
         )
+
+    def test_interval_codes_are_shared_by_each_two_section_block(self):
+        _, simulation = self.make_simulation()
+        simulation.set_direction("A_TO_B")
+        simulation.update_all_track_codes()
+
+        expected_tail = ("L5", "L4", "L3", "L2", "L", "LU", "U", "HU")
+        actual_tail = []
+        for block_no in range(12, 20):
+            first = simulation.track_circuits[f"G{block_no * 2 - 1:02d}"].signal_code
+            second = simulation.track_circuits[f"G{block_no * 2:02d}"].signal_code
+            self.assertEqual(first, second)
+            actual_tail.append(first)
+
+        self.assertEqual(tuple(actual_tail), expected_tail)
+
+    def test_occupied_block_keeps_code_derived_from_clear_blocks_ahead(self):
+        _, simulation = self.make_simulation()
+        simulation.track_circuits["G25"].occupy()
+
+        simulation.update_all_track_codes()
+
+        self.assertEqual(simulation.track_circuits["G25"].signal_code, "L4")
+        self.assertEqual(simulation.track_circuits["G26"].signal_code, "L4")
+        self.assertEqual(simulation.track_circuits["G23"].signal_code, "HU")
+        self.assertEqual(simulation.track_circuits["G24"].signal_code, "HU")
+
+    def test_main_receive_route_extends_code_and_station_turns_b_after_entry(self):
+        routes, simulation = self.make_simulation("B")
+        route = routes.establish_route("B", RouteType.MAIN_RECEIVE)
+
+        simulation.update_all_track_codes()
+        self.assertEqual(simulation.track_circuits["G38"].signal_code, "L")
+        self.assertEqual(
+            simulation.get_station_track_codes(),
+            {"1G": "HU", "3G": "HU", "THROAT": "HU"},
+        )
+
+        routes.lock_route(route.route_id, "T001")
+        simulation.set_train_states([
+            {
+                "train_id": "T001",
+                "direction": "A_TO_B",
+                "movement_phase": "RECEIVING",
+                "arrival_track": "1G",
+            }
+        ])
+        simulation.update_all_track_codes()
+
+        self.assertEqual(simulation.track_circuits["G38"].signal_code, "HU")
+        self.assertEqual(simulation.get_station_track_codes()["1G"], "HU")
+        self.assertEqual(simulation.get_station_track_codes()["THROAT"], "B")
+
+    def test_side_receive_route_uses_u2s_uus_then_b_after_entry(self):
+        routes, simulation = self.make_simulation("B")
+        route = routes.establish_route("B", RouteType.SIDE_RECEIVE)
+
+        simulation.update_all_track_codes()
+        self.assertEqual(simulation.track_circuits["G35"].signal_code, "U2S")
+        self.assertEqual(simulation.track_circuits["G36"].signal_code, "U2S")
+        self.assertEqual(simulation.track_circuits["G37"].signal_code, "UUS")
+        self.assertEqual(simulation.track_circuits["G38"].signal_code, "UUS")
+        self.assertEqual(
+            simulation.get_station_track_codes(),
+            {"1G": "HU", "3G": "HU", "THROAT": "HU"},
+        )
+
+        routes.lock_route(route.route_id, "T001")
+        simulation.set_train_states([
+            {
+                "train_id": "T001",
+                "direction": "A_TO_B",
+                "movement_phase": "RECEIVING",
+                "arrival_track": "3G",
+            }
+        ])
+        simulation.update_all_track_codes()
+
+        self.assertEqual(simulation.get_station_track_codes()["3G"], "HU")
+        self.assertEqual(simulation.get_station_track_codes()["THROAT"], "B")
 
     def test_station_signal_aspects_follow_active_route_and_track_codes(self):
         cases = (
@@ -210,14 +292,14 @@ class RouteSignalIntegrationTest(unittest.TestCase):
         _, simulation = self.make_simulation("A")
         simulation.set_direction("A_TO_B")
         for code, track_code in (
+            ("G01", "L5"),
+            ("G02", "L3"),
             ("G03", "L5"),
-            ("G04", "L3"),
+            ("G04", "LU"),
             ("G05", "L5"),
-            ("G06", "LU"),
+            ("G06", "U"),
             ("G07", "L5"),
-            ("G08", "U"),
-            ("G09", "L5"),
-            ("G10", "HU"),
+            ("G08", "HU"),
         ):
             simulation.track_circuits[code].set_track_code(track_code)
 
@@ -228,11 +310,23 @@ class RouteSignalIntegrationTest(unittest.TestCase):
         self.assertEqual(aspects["S03"], "黄灯")
         self.assertEqual(aspects["S04"], "红灯")
 
-    def test_interval_signal_aspects_fail_safe_for_occupancy_unknown_code_and_direction(self):
+    def test_interval_signal_at_right_endpoint_uses_current_left_block_code(self):
         _, simulation = self.make_simulation("A")
         simulation.set_direction("A_TO_B")
-        simulation.track_circuits["G03"].occupy()
-        simulation.track_circuits["G05"].set_track_code("INVALID")
+        for code in ("G01", "G02"):
+            simulation.track_circuits[code].set_track_code("LU")
+        for code in ("G03", "G04"):
+            simulation.track_circuits[code].set_track_code("HU")
+
+        aspects = simulation.get_interval_signal_aspects()
+
+        self.assertEqual(aspects["S01"], "黄绿灯")
+
+    def test_interval_signal_aspects_fail_safe_for_unknown_code_and_direction(self):
+        _, simulation = self.make_simulation("A")
+        simulation.set_direction("A_TO_B")
+        simulation.track_circuits["G01"].set_track_code("INVALID")
+        simulation.track_circuits["G03"].set_track_code("INVALID")
 
         aspects = simulation.get_interval_signal_aspects()
 
@@ -280,14 +374,14 @@ class RouteSignalIntegrationTest(unittest.TestCase):
         with_route = simulation.track_circuits["G38"].signal_code
 
         self.assertEqual(without_route, "HU")
-        self.assertEqual(with_route, "U")
+        self.assertEqual(with_route, "L")
 
     def test_station_track_codes_follow_route_type(self):
         cases = (
             (RouteType.MAIN_DEPART, "1G", "L5"),
             (RouteType.SIDE_DEPART, "3G", "UUS"),
             (RouteType.MAIN_RECEIVE, "1G", "HU"),
-            (RouteType.SIDE_RECEIVE, "3G", "UUS"),
+            (RouteType.SIDE_RECEIVE, "3G", "HU"),
         )
 
         for route_type, track, expected_code in cases:
@@ -306,7 +400,7 @@ class RouteSignalIntegrationTest(unittest.TestCase):
 
         self.assertEqual(
             simulation.get_station_track_codes(),
-            {"1G": "HU", "3G": "HU", "THROAT": "HU"},
+            {"1G": "HU", "3G": "HU", "THROAT": "B"},
         )
 
     def test_word_code_sequence_includes_l4(self):

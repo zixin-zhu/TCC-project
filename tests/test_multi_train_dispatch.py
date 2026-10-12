@@ -116,8 +116,8 @@ class MultiTrainLifecycleTest(unittest.TestCase):
         self.assertEqual(selected.movement_phase, "DEPARTING")
         self.assertIsNone(selected.current_track)
         self.assertEqual(selected.station_position, 0.0)
-        self.assertEqual(departure.state, RouteState.ESTABLISHED)
-        self.assertIsNone(departure.train_id)
+        self.assertEqual(departure.state, RouteState.LOCKED)
+        self.assertEqual(departure.train_id, selected.train_id)
 
     def test_departing_enters_g01_or_g38_only_after_station_boundary(self):
         cases = (
@@ -255,8 +255,8 @@ class MultiTrainLifecycleTest(unittest.TestCase):
         self.assertEqual(first.status, "WAITING")
         self.assertIn(first.train_id, self.service.waiting_queue)
         self.assertNotIn(selected.train_id, self.service.waiting_queue)
-        self.assertEqual(departure.state, RouteState.ESTABLISHED)
-        self.assertIsNone(departure.train_id)
+        self.assertEqual(departure.state, RouteState.LOCKED)
+        self.assertEqual(departure.train_id, selected.train_id)
 
     def test_failed_dispatch_without_routes_is_atomic(self):
         selected = self.service.add_waiting_train()
@@ -480,13 +480,14 @@ class MultiTrainMovementTest(unittest.TestCase):
 
         self.service.sync_track_circuits()
 
-        self.assertEqual(self.simulation.track_circuits["G03"].signal_code, "HU")
-        self.assertEqual(self.simulation.track_circuits["G08"].signal_code, "HU")
+        self.assertEqual(self.simulation.track_circuits["G03"].signal_code, "U")
+        self.assertEqual(self.simulation.track_circuits["G04"].signal_code, "U")
+        self.assertEqual(self.simulation.track_circuits["G07"].signal_code, "L5")
+        self.assertEqual(self.simulation.track_circuits["G08"].signal_code, "L5")
         self.assertEqual(self.simulation.track_circuits["G02"].signal_code, "HU")
-        self.assertEqual(self.simulation.track_circuits["G01"].signal_code, "U")
-        self.assertEqual(self.simulation.track_circuits["G07"].signal_code, "HU")
-        self.assertEqual(self.simulation.track_circuits["G06"].signal_code, "U")
-        self.assertEqual(self.simulation.signal_states["S01"], "黄绿灯")
+        self.assertEqual(self.simulation.track_circuits["G01"].signal_code, "HU")
+        self.assertEqual(self.simulation.track_circuits["G06"].signal_code, "HU")
+        self.assertEqual(self.simulation.signal_states["S01"], "红灯")
 
 
 class MultiTrainStationMovementTest(unittest.TestCase):

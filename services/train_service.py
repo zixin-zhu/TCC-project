@@ -308,6 +308,10 @@ class TrainService:
         train.temporary_speed = 120.0
         if departure_route is None:
             return False
+        self.route_service.lock_route(
+            departure_route.route_id,
+            train.train_id,
+        )
         train.enter_departure(
             departure_route.route_id,
             departure_route.track,
@@ -585,6 +589,7 @@ class TrainService:
                 if track is not None:
                     track.occupy()
 
+        self.simulation.set_train_states(self.get_all_train_status())
         # 重新计算L5/L3/L2/L/LU/U/HU
         self.simulation.update_all_track_codes()
 
