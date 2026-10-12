@@ -1,3 +1,5 @@
+from math import hypot
+
 from PyQt5.QtCore import QPoint, QRectF, Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QPainter, QPen, QPolygon
 from PyQt5.QtWidgets import QScrollArea, QSizePolicy, QWidget
@@ -244,6 +246,82 @@ class TccOverviewWidget(QWidget):
             "interval_boundary_signal": interval_boundary_signal,
         }
 
+    @classmethod
+    def station_train_path(cls, station, direction, track, rail_y):
+        if station not in ("A", "B"):
+            raise ValueError("非法车站")
+        if direction not in ("A_TO_B", "B_TO_A"):
+            raise ValueError("非法运行方向")
+        if track not in ("1G", "3G"):
+            raise ValueError("非法股道")
+
+        station_left = cls.SIDE_MARGIN
+        if station == "B":
+            station_left += cls.STATION_WIDTH + cls.SECTION_COUNT * cls.SECTION_WIDTH
+        geometry = cls.station_geometry_contract(station)
+        positions = {
+            name: station_left + offset
+            for name, offset in geometry["signals"].items()
+        }
+        outer_left = positions["X"]
+        outer_right = positions["SN" if station == "A" else "S"]
+        inner_left = positions["S1"]
+        inner_right = positions["X1"]
+
+        if track == "1G":
+            points = [(outer_left, rail_y), (outer_right, rail_y)]
+        else:
+            side_y = rail_y - 68
+            points = [
+                (outer_left, rail_y),
+                (inner_left - 50, rail_y),
+                (inner_left - 20, side_y),
+                (inner_right + 20, side_y),
+                (inner_right + 50, rail_y),
+                (outer_right, rail_y),
+            ]
+
+        if direction == "B_TO_A":
+            points.reverse()
+
+        departure_station = "A" if direction == "A_TO_B" else "B"
+        if station == departure_station:
+            start_x, start_y = points[0]
+            points[0] = (
+                start_x + (18 if direction == "A_TO_B" else -18),
+                start_y,
+            )
+        return tuple(points)
+
+    @staticmethod
+    def interpolate_path(points, progress):
+        if not points:
+            raise ValueError("路径不能为空")
+        if len(points) == 1:
+            return points[0]
+
+        progress = max(0.0, min(float(progress), 1.0))
+        lengths = [
+            hypot(end[0] - start[0], end[1] - start[1])
+            for start, end in zip(points, points[1:])
+        ]
+        total_length = sum(lengths)
+        if total_length <= 0:
+            return points[0]
+        target = progress * total_length
+        traversed = 0.0
+        segments = tuple(zip(points, points[1:], lengths))
+        for index, (start, end, length) in enumerate(segments):
+            if target <= traversed + length or index == len(segments) - 1:
+                ratio = 0.0 if length <= 0 else (target - traversed) / length
+                ratio = max(0.0, min(ratio, 1.0))
+                return (
+                    start[0] + (end[0] - start[0]) * ratio,
+                    start[1] + (end[1] - start[1]) * ratio,
+                )
+            traversed += length
+        return points[-1]
+
     @staticmethod
     def route_highlight_contract(station, route_type):
         if station not in ("A", "B"):
@@ -289,6 +367,14 @@ class TccOverviewWidget(QWidget):
                 "side": "RIGHT" if direction == "A_TO_B" else "LEFT",
                 "label": f"x{waiting_index + 1}",
             }
+        if phase == "DEPARTING":
+            position = max(0.0, min(float(train.get("station_position") or 0), 3000.0))
+            return {
+                "region": "STATION",
+                "station": "A" if direction == "A_TO_B" else "B",
+                "progress": position / 3000.0,
+                "track": train.get("station_track") or "1G",
+            }
         if phase in ("RECEIVING", "STATION_RUNNING", "EXITING"):
             position = max(0.0, min(float(train.get("station_position") or 0), 3000.0))
             return {
@@ -298,6 +384,37 @@ class TccOverviewWidget(QWidget):
                 "track": train.get("arrival_track") or "1G",
             }
         return {"region": "INTERVAL"}
+
+    @staticmethod
+    def waiting_marker_contracts(trains):
+        counts = {"A_TO_B": 0, "B_TO_A": 0}
+        for train in trains:
+            direction = train.get("direction", "A_TO_B")
+            if train.get("status") == "WAITING" and direction in counts:
+                counts[direction] += 1
+
+        markers = []
+        if counts["A_TO_B"]:
+            markers.append(
+                {
+                    "region": "WAITING",
+                    "station": "A",
+                    "signal": "X",
+                    "side": "RIGHT",
+                    "label": f"x{counts['A_TO_B']}",
+                }
+            )
+        if counts["B_TO_A"]:
+            markers.append(
+                {
+                    "region": "WAITING",
+                    "station": "B",
+                    "signal": "S",
+                    "side": "LEFT",
+                    "label": f"x{counts['B_TO_A']}",
+                }
+            )
+        return tuple(markers)
 
     @classmethod
     def balise_geometry_contract(cls):
@@ -918,33 +1035,34 @@ class TccOverviewWidget(QWidget):
             )
 
     def _draw_train_markers(self, painter, interval_left, rail_y):
-        waiting_count = 0
+        for contract in self.waiting_marker_contracts(self.trains):
+            signal_x = self._station_signal_positions[contract["station"]][
+                contract["signal"]
+            ]
+            direction_sign = 1 if contract["side"] == "RIGHT" else -1
+            self._draw_train_marker(
+                painter,
+                signal_x + direction_sign * 18,
+                rail_y,
+                contract["label"],
+            )
+
         for train in self.trains:
-            contract = self.train_marker_contract(train, waiting_count)
-            if contract["region"] == "WAITING":
-                waiting_count += 1
-                signal_x = self._station_signal_positions[contract["station"]][
-                    contract["signal"]
-                ]
-                direction_sign = 1 if contract["side"] == "RIGHT" else -1
-                x = signal_x + direction_sign * (18 + (waiting_count - 1) * 22)
-                y = rail_y
-                self._draw_train_marker(painter, x, y, contract["label"])
+            if train.get("status") == "WAITING":
                 continue
+            contract = self.train_marker_contract(train)
 
             if train.get("status") not in ("RUNNING", "STOPPED"):
                 continue
 
             if contract["region"] == "STATION":
-                positions = self._station_signal_positions[contract["station"]]
-                if train.get("direction") == "A_TO_B":
-                    start_x, end_x = positions["X"], positions["S"]
-                else:
-                    start_x, end_x = positions["SN"], positions["X"]
-                progress = contract["progress"]
-                x = start_x + (end_x - start_x) * progress
-                side_progress = 0.18 < progress < 0.82
-                y = rail_y - 68 if contract["track"] == "3G" and side_progress else rail_y
+                path = self.station_train_path(
+                    contract["station"],
+                    train.get("direction", self.direction),
+                    contract["track"],
+                    rail_y,
+                )
+                x, y = self.interpolate_path(path, contract["progress"])
                 self._draw_train_marker(painter, x, y, train.get("train_id", ""))
                 continue
 

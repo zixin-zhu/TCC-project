@@ -1,4 +1,5 @@
 import os
+import math
 import sys
 import unittest
 from unittest.mock import patch
@@ -212,6 +213,146 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertEqual(reverse_waiting["label"], "x2")
         self.assertEqual(station_start["region"], "STATION")
         self.assertLess(station_start["progress"], station_later["progress"])
+
+    def test_waiting_markers_aggregate_by_departure_end(self):
+        trains = [
+            {"status": "WAITING", "direction": "A_TO_B"}
+            for _ in range(3)
+        ] + [
+            {"status": "WAITING", "direction": "B_TO_A"}
+            for _ in range(2)
+        ]
+
+        markers = TccOverviewWidget.waiting_marker_contracts(trains)
+
+        self.assertEqual(
+            markers,
+            (
+                {
+                    "region": "WAITING",
+                    "station": "A",
+                    "signal": "X",
+                    "side": "RIGHT",
+                    "label": "x3",
+                },
+                {
+                    "region": "WAITING",
+                    "station": "B",
+                    "signal": "S",
+                    "side": "LEFT",
+                    "label": "x2",
+                },
+            ),
+        )
+
+    def test_station_train_paths_use_signal_endpoints_and_turnout_slopes(self):
+        view = TccOverviewWidget()
+        rail_y = 180.0
+        a_positions = view.station_geometry_contract("A")["signals"]
+        b_positions = view.station_geometry_contract("B")["signals"]
+        b_left = (
+            view.SIDE_MARGIN
+            + view.STATION_WIDTH
+            + view.SECTION_COUNT * view.SECTION_WIDTH
+        )
+
+        a_main = view.station_train_path("A", "A_TO_B", "1G", rail_y)
+        a_side = view.station_train_path("A", "A_TO_B", "3G", rail_y)
+        b_main = view.station_train_path("B", "B_TO_A", "1G", rail_y)
+        b_side = view.station_train_path("B", "B_TO_A", "3G", rail_y)
+
+        self.assertEqual(
+            a_main,
+            (
+                (view.SIDE_MARGIN + a_positions["X"] + 18, rail_y),
+                (view.SIDE_MARGIN + a_positions["SN"], rail_y),
+            ),
+        )
+        self.assertEqual(
+            b_main,
+            (
+                (b_left + b_positions["S"] - 18, rail_y),
+                (b_left + b_positions["X"], rail_y),
+            ),
+        )
+        for path in (a_side, b_side):
+            self.assertEqual(len(path), 6)
+            self.assertEqual(path[0][1], rail_y)
+            self.assertEqual(path[1][1], rail_y)
+            self.assertEqual(path[2][1], rail_y - 68)
+            self.assertEqual(path[3][1], rail_y - 68)
+            self.assertEqual(path[4][1], rail_y)
+            self.assertEqual(path[5][1], rail_y)
+        self.assertLess(a_side[0][0], a_side[-1][0])
+        self.assertGreater(b_side[0][0], b_side[-1][0])
+
+    def test_side_path_interpolation_lands_on_each_slope(self):
+        view = TccOverviewWidget()
+        points = view.station_train_path("A", "A_TO_B", "3G", 180.0)
+        lengths = [
+            math.hypot(end[0] - start[0], end[1] - start[1])
+            for start, end in zip(points, points[1:])
+        ]
+        total = sum(lengths)
+        left_progress = (lengths[0] + lengths[1] / 2) / total
+        right_progress = (
+            lengths[0] + lengths[1] + lengths[2] + lengths[3] / 2
+        ) / total
+
+        left = view.interpolate_path(points, left_progress)
+        right = view.interpolate_path(points, right_progress)
+
+        self.assertGreater(left[0], points[1][0])
+        self.assertLess(left[0], points[2][0])
+        self.assertLess(left[1], points[1][1])
+        self.assertGreater(left[1], points[2][1])
+        self.assertGreater(right[0], points[3][0])
+        self.assertLess(right[0], points[4][0])
+        self.assertGreater(right[1], points[3][1])
+        self.assertLess(right[1], points[4][1])
+        self.assertEqual(view.interpolate_path(points, -1.0), points[0])
+        self.assertEqual(view.interpolate_path(points, 2.0), points[-1])
+
+    def test_paused_side_train_keeps_same_interpolated_position(self):
+        view = TccOverviewWidget()
+        view.resize(view.minimumWidth(), 360)
+        train = {
+            "train_id": "T001",
+            "status": "RUNNING",
+            "direction": "A_TO_B",
+            "movement_phase": "DEPARTING",
+            "station_position": 1200.0,
+            "station_track": "3G",
+            "current_track": None,
+        }
+        contract = view.train_marker_contract(train)
+        self.assertEqual(contract["region"], "STATION")
+        self.assertEqual(contract["station"], "A")
+        self.assertEqual(contract["track"], "3G")
+
+        view.set_state([], [train], "A_TO_B")
+        view.show()
+        self.app.processEvents()
+        view.grab()
+        running_symbol = next(
+            symbol
+            for symbol in view._train_marker_symbols
+            if symbol["label"] == "T001"
+        )
+
+        train["status"] = "STOPPED"
+        view.set_state([], [train], "A_TO_B")
+        self.app.processEvents()
+        view.grab()
+        stopped_symbol = next(
+            symbol
+            for symbol in view._train_marker_symbols
+            if symbol["label"] == "T001"
+        )
+
+        self.assertEqual(running_symbol, stopped_symbol)
+        self.assertLess(running_symbol["rail_y"], max(145, int(view.height() * 0.51)))
+        view.close()
 
     def assert_complete_warning(self, warning, expected_title):
         title, message = warning.call_args.args[1:3]

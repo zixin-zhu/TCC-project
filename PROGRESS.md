@@ -8,7 +8,7 @@
 - 唯一需求依据：`/Users/zhu/Desktop/TCC整理_可编辑版.docx`
 - 总方案：`docs/TCC功能仿真实现方案.md`
 - 当前阶段：站内连续运动、信号码序联动与全进路复位修订
-- 当前原子任务：实施 Task 1 已完成，下一步为 Task 2“单一待发数量标记与站内折线路径”；恢复入口为 `docs/superpowers/plans/2026-10-12-station-path-signal-reset.md`
+- 当前原子任务：实施 Task 2 已完成，下一步为 Task 3“轨道码序驱动全部信号机”；恢复入口为 `docs/superpowers/plans/2026-10-12-station-path-signal-reset.md`
 - 事件记录模块：不在本项目当前范围
 
 ## 阶段看板
@@ -102,12 +102,13 @@
 - 已确认下一轮设计：待发车只绘制一个 xN 数量标记；新增 DEPARTING 站内发车阶段；侧线列车按折线路径长度沿斜坡连续运行；全部信号由轨道码序和安全门控计算；状态栏三个只读值取消框式外观；复位删除所有进路并清空列车接发方式，同时保留临时限速。书面规范见 `docs/superpowers/specs/2026-10-12-station-path-signal-reset-design.md`。
 - 上述书面规范已经用户确认；实施拆分为 5 个可独立验收并逐次 Git 上传的任务，计划见 `docs/superpowers/plans/2026-10-12-station-path-signal-reset.md`。当前尚未修改业务代码，等待用户审核计划并选择执行方式。
 - 已完成站内连续运动 Task 1：列车发车后进入 `DEPARTING`，在站内进路连续推进且不提前占用 G01/G38；越过站界后才进入入口区段、读取入口应答器并删除已使用发车进路。A→B/B→A 双向边界及多车单 tick 精确距离回归已覆盖；专项 27 项、全量 125 项测试通过。
+- 已完成站内连续运动 Task 2：每个出发端把多辆待发车聚合为一个 `xN` 标记；发车首点与 X右/S左待发位置一致。正线和侧线共用站场几何合同，侧线按五段折线总长度插值，发车、接车、站内和驶出阶段均沿真实斜坡连续绘制；暂停不改变位置。UI 专项 61 项、全量 129 项测试通过。
 
 ## 最近验证
 
 ```text
 .venv/bin/python -m unittest discover -s tests -v
-Ran 125 tests
+Ran 129 tests
 OK
 ```
 
