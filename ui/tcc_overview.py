@@ -1,4 +1,4 @@
-from math import hypot
+from math import atan2, degrees, hypot
 
 from PyQt5.QtCore import QPoint, QRectF, Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QPainter, QPen, QPolygon
@@ -298,10 +298,15 @@ class TccOverviewWidget(QWidget):
 
     @staticmethod
     def interpolate_path(points, progress):
+        x, y, _ = TccOverviewWidget.interpolate_path_pose(points, progress)
+        return x, y
+
+    @staticmethod
+    def interpolate_path_pose(points, progress):
         if not points:
             raise ValueError("路径不能为空")
         if len(points) == 1:
-            return points[0]
+            return points[0][0], points[0][1], 0.0
 
         progress = max(0.0, min(float(progress), 1.0))
         lengths = [
@@ -310,7 +315,7 @@ class TccOverviewWidget(QWidget):
         ]
         total_length = sum(lengths)
         if total_length <= 0:
-            return points[0]
+            return points[0][0], points[0][1], 0.0
         target = progress * total_length
         traversed = 0.0
         segments = tuple(zip(points, points[1:], lengths))
@@ -318,12 +323,15 @@ class TccOverviewWidget(QWidget):
             if target <= traversed + length or index == len(segments) - 1:
                 ratio = 0.0 if length <= 0 else (target - traversed) / length
                 ratio = max(0.0, min(ratio, 1.0))
+                delta_x = end[0] - start[0]
+                delta_y = end[1] - start[1]
                 return (
-                    start[0] + (end[0] - start[0]) * ratio,
-                    start[1] + (end[1] - start[1]) * ratio,
+                    start[0] + delta_x * ratio,
+                    start[1] + delta_y * ratio,
+                    degrees(atan2(delta_y, delta_x)),
                 )
             traversed += length
-        return points[-1]
+        return points[-1][0], points[-1][1], 0.0
 
     @staticmethod
     def route_highlight_contract(station, route_type):
@@ -1084,8 +1092,17 @@ class TccOverviewWidget(QWidget):
                     contract["track"],
                     rail_y,
                 )
-                x, y = self.interpolate_path(path, contract["progress"])
-                self._draw_train_marker(painter, x, y, train.get("train_id", ""))
+                x, y, angle = self.interpolate_path_pose(
+                    path,
+                    contract["progress"],
+                )
+                self._draw_train_marker(
+                    painter,
+                    x,
+                    y,
+                    train.get("train_id", ""),
+                    angle,
+                )
                 continue
 
             track_code = train.get("current_track") or ""
@@ -1097,15 +1114,26 @@ class TccOverviewWidget(QWidget):
             x = interval_left + (index + ratio) * self.SECTION_WIDTH
             self._draw_train_marker(painter, x, rail_y, train.get("train_id", ""))
 
-    def _draw_train_marker(self, painter, x, rail_y, label):
-        rect = QRectF(x - 13, rail_y - 21, 26, 11)
+    def _draw_train_marker(self, painter, x, rail_y, label, angle=0.0):
+        painter.save()
+        painter.translate(x, rail_y - 15.5)
+        painter.rotate(angle)
+        rect = QRectF(-13, -5.5, 26, 11)
         painter.setBrush(QColor("#e8f1f8"))
         painter.setPen(QPen(QColor("#4aaee8"), 1))
         painter.drawRoundedRect(rect, 3, 3)
+        painter.restore()
         painter.setPen(QColor("#8fd7ff"))
         painter.setFont(QFont("PingFang SC", 7, QFont.Bold))
         painter.drawText(int(x - 11), int(rail_y - 25), str(label))
-        self._train_marker_symbols.append({"x": x, "rail_y": rail_y, "label": str(label)})
+        self._train_marker_symbols.append(
+            {
+                "x": x,
+                "rail_y": rail_y,
+                "label": str(label),
+                "angle": float(angle),
+            }
+        )
 
     def mousePressEvent(self, event):
         for balise_id, hitbox in self._active_balise_hitboxes.items():

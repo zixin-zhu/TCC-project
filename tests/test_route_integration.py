@@ -54,6 +54,7 @@ class RouteTrainIntegrationTest(unittest.TestCase):
         self.assertEqual(train.movement_phase, "DEPARTING")
         self.assertEqual(train.route_id, route.route_id)
         self.assertEqual(train.departure_route_id, route.route_id)
+        self.assertEqual(route.state, RouteState.ESTABLISHED)
         self.assertIn(route, self.routes.active_routes())
 
         train.station_position = self.trains.STATION_EXIT_POSITION
@@ -79,24 +80,53 @@ class RouteTrainIntegrationTest(unittest.TestCase):
         self.assertIsNone(train.route_id)
         self.assertNotIn(route, self.routes.active_routes())
 
-    def test_receive_route_can_be_assigned_independently_after_departure(self):
+    def test_receive_route_is_locked_only_when_train_enters_station(self):
         self.simulation.set_direction("B_TO_A")
         departure = self.routes.establish_route("B", RouteType.SIDE_DEPART)
         receive = self.routes.establish_route("A", RouteType.SIDE_RECEIVE)
-        train = self.trains.add_waiting_train("SIDE", "SIDE")
+        train = self.trains.add_waiting_train("SIDE")
         self.assertTrue(self.trains.dispatch_train(train))
 
         train.station_position = self.trains.STATION_EXIT_POSITION
         self.trains.handle_departure_transition(train)
+        self.assertNotIn(departure, self.routes.active_routes())
+        self.assertEqual(receive.state, RouteState.ESTABLISHED)
+        self.assertIsNone(train.receive_route_id)
+
+        train.current_track = "G01"
         train.position = self.trains.default_track_length + 1
         self.trains.handle_track_transition(train)
-        self.assertNotIn(departure, self.routes.active_routes())
-        assigned = self.trains.assign_receive_route(receive)
 
-        self.assertIs(assigned, train)
         self.assertEqual(train.route_id, receive.route_id)
         self.assertEqual(train.receive_route_id, receive.route_id)
         self.assertEqual(receive.state, RouteState.LOCKED)
+
+    def test_cancelled_receive_route_stops_train_at_destination_signal(self):
+        train = self.trains.create_train()
+        train.enter_track("G20")
+        receive = self.routes.establish_route("B", RouteType.MAIN_RECEIVE)
+        self.assertIs(self.trains.assign_receive_route(receive), train)
+        self.assertEqual(receive.train_id, train.train_id)
+
+        self.trains.cancel_route(receive.route_id)
+        train.current_track = "G38"
+        train.position = self.trains.default_track_length + 1
+        self.trains.handle_track_transition(train)
+
+        self.assertEqual(train.movement_phase, "WAITING_RECEIVE_ROUTE")
+        self.assertEqual(train.current_track, "G38")
+        self.assertIsNone(train.receive_route_id)
+        self.assertIsNone(train.arrival_mode)
+
+    def test_departure_route_in_use_cannot_be_cancelled_before_station_boundary(self):
+        route = self.routes.establish_route("A", RouteType.MAIN_DEPART)
+        train = self.trains.add_waiting_train("MAIN")
+        self.assertTrue(self.trains.dispatch_train(train))
+
+        with self.assertRaisesRegex(ValueError, "驶出站界前不能人工取消"):
+            self.trains.cancel_route(route.route_id)
+
+        self.assertIn(route, self.routes.active_routes())
 
 
 class RouteSignalIntegrationTest(unittest.TestCase):

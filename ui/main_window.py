@@ -1037,7 +1037,7 @@ class MainWindow(QMainWindow):
         if route_id is None:
             return
         try:
-            self.route_service.cancel_route(route_id)
+            self.train_service.cancel_route(route_id)
         except ValueError as error:
             self.show_operation_error("进路取消失败", error)
             return
@@ -1596,9 +1596,10 @@ class MainWindow(QMainWindow):
                 "侧线发车" if departure_mode == "SIDE" else
                 "发车进路尚未建立"
             )
+            arrival_mode = self.train_service.receive_mode_for_train(train)
             self.arrival_mode_value.setText(
-                "正线接车" if train.arrival_mode == "MAIN" else
-                "侧线接车" if train.arrival_mode == "SIDE" else
+                "正线接车" if arrival_mode == "MAIN" else
+                "侧线接车" if arrival_mode == "SIDE" else
                 "接车进路尚未建立"
             )
             phase_labels = {

@@ -170,11 +170,6 @@ class TrainService:
                 "请检查入口区段和进路状态后重试。",
             )
         self.waiting_queue.remove(train_id)
-        receive_route = self.route_service.receive_route(
-            self.get_arrival_station(train.direction)
-        )
-        if receive_route is not None and receive_route.state == RouteState.ESTABLISHED:
-            self.assign_receive_route(receive_route)
         self.sync_track_circuits()
         self.update_train_speed_limit(train)
         return train
@@ -313,10 +308,6 @@ class TrainService:
         train.temporary_speed = 120.0
         if departure_route is None:
             return False
-        self.route_service.lock_route(
-            departure_route.route_id,
-            train.train_id,
-        )
         train.enter_departure(
             departure_route.route_id,
             departure_route.track,
@@ -377,13 +368,8 @@ class TrainService:
         # 没有下一分区
         # 说明已经驶出整个区间
         if next_track is None:
-            if train.receive_route_id is None:
-                receive_route = self.route_service.receive_route(
-                    self.get_arrival_station(train.direction)
-                ) if self.route_service is not None else None
-                if receive_route is not None:
-                    self.assign_receive_route(receive_route)
-            if train.receive_route_id is None:
+            receive_route = self.lock_matching_receive_route(train)
+            if receive_route is None:
                 train.position = self.default_track_length - 0.1
                 train.wait_for_receive_route(
                     f"{self.get_arrival_station(train.direction)}站接车进路尚未建立"
@@ -416,8 +402,6 @@ class TrainService:
         order = self.get_track_order(train.direction)
         if current_track == order[0] and next_track == order[1]:
             self.release_train_route(train)
-        if next_track == order[-1]:
-            self.lock_matching_receive_route(train)
         self.read_passive_balise(
             train,
             train.current_track
@@ -733,18 +717,23 @@ class TrainService:
     def lock_matching_receive_route(self, train):
         if self.route_service is None:
             return None
-        route = self.route_service.receive_route_for(
-            self.get_arrival_station(train.direction),
-            train.arrival_track,
+        route = self.route_service.receive_route(
+            self.get_arrival_station(train.direction)
         )
-        if route is None or route.state != RouteState.ESTABLISHED:
+        if route is None:
             return None
-        self.route_service.lock_route(route.route_id, train.train_id)
+        if route.train_id is not None and route.train_id != train.train_id:
+            return None
+        if route.state == RouteState.LOCKED and route.train_id != train.train_id:
+            return None
+        if route.state == RouteState.ESTABLISHED:
+            self.route_service.lock_route(route.route_id, train.train_id)
+        train.configure_receive_route(route.route_id, route.track)
         train.route_id = route.route_id
         return route
 
     def assign_receive_route(self, route):
-        """把新建接车进路锁闭给当前方向上最靠近目标站的列车。"""
+        """通知最前方停车列车重新尝试进站，但不提前锁闭接车进路。"""
         if route is None or route.movement != "RECEIVE":
             raise ValueError("只能分配接车进路")
         if route.state == RouteState.LOCKED:
@@ -756,8 +745,6 @@ class TrainService:
                 continue
             if self.get_arrival_station(train.direction) != route.station:
                 continue
-            if train.receive_route_id is not None:
-                continue
             absolute_position = self.get_absolute_position(train)
             if absolute_position is None:
                 continue
@@ -767,9 +754,8 @@ class TrainService:
             return None
 
         _, _, train = max(candidates, key=lambda item: (item[0], item[1]))
-        self.route_service.lock_route(route.route_id, train.train_id)
-        train.configure_receive_route(route.route_id, route.track)
-        train.route_id = route.route_id
+        # 仅预留给最前车；状态仍为 ESTABLISHED，直到该车真正越过站界。
+        route.train_id = train.train_id
         if train.movement_phase == "WAITING_RECEIVE_ROUTE":
             train.receive_waiting_reason = None
             if not self.globally_paused:
@@ -778,6 +764,79 @@ class TrainService:
                 train.block_speed = max(train.block_speed, 45.0)
                 train.calculate_target_speed()
         return train
+
+    def live_receive_route(self, train):
+        """返回列车到达站当前仍有效的接车进路。"""
+        if self.route_service is None or train is None:
+            return None
+        return self.route_service.receive_route(
+            self.get_arrival_station(train.direction)
+        )
+
+    def receive_mode_for_train(self, train):
+        """状态栏使用的接车方式；进入进路前始终以实时进路为准。"""
+        if train is None:
+            return None
+        if train.movement_phase in (
+            "RECEIVING",
+            "STATION_RUNNING",
+            "EXITING",
+            "ARRIVED",
+        ):
+            return train.arrival_mode
+        route = self.live_receive_route(train)
+        if route is None:
+            return None
+        return "MAIN" if route.track == "1G" else "SIDE"
+
+    def cancel_route(self, route_id):
+        """取消进路，并清理尚未进入接车进路的列车所持旧引用。"""
+        if self.route_service is None:
+            return False
+        route = next(
+            (
+                item
+                for item in self.route_service.active_routes()
+                if item.route_id == route_id
+            ),
+            None,
+        )
+        if route is None:
+            return False
+        if route.movement == "DEPART":
+            using_train = next(
+                (
+                    train
+                    for train in self.trains.values()
+                    if train.movement_phase == "DEPARTING"
+                    and train.departure_route_id == route_id
+                ),
+                None,
+            )
+            if using_train is not None:
+                raise ValueError(
+                    f"{route.station}站{route.display_name}正由列车"
+                    f"{using_train.train_id}使用，列车驶出站界前不能人工取消。"
+                )
+
+        cancelled = self.route_service.cancel_route(route_id)
+        if cancelled and route.movement == "RECEIVE":
+            for train in self.trains.values():
+                if (
+                    train.receive_route_id == route_id
+                    and train.movement_phase not in (
+                        "RECEIVING",
+                        "STATION_RUNNING",
+                        "EXITING",
+                        "ARRIVED",
+                    )
+                ):
+                    train.receive_route_id = None
+                    train.arrival_mode = None
+                    train.arrival_track = None
+                    if train.route_id == route_id:
+                        train.route_id = None
+        return cancelled
 
     def release_train_route(self, train):
         if self.route_service is not None and train.route_id is not None:
@@ -813,7 +872,8 @@ class TrainService:
                 continue
 
             if train.movement_phase == "WAITING_RECEIVE_ROUTE":
-                if train.receive_route_id is None:
+                route = self.live_receive_route(train)
+                if route is None or route.state != RouteState.ESTABLISHED:
                     continue
                 train.status = "RUNNING"
                 train.movement_phase = "INTERVAL_RUNNING"

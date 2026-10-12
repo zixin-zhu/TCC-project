@@ -116,8 +116,8 @@ class MultiTrainLifecycleTest(unittest.TestCase):
         self.assertEqual(selected.movement_phase, "DEPARTING")
         self.assertIsNone(selected.current_track)
         self.assertEqual(selected.station_position, 0.0)
-        self.assertEqual(departure.state, RouteState.LOCKED)
-        self.assertEqual(departure.train_id, selected.train_id)
+        self.assertEqual(departure.state, RouteState.ESTABLISHED)
+        self.assertIsNone(departure.train_id)
 
     def test_departing_enters_g01_or_g38_only_after_station_boundary(self):
         cases = (
@@ -208,7 +208,7 @@ class MultiTrainLifecycleTest(unittest.TestCase):
         self.assertIn("发车进路尚未建立", raised.exception.format_message())
         self.assertEqual(second.status, "WAITING")
 
-    def test_receive_route_is_assigned_only_to_the_frontmost_train(self):
+    def test_receive_route_wakes_only_frontmost_train_without_early_lock(self):
         rear = self.service.create_train()
         rear.enter_track("G20")
         front = self.service.create_train()
@@ -218,12 +218,12 @@ class MultiTrainLifecycleTest(unittest.TestCase):
         assigned = self.service.assign_receive_route(receive)
 
         self.assertIs(assigned, front)
-        self.assertEqual(receive.state, RouteState.LOCKED)
+        self.assertEqual(receive.state, RouteState.ESTABLISHED)
         self.assertEqual(receive.train_id, front.train_id)
-        self.assertEqual(front.receive_route_id, receive.route_id)
-        self.assertEqual(front.arrival_mode, "SIDE")
+        self.assertIsNone(front.receive_route_id)
+        self.assertEqual(self.service.receive_mode_for_train(front), "SIDE")
         self.assertIsNone(rear.receive_route_id)
-        self.assertIsNone(rear.arrival_mode)
+        self.assertEqual(self.service.receive_mode_for_train(rear), "SIDE")
 
     def test_receive_route_without_an_active_candidate_remains_established(self):
         self.service.add_waiting_train()
@@ -255,8 +255,8 @@ class MultiTrainLifecycleTest(unittest.TestCase):
         self.assertEqual(first.status, "WAITING")
         self.assertIn(first.train_id, self.service.waiting_queue)
         self.assertNotIn(selected.train_id, self.service.waiting_queue)
-        self.assertEqual(departure.state, RouteState.LOCKED)
-        self.assertEqual(departure.train_id, selected.train_id)
+        self.assertEqual(departure.state, RouteState.ESTABLISHED)
+        self.assertIsNone(departure.train_id)
 
     def test_failed_dispatch_without_routes_is_atomic(self):
         selected = self.service.add_waiting_train()
@@ -532,7 +532,8 @@ class MultiTrainStationMovementTest(unittest.TestCase):
 
         self.assertIs(assigned, front)
         self.assertEqual(front.status, "RUNNING")
-        self.assertEqual(front.arrival_mode, "MAIN")
+        self.assertIsNone(front.arrival_mode)
+        self.assertEqual(self.service.receive_mode_for_train(front), "MAIN")
         self.assertIsNone(rear.receive_route_id)
         self.assertEqual(rear.status, "STOPPED")
 
@@ -651,7 +652,8 @@ class RouteLifecycleEndToEndTest(unittest.TestCase):
                     first_receive_type,
                 )
                 self.assertIs(service.assign_receive_route(first_receive), first)
-                self.assertEqual(first.arrival_mode, "MAIN")
+                self.assertIsNone(first.arrival_mode)
+                self.assertEqual(service.receive_mode_for_train(first), "MAIN")
 
                 terminal = "G38" if direction == "A_TO_B" else "G01"
                 second.current_track = terminal
@@ -664,6 +666,7 @@ class RouteLifecycleEndToEndTest(unittest.TestCase):
 
                 first.position = service.default_track_length + 1.0
                 service.handle_track_transition(first)
+                self.assertEqual(first.arrival_mode, "MAIN")
                 first.station_position = service.STATION_EXIT_POSITION + 0.1
                 service.handle_station_transition(first)
                 self.assertEqual(first.status, "ARRIVED")
@@ -674,11 +677,13 @@ class RouteLifecycleEndToEndTest(unittest.TestCase):
                     second_receive_type,
                 )
                 self.assertIs(service.assign_receive_route(second_receive), second)
-                self.assertEqual(second.arrival_mode, "SIDE")
+                self.assertIsNone(second.arrival_mode)
+                self.assertEqual(service.receive_mode_for_train(second), "SIDE")
                 self.assertEqual(second.status, "RUNNING")
 
                 second.position = service.default_track_length + 1.0
                 service.handle_track_transition(second)
+                self.assertEqual(second.arrival_mode, "SIDE")
                 second.station_position = service.STATION_EXIT_POSITION + 0.1
                 service.handle_station_transition(second)
                 self.assertEqual(second.status, "ARRIVED")

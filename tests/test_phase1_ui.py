@@ -209,7 +209,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
         route = window.route_service.receive_route("B")
         self.assertIsNotNone(route)
         self.assertEqual(route.train_id, train.train_id)
-        self.assertEqual(train.receive_route_id, route.route_id)
+        self.assertIsNone(train.receive_route_id)
         self.assertEqual(train.status, "RUNNING")
         self.assertEqual(window.arrival_mode_value.text(), "正线接车")
         window.close()
@@ -347,6 +347,17 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertLess(right[1], points[4][1])
         self.assertEqual(view.interpolate_path(points, -1.0), points[0])
         self.assertEqual(view.interpolate_path(points, 2.0), points[-1])
+
+    def test_station_path_pose_rotates_train_parallel_to_turnout_slope(self):
+        view = TccOverviewWidget()
+        points = ((0.0, 100.0), (40.0, 100.0), (70.0, 70.0), (110.0, 70.0))
+
+        x, y, angle = view.interpolate_path_pose(points, 0.5)
+
+        self.assertGreater(x, 40.0)
+        self.assertLess(x, 70.0)
+        self.assertLess(y, 100.0)
+        self.assertAlmostEqual(angle, -45.0)
 
     def test_paused_side_train_keeps_same_interpolated_position(self):
         view = TccOverviewWidget()
@@ -1380,7 +1391,8 @@ class PhaseOneUiContractTest(unittest.TestCase):
         warning.assert_not_called()
         self.assertEqual(first.status, "RUNNING")
         self.assertEqual(first.departure_mode, "SIDE")
-        self.assertEqual(first.arrival_mode, "MAIN")
+        self.assertIsNone(first.arrival_mode)
+        self.assertEqual(window.arrival_mode_value.text(), "正线接车")
         self.assertFalse(hasattr(window.train_service, "dispatch_target_id"))
         self.assertIsNone(second.departure_mode)
         self.assertIsNone(second.arrival_mode)
@@ -1407,7 +1419,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
         window.sync_selected_train_controls()
         self.assertTrue(window.max_speed_combo.isEnabled())
         self.assertEqual(window.departure_mode_value.text(), "侧线发车")
-        self.assertEqual(window.arrival_mode_value.text(), "正线接车")
+        self.assertEqual(window.arrival_mode_value.text(), "接车进路尚未建立")
         self.assertEqual(window.max_speed_combo.currentText(), "250 km/h")
 
         current_speed = running.speed
@@ -1419,6 +1431,42 @@ class PhaseOneUiContractTest(unittest.TestCase):
         running.status = "ARRIVED"
         window.sync_selected_train_controls()
         self.assertFalse(window.max_speed_combo.isEnabled())
+        window.close()
+
+    def test_waiting_train_arrival_label_follows_live_receive_route(self):
+        window = MainWindow()
+        self.mark_communication_ready(window)
+        window.route_service.establish_route("B", RouteType.SIDE_RECEIVE)
+        first = window.train_service.add_waiting_train()
+        second = window.train_service.add_waiting_train()
+        window.refresh_view()
+
+        for train in (first, second):
+            window.train_selector.setCurrentText(train.train_id)
+            window.sync_selected_train_controls()
+            self.assertEqual(window.arrival_mode_value.text(), "侧线接车")
+
+        window.close()
+
+    def test_running_train_arrival_label_updates_after_receive_route_cancelled(self):
+        window = MainWindow()
+        self.mark_communication_ready(window)
+        route = window.route_service.establish_route("B", RouteType.MAIN_RECEIVE)
+        train = window.train_service.create_train()
+        train.enter_track("G20")
+        window.train_service.assign_receive_route(route)
+        window.refresh_view()
+        window.train_selector.setCurrentText(train.train_id)
+        window.sync_selected_train_controls()
+        self.assertEqual(window.arrival_mode_value.text(), "正线接车")
+
+        window.train_service.cancel_route(route.route_id)
+        window.sync_selected_train_controls()
+
+        self.assertEqual(
+            window.arrival_mode_value.text(),
+            "接车进路尚未建立",
+        )
         window.close()
 
     def test_dispatch_button_can_send_second_selected_train_while_engine_runs(self):
