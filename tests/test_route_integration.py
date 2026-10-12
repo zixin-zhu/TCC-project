@@ -102,6 +102,21 @@ class RouteTrainIntegrationTest(unittest.TestCase):
         self.assertEqual(train.receive_route_id, receive.route_id)
         self.assertEqual(receive.state, RouteState.LOCKED)
 
+    def test_receive_throat_clearance_uses_derived_station_section_boundary(self):
+        receive = self.routes.establish_route("B", RouteType.MAIN_RECEIVE)
+        train = self.trains.create_train()
+        train.configure_receive_route(receive.route_id, "1G")
+        train.enter_station()
+        self.trains.STATION_EXIT_POSITION = 3600.0
+
+        train.station_position = 1199.9
+        self.trains.handle_station_transition(train)
+        self.assertFalse(train.receive_throat_cleared)
+
+        train.station_position = 1200.1
+        self.trains.handle_station_transition(train)
+        self.assertTrue(train.receive_throat_cleared)
+
     def test_cancelled_receive_route_stops_train_at_destination_signal(self):
         train = self.trains.create_train()
         train.enter_track("G20")
@@ -211,6 +226,17 @@ class RouteSignalIntegrationTest(unittest.TestCase):
 
         self.assertEqual(simulation.track_circuits["G38"].signal_code, "HU")
         self.assertEqual(simulation.get_station_track_codes()["1G"], "HU")
+        self.assertEqual(simulation.get_station_track_codes()["THROAT"], "HU")
+
+        simulation.set_train_states([
+            {
+                "train_id": "T001",
+                "direction": "A_TO_B",
+                "movement_phase": "RECEIVING",
+                "arrival_track": "1G",
+                "receive_throat_cleared": True,
+            }
+        ])
         self.assertEqual(simulation.get_station_track_codes()["THROAT"], "B")
 
     def test_side_receive_route_uses_u2s_uus_then_b_after_entry(self):
@@ -239,16 +265,90 @@ class RouteSignalIntegrationTest(unittest.TestCase):
         simulation.update_all_track_codes()
 
         self.assertEqual(simulation.get_station_track_codes()["3G"], "HU")
+        self.assertEqual(simulation.get_station_track_codes()["THROAT"], "HU")
+
+        simulation.set_train_states([
+            {
+                "train_id": "T001",
+                "direction": "A_TO_B",
+                "movement_phase": "RECEIVING",
+                "arrival_track": "3G",
+                "receive_throat_cleared": True,
+            }
+        ])
         self.assertEqual(simulation.get_station_track_codes()["THROAT"], "B")
+
+    def test_side_receive_opens_boundary_double_yellow_and_keeps_inner_red(self):
+        cases = (
+            ("B", "A_TO_B", "X", "X3"),
+            ("A", "B_TO_A", "SN", "S3"),
+        )
+        for station, direction, boundary, inner in cases:
+            with self.subTest(station=station):
+                routes, simulation = self.make_simulation(station)
+                simulation.set_direction(direction)
+                routes.establish_route(station, RouteType.SIDE_RECEIVE)
+
+                aspects = simulation.get_station_signal_aspects()
+
+                self.assertEqual(aspects[boundary], "双黄灯")
+                self.assertEqual(aspects[inner], "红灯")
+
+    def test_departure_station_codes_follow_no_route_main_and_side_rules(self):
+        routes, simulation = self.make_simulation("A")
+        simulation.track_circuits["G01"].set_track_code("L4")
+
+        self.assertEqual(
+            simulation.get_station_track_codes(),
+            {"1G": "HU", "3G": "HU", "THROAT": "B"},
+        )
+
+        main = routes.establish_route("A", RouteType.MAIN_DEPART)
+        self.assertEqual(
+            simulation.get_station_track_codes(),
+            {"1G": "L5", "3G": "HU", "THROAT": "L4"},
+        )
+        routes.release_route(main.route_id)
+
+        routes.establish_route("A", RouteType.SIDE_DEPART)
+        self.assertEqual(
+            simulation.get_station_track_codes(),
+            {"1G": "HU", "3G": "UUS", "THROAT": "L4"},
+        )
+        aspects = simulation.get_station_signal_aspects()
+        self.assertEqual(aspects["X3"], "L灯")
+        self.assertEqual(aspects["SN"], "绿灯")
+
+    def test_main_departure_track_code_is_one_step_above_throat_code(self):
+        upgrades = {
+            "HU": "U",
+            "U": "LU",
+            "LU": "L",
+            "L": "L2",
+            "L2": "L3",
+            "L3": "L4",
+            "L4": "L5",
+            "L5": "L5",
+        }
+        for throat_code, track_code in upgrades.items():
+            with self.subTest(throat_code=throat_code):
+                routes, simulation = self.make_simulation("A")
+                simulation.track_circuits["G01"].set_track_code(throat_code)
+                routes.establish_route("A", RouteType.MAIN_DEPART)
+
+                codes = simulation.get_station_track_codes()
+
+                self.assertEqual(codes["THROAT"], throat_code)
+                self.assertEqual(codes["1G"], track_code)
 
     def test_station_signal_aspects_follow_active_route_and_track_codes(self):
         cases = (
             ("A", "A_TO_B", RouteType.MAIN_DEPART, {"X1": "绿灯", "SN": "黄灯"}),
             ("A", "A_TO_B", RouteType.SIDE_DEPART, {"X3": "L灯", "SN": "黄灯"}),
             ("A", "B_TO_A", RouteType.MAIN_RECEIVE, {"SN": "黄灯", "S1": "绿灯"}),
-            ("A", "B_TO_A", RouteType.SIDE_RECEIVE, {"SN": "黄灯", "S3": "L灯"}),
+            ("A", "B_TO_A", RouteType.SIDE_RECEIVE, {"SN": "双黄灯"}),
             ("B", "A_TO_B", RouteType.MAIN_RECEIVE, {"X": "黄灯", "X1": "绿灯"}),
-            ("B", "A_TO_B", RouteType.SIDE_RECEIVE, {"X": "黄灯", "X3": "L灯"}),
+            ("B", "A_TO_B", RouteType.SIDE_RECEIVE, {"X": "双黄灯"}),
             ("B", "B_TO_A", RouteType.MAIN_DEPART, {"S1": "绿灯", "S": "黄灯"}),
             ("B", "B_TO_A", RouteType.SIDE_DEPART, {"S3": "L灯", "S": "黄灯"}),
         )

@@ -14,6 +14,7 @@ class TrainService:
     RECEIVE_RELEASE_POSITION = 2000.0
     STATION_EXITING_POSITION = 2500.0
     STATION_EXIT_POSITION = 3000.0
+    STATION_SECTION_COUNT = 3
     BLOCK_SPEED_LIMITS = {
         "L5": 120.0,
         "L3": 120.0,
@@ -380,6 +381,7 @@ class TrainService:
                 )
                 return
             train.enter_station(remaining_distance)
+            self.update_receive_throat_clearance(train)
             return
 
         # 下一分区被其他列车占用
@@ -470,6 +472,7 @@ class TrainService:
     def handle_station_transition(self, train):
         if train.station_position is None:
             return
+        self.update_receive_throat_clearance(train)
         if (
             train.station_position >= self.RECEIVE_RELEASE_POSITION
             and train.receive_route_id is not None
@@ -488,6 +491,14 @@ class TrainService:
             train.movement_phase = "EXITING"
         if train.station_position >= self.STATION_EXIT_POSITION:
             train.leave_section()
+
+    def update_receive_throat_clearance(self, train):
+        """按当前站场拓扑判断车尾是否已完全离开第一咽喉区段。"""
+        if train.station_position is None:
+            return
+        throat_end = self.STATION_EXIT_POSITION / self.STATION_SECTION_COUNT
+        if train.station_position >= throat_end:
+            train.receive_throat_cleared = True
 
     # ==================================================
     # 更新所有列车

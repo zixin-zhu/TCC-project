@@ -919,6 +919,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
         view = TccOverviewWidget()
 
         self.assertEqual(view.CODE_COLORS["B"], QColor("#f5f7fa"))
+        self.assertEqual(view.CODE_COLORS["HU"], QColor("#e84a3a"))
         self.assertEqual(view.occupied_rail_color, QColor("#ef3d48"))
 
     def test_painted_overview_uses_double_dot_boundaries_and_two_station_codes(self):

@@ -43,6 +43,17 @@ class SimulationService:
         "L5": 3,
     }
 
+    DEPARTURE_CODE_UPGRADE = {
+        "HU": "U",
+        "U": "LU",
+        "LU": "L",
+        "L": "L2",
+        "L2": "L3",
+        "L3": "L4",
+        "L4": "L5",
+        "L5": "L5",
+    }
+
     def __init__(self, station_type, route_service=None):
 
         self.station_type = station_type
@@ -508,14 +519,13 @@ class SimulationService:
         """返回本站股道和区间侧咽喉的低频编码。
 
         站内码由当前已建立进路决定，不由绘图层自行推断：
-        无进路时全部采用限制码 HU；正线发车时 1G 与相邻区间
-        入口码保持连续；侧线接发车按课程文档使用 UUS；接车
-        进路以股道停车目标为边界，正线股道保持 HU。
+        无进路时股道为 HU、区间侧咽喉为 B；正线发车时咽喉
+        跟随相邻区间、股道提高一个码序等级；侧线发车时股道
+        使用 UUS、咽喉跟随相邻区间。接车列车完全离开第一
+        咽喉区段后，咽喉码恢复为 B。
         """
-        codes = {"1G": "HU", "3G": "HU", "THROAT": "HU"}
+        codes = {"1G": "HU", "3G": "HU", "THROAT": "B"}
         direction = self.tcc.get_direction()
-        arrival_station = "B" if direction == "A_TO_B" else "A"
-        arrival_here = self.station_type == arrival_station
         for train in self._train_states:
             train_arrival = "B" if train.get("direction") == "A_TO_B" else "A"
             if train_arrival != self.station_type:
@@ -526,32 +536,36 @@ class SimulationService:
                 "EXITING",
             ):
                 continue
-            codes["THROAT"] = "B"
-            return codes
+            if train.get("receive_throat_cleared", False):
+                return codes
+            break
 
         if self.route_service is None:
-            if arrival_here:
-                codes["THROAT"] = "B"
             return codes
 
         routes = self.route_service.active_routes(self.station_type)
         if not routes:
-            if arrival_here:
-                codes["THROAT"] = "B"
             return codes
 
         route = routes[0]
         if route.movement == "RECEIVE":
+            codes["THROAT"] = "HU"
             return codes
         if route.route_type == RouteType.MAIN_DEPART:
             adjacent_code = self.track_circuits[
                 "G01" if self.station_type == "A" else "G38"
             ].signal_code
-            codes["1G"] = adjacent_code
             codes["THROAT"] = adjacent_code
+            codes["1G"] = self.DEPARTURE_CODE_UPGRADE.get(
+                adjacent_code,
+                adjacent_code,
+            )
         elif route.route_type == RouteType.SIDE_DEPART:
+            adjacent_code = self.track_circuits[
+                "G01" if self.station_type == "A" else "G38"
+            ].signal_code
             codes["3G"] = "UUS"
-            codes["THROAT"] = "UUS"
+            codes["THROAT"] = adjacent_code
 
         return codes
 
@@ -606,10 +620,10 @@ class SimulationService:
 
         inner_signal, boundary_signal, station_track = endpoint
         codes = self.get_station_track_codes()
-        if route.route_type in (
-            RouteType.SIDE_RECEIVE,
-            RouteType.SIDE_DEPART,
-        ):
+        if route.route_type == RouteType.SIDE_RECEIVE:
+            aspects[boundary_signal] = "双黄灯"
+            return aspects
+        if route.route_type == RouteType.SIDE_DEPART:
             aspects[inner_signal] = "L灯"
         else:
             aspects[inner_signal] = self.aspect_for_code(codes.get(station_track))

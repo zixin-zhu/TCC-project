@@ -22,6 +22,7 @@ class Train:
         self.receive_waiting_reason = None
         self.movement_phase = "WAITING"
         self.station_position = None
+        self.receive_throat_cleared = False
         if departure_mode is not None:
             self.configure_operation_modes(
                 departure_mode,
@@ -132,6 +133,7 @@ class Train:
         self.receive_waiting_reason = None
         self.movement_phase = "WAITING"
         self.station_position = None
+        self.receive_throat_cleared = False
         self.max_speed = max_speed
         self.block_speed = 120.0
         self.line_speed = 120.0
@@ -195,6 +197,7 @@ class Train:
         self.position = self.station_position
         self.status = "RUNNING"
         self.movement_phase = "RECEIVING"
+        self.receive_throat_cleared = False
         self.receive_waiting_reason = None
 
     def leave_section(self):
@@ -235,6 +238,7 @@ class Train:
                 round(self.station_position, 2)
                 if self.station_position is not None else None
             ),
+            "receive_throat_cleared": self.receive_throat_cleared,
             "current_track": self.current_track,
 
             "position": round(

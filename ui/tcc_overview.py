@@ -60,7 +60,7 @@ class TccOverviewWidget(QWidget):
         "LU": QColor("#9eea2d"),
         "U": QColor("#f5dc32"),
         "U2S": QColor("#c9bd28"),
-        "HU": QColor("#ef6c26"),
+        "HU": QColor("#e84a3a"),
         "UUS": QColor("#d8c936"),
         "B": QColor("#f5f7fa"),
         "-": QColor("#394552"),
