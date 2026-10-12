@@ -8,7 +8,7 @@
 - 唯一需求依据：`/Users/zhu/Desktop/TCC整理_可编辑版.docx`
 - 总方案：`docs/TCC功能仿真实现方案.md`
 - 当前阶段：进路生命周期、目标站外等待与站内连续运行修订
-- 当前原子任务：Task 1 已完成；下一恢复入口为 `docs/superpowers/plans/2026-10-12-route-lifecycle-and-station-movement.md` Task 2
+- 当前原子任务：Task 2 已完成；下一恢复入口为 `docs/superpowers/plans/2026-10-12-route-lifecycle-and-station-movement.md` Task 3
 - 事件记录模块：不在本项目当前范围
 
 ## 阶段看板
@@ -94,12 +94,13 @@
 - 已确认状态区改为“第一行5项控制、第二/三行各4项状态”的紧凑布局，接发方式由实际进路只读显示，删除分区位置和目标速度，保留实时最大速度设置。
 - 已建立 `docs/superpowers/specs/2026-10-12-route-lifecycle-and-station-movement-design.md` 与对应测试先行实施计划，任务按模型与进路、站内运行、UI绘制、集成恢复四步执行。
 - 已完成进路生命周期 Task 1：列车发车只读取实际已建立的发车进路并由其派生正/侧线方式，不再要求接车进路；进入 G01/G38 后发车进路自动删除，后车必须重新建立。列车模型已拆分发车/接车进路绑定与运行阶段；接车进路可按当前方向累计位置只分配给最前方活动列车。
+- 已完成进路生命周期 Task 2：无接车进路时 A→B 列车固定停在 G38 末端、B→A 固定停在 G01 末端，普通空闲检测不会误恢复；获得进路的最前车进入目标站并连续经历接车、站内运行、驶出车站。接车进路在 A→B 越过 B站 X1/X3、B→A 越过 A站 S1/S3 的统一内方边界后自动删除，列车继续运行到目标站另一端外方信号机后才完成。
 
 ## 最近验证
 
 ```text
 .venv/bin/python -m unittest discover -s tests -v
-Ran 108 tests
+Ran 116 tests
 OK
 ```
 
@@ -125,7 +126,7 @@ OK
 - [x] 按计划执行 Task 4：当前列车 UI、最大速度和全局控制。
 - [x] 按计划执行 Task 5：集成验收、视觉检查与恢复文档。
 - [x] 执行 `2026-10-12-route-lifecycle-and-station-movement.md` Task 1：运行阶段、实际进路派生和自动释放。
-- [ ] 执行 Task 2：目标站外等待、站内运行与精确接车进路释放点。
+- [x] 执行 Task 2：目标站外等待、站内运行与精确接车进路释放点。
 - [ ] 执行 Task 3：三行状态栏、精确白光带和全线路列车绘制。
 - [ ] 执行 Task 4：双方向多车集成验收与恢复文档。
 

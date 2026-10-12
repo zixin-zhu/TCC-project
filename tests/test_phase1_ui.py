@@ -1025,7 +1025,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
         warning.assert_not_called()
         self.assertEqual(first.status, "RUNNING")
         self.assertEqual(first.departure_mode, "SIDE")
-        self.assertIsNone(first.arrival_mode)
+        self.assertEqual(first.arrival_mode, "MAIN")
         self.assertFalse(hasattr(window.train_service, "dispatch_target_id"))
         self.assertIsNone(second.departure_mode)
         self.assertIsNone(second.arrival_mode)

@@ -11,6 +11,9 @@ class TrainService:
     # 自动闭塞码序对应的仿真速度约束
     # ==========================================
     SAFETY_MARGIN = 300.0
+    RECEIVE_RELEASE_POSITION = 2000.0
+    STATION_EXITING_POSITION = 2500.0
+    STATION_EXIT_POSITION = 3000.0
     BLOCK_SPEED_LIMITS = {
         "L5": 120.0,
         "L3": 120.0,
@@ -167,6 +170,11 @@ class TrainService:
                 "请检查入口区段和进路状态后重试。",
             )
         self.waiting_queue.remove(train_id)
+        receive_route = self.route_service.receive_route(
+            self.get_arrival_station(train.direction)
+        )
+        if receive_route is not None and receive_route.state == RouteState.ESTABLISHED:
+            self.assign_receive_route(receive_route)
         self.sync_track_circuits()
         self.update_train_speed_limit(train)
         return train
@@ -373,9 +381,19 @@ class TrainService:
         # 没有下一分区
         # 说明已经驶出整个区间
         if next_track is None:
-            self.release_train_route(train)
-            train.leave_section()
-
+            if train.receive_route_id is None:
+                receive_route = self.route_service.receive_route(
+                    self.get_arrival_station(train.direction)
+                ) if self.route_service is not None else None
+                if receive_route is not None:
+                    self.assign_receive_route(receive_route)
+            if train.receive_route_id is None:
+                train.position = self.default_track_length - 0.1
+                train.wait_for_receive_route(
+                    f"{self.get_arrival_station(train.direction)}站接车进路尚未建立"
+                )
+                return
+            train.enter_station(remaining_distance)
             return
 
         # 下一分区被其他列车占用
@@ -418,6 +436,13 @@ class TrainService:
         if train.status != "RUNNING":
             return
 
+        if train.movement_phase in ("RECEIVING", "STATION_RUNNING", "EXITING"):
+            train.position = train.station_position or 0.0
+            train.update(delta_time)
+            train.station_position = train.position
+            self.handle_station_transition(train)
+            return
+
         # ----------------------------------
         # HU时：
         # 当前分区末端作为停车边界
@@ -435,6 +460,28 @@ class TrainService:
         self.handle_track_transition(
             train
         )
+
+    def handle_station_transition(self, train):
+        if train.station_position is None:
+            return
+        if (
+            train.station_position >= self.RECEIVE_RELEASE_POSITION
+            and train.receive_route_id is not None
+        ):
+            route_id = train.receive_route_id
+            if self.route_service is not None:
+                self.route_service.release_route(route_id)
+            if train.route_id == route_id:
+                train.route_id = None
+            train.receive_route_id = None
+            train.movement_phase = "STATION_RUNNING"
+        if (
+            train.station_position >= self.STATION_EXITING_POSITION
+            and train.station_position < self.STATION_EXIT_POSITION
+        ):
+            train.movement_phase = "EXITING"
+        if train.station_position >= self.STATION_EXIT_POSITION:
+            train.leave_section()
 
     # ==================================================
     # 更新所有列车
@@ -705,6 +752,13 @@ class TrainService:
         self.route_service.lock_route(route.route_id, train.train_id)
         train.configure_receive_route(route.route_id, route.track)
         train.route_id = route.route_id
+        if train.movement_phase == "WAITING_RECEIVE_ROUTE":
+            train.receive_waiting_reason = None
+            if not self.globally_paused:
+                train.status = "RUNNING"
+                train.movement_phase = "INTERVAL_RUNNING"
+                train.block_speed = max(train.block_speed, 45.0)
+                train.calculate_target_speed()
         return train
 
     def release_train_route(self, train):
@@ -738,6 +792,14 @@ class TrainService:
         for train in self.trains.values():
 
             if train.status != "STOPPED":
+                continue
+
+            if train.movement_phase == "WAITING_RECEIVE_ROUTE":
+                if train.receive_route_id is None:
+                    continue
+                train.status = "RUNNING"
+                train.movement_phase = "INTERVAL_RUNNING"
+                self.update_train_speed_limit(train)
                 continue
 
             next_track = self.get_next_track(
@@ -1035,10 +1097,11 @@ class TrainService:
         每个闭塞分区暂按1000m计算。
         """
 
-        if train.current_track is None:
-            return None
-
         order = self.get_track_order(train.direction)
+        if train.current_track is None:
+            if train.station_position is None or train.status == "ARRIVED":
+                return None
+            return len(order) * self.default_track_length + train.station_position
         if train.current_track not in order:
             return None
 

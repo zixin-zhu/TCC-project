@@ -21,6 +21,7 @@ class Train:
         self.receive_route_id = None
         self.receive_waiting_reason = None
         self.movement_phase = "WAITING"
+        self.station_position = None
         if departure_mode is not None:
             self.configure_operation_modes(
                 departure_mode,
@@ -130,6 +131,7 @@ class Train:
         self.receive_route_id = None
         self.receive_waiting_reason = None
         self.movement_phase = "WAITING"
+        self.station_position = None
         self.max_speed = max_speed if preserve_configuration else 120.0
         self.block_speed = 120.0
         self.line_speed = 120.0
@@ -167,6 +169,22 @@ class Train:
         self.status = "RUNNING"
         self.movement_phase = "INTERVAL_RUNNING"
 
+    def wait_for_receive_route(self, message):
+        self.position = min(self.position, 999.9)
+        self.speed = 0.0
+        self.target_speed = 0.0
+        self.status = "STOPPED"
+        self.movement_phase = "WAITING_RECEIVE_ROUTE"
+        self.receive_waiting_reason = message
+
+    def enter_station(self, initial_position=0.0):
+        self.current_track = None
+        self.station_position = max(0.0, float(initial_position))
+        self.position = self.station_position
+        self.status = "RUNNING"
+        self.movement_phase = "RECEIVING"
+        self.receive_waiting_reason = None
+
     def leave_section(self):
 
         self.current_track = None
@@ -178,6 +196,7 @@ class Train:
         self.target_speed = 0.0
 
         self.status = "ARRIVED"
+        self.movement_phase = "ARRIVED"
 
     def set_target_speed(self, speed):
 
@@ -200,6 +219,10 @@ class Train:
             "receive_route_id": self.receive_route_id,
             "receive_waiting_reason": self.receive_waiting_reason,
             "movement_phase": self.movement_phase,
+            "station_position": (
+                round(self.station_position, 2)
+                if self.station_position is not None else None
+            ),
             "current_track": self.current_track,
 
             "position": round(

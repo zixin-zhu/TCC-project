@@ -392,5 +392,94 @@ class MultiTrainMovementTest(unittest.TestCase):
         self.assertEqual(self.simulation.signal_states["S01"], "黄绿灯")
 
 
+class MultiTrainStationMovementTest(unittest.TestCase):
+    def setUp(self):
+        self.routes = RouteService()
+        self.simulation = SimulationService("A", route_service=self.routes)
+        self.service = TrainService(self.simulation, route_service=self.routes)
+
+    def make_terminal_train(self, direction="A_TO_B"):
+        train = self.service.create_train()
+        train.direction = direction
+        terminal = "G38" if direction == "A_TO_B" else "G01"
+        train.enter_track(terminal)
+        train.position = self.service.default_track_length + 5.0
+        train.speed = 45.0
+        train.target_speed = 45.0
+        return train
+
+    def test_train_waits_at_destination_signal_without_receive_route(self):
+        for direction, terminal in (("A_TO_B", "G38"), ("B_TO_A", "G01")):
+            with self.subTest(direction=direction):
+                train = self.make_terminal_train(direction)
+
+                self.service.handle_track_transition(train)
+                stopped_position = train.position
+                self.service.update_all(10.0)
+
+                self.assertEqual(train.status, "STOPPED")
+                self.assertEqual(train.movement_phase, "WAITING_RECEIVE_ROUTE")
+                self.assertEqual(train.current_track, terminal)
+                self.assertEqual(train.position, stopped_position)
+                self.assertIn("接车进路尚未建立", train.receive_waiting_reason)
+
+    def test_new_receive_route_resumes_only_the_frontmost_waiting_train(self):
+        rear = self.service.create_train()
+        rear.enter_track("G36")
+        rear.status = "STOPPED"
+        front = self.make_terminal_train()
+        self.service.handle_track_transition(front)
+        receive = self.routes.establish_route("B", RouteType.MAIN_RECEIVE)
+
+        assigned = self.service.assign_receive_route(receive)
+
+        self.assertIs(assigned, front)
+        self.assertEqual(front.status, "RUNNING")
+        self.assertEqual(front.arrival_mode, "MAIN")
+        self.assertIsNone(rear.receive_route_id)
+        self.assertEqual(rear.status, "STOPPED")
+
+    def test_receive_route_releases_at_inner_signal_then_train_exits_station(self):
+        cases = (
+            ("A_TO_B", "B", RouteType.MAIN_RECEIVE, "MAIN"),
+            ("A_TO_B", "B", RouteType.SIDE_RECEIVE, "SIDE"),
+            ("B_TO_A", "A", RouteType.MAIN_RECEIVE, "MAIN"),
+            ("B_TO_A", "A", RouteType.SIDE_RECEIVE, "SIDE"),
+        )
+        for direction, station, route_type, arrival_mode in cases:
+            with self.subTest(direction=direction, route_type=route_type):
+                routes = RouteService()
+                simulation = SimulationService("A", route_service=routes)
+                service = TrainService(simulation, route_service=routes)
+                train = service.create_train()
+                train.direction = direction
+                terminal = "G38" if direction == "A_TO_B" else "G01"
+                train.enter_track(terminal)
+                route = routes.establish_route(station, route_type)
+                service.assign_receive_route(route)
+                train.position = service.default_track_length + 10.0
+
+                service.handle_track_transition(train)
+                self.assertEqual(train.movement_phase, "RECEIVING")
+                self.assertEqual(train.arrival_mode, arrival_mode)
+                self.assertIn(route, routes.active_routes())
+
+                train.station_position = service.RECEIVE_RELEASE_POSITION - 0.1
+                service.handle_station_transition(train)
+                self.assertIn(route, routes.active_routes())
+
+                train.station_position = service.RECEIVE_RELEASE_POSITION + 0.1
+                service.handle_station_transition(train)
+                self.assertNotIn(route, routes.active_routes())
+                self.assertIsNone(train.receive_route_id)
+                self.assertEqual(train.movement_phase, "STATION_RUNNING")
+                self.assertEqual(train.status, "RUNNING")
+
+                train.station_position = service.STATION_EXIT_POSITION + 0.1
+                service.handle_station_transition(train)
+                self.assertEqual(train.status, "ARRIVED")
+                self.assertEqual(train.movement_phase, "ARRIVED")
+
+
 if __name__ == "__main__":
     unittest.main()
