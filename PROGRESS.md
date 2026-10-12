@@ -8,7 +8,7 @@
 - 唯一需求依据：`/Users/zhu/Desktop/TCC整理_可编辑版.docx`
 - 总方案：`docs/TCC功能仿真实现方案.md`
 - 当前阶段：站内连续运动、信号码序联动与全进路复位修订
-- 当前原子任务：书面设计待用户审核；恢复入口为 `docs/superpowers/specs/2026-10-12-station-path-signal-reset-design.md`
+- 当前原子任务：实施计划待用户审核；恢复入口为 `docs/superpowers/plans/2026-10-12-station-path-signal-reset.md`
 - 事件记录模块：不在本项目当前范围
 
 ## 阶段看板
@@ -100,6 +100,7 @@
 - 已完成进路生命周期 Task 4：新增 A→B、B→A 双方向双车端到端回归，验证两车依次发车、发车进路逐车重建、最前车独占接车进路、后车站外等待、前车驶出以及后车重新接车。全量 121 项测试、`compileall` 和差异格式检查均通过；新增 `docs/phases/PHASE-05-ROUTE-LIFECYCLE.md` 作为本次修订恢复入口。
 - 已修复侧线进路建立后的2D重绘崩溃：站场几何坐标表补齐与 S1/X1 同物理位置的 S3/X3 坐标，A/B站侧线接车、侧线发车四种组合均完成真实离屏重绘；新增回归测试后全量 122 项通过。
 - 已确认下一轮设计：待发车只绘制一个 xN 数量标记；新增 DEPARTING 站内发车阶段；侧线列车按折线路径长度沿斜坡连续运行；全部信号由轨道码序和安全门控计算；状态栏三个只读值取消框式外观；复位删除所有进路并清空列车接发方式，同时保留临时限速。书面规范见 `docs/superpowers/specs/2026-10-12-station-path-signal-reset-design.md`。
+- 上述书面规范已经用户确认；实施拆分为 5 个可独立验收并逐次 Git 上传的任务，计划见 `docs/superpowers/plans/2026-10-12-station-path-signal-reset.md`。当前尚未修改业务代码，等待用户审核计划并选择执行方式。
 
 ## 最近验证
 
