@@ -303,29 +303,21 @@ class TrainService:
         ):
             return False
         departure_route = self.get_matching_departure_route(train)
-        entrance_track = self.get_entrance_track(
-            train.direction
-        )
         train.block_speed = 120.0
         train.line_speed = 120.0
         train.active_balise_speed = 120.0
         train.temporary_speed = 120.0
-        train.enter_track(
-            entrance_track
+        if departure_route is None:
+            return False
+        self.route_service.lock_route(
+            departure_route.route_id,
+            train.train_id,
         )
-        self.read_passive_balise(
-            train,
-            entrance_track
+        train.enter_departure(
+            departure_route.route_id,
+            departure_route.track,
         )
         train.calculate_target_speed()
-        if departure_route is not None:
-            self.route_service.lock_route(
-                departure_route.route_id,
-                train.train_id,
-            )
-            train.route_id = departure_route.route_id
-            train.departure_route_id = departure_route.route_id
-            self.release_departure_route(train)
         return True
 
     def release_departure_route(self, train):
@@ -436,6 +428,13 @@ class TrainService:
         if train.status != "RUNNING":
             return
 
+        if train.movement_phase == "DEPARTING":
+            train.position = train.station_position or 0.0
+            train.update(delta_time)
+            train.station_position = train.position
+            self.handle_departure_transition(train)
+            return
+
         if train.movement_phase in ("RECEIVING", "STATION_RUNNING", "EXITING"):
             train.position = train.station_position or 0.0
             train.update(delta_time)
@@ -460,6 +459,21 @@ class TrainService:
         self.handle_track_transition(
             train
         )
+
+    def handle_departure_transition(self, train):
+        if train.station_position is None:
+            return
+        if train.station_position < self.STATION_EXIT_POSITION:
+            return
+
+        remaining_distance = train.station_position - self.STATION_EXIT_POSITION
+        entrance_track = self.get_entrance_track(train.direction)
+        train.enter_track(entrance_track)
+        train.station_position = None
+        train.position = remaining_distance
+        self.read_passive_balise(train, entrance_track)
+        self.release_departure_route(train)
+        self.update_train_speed_limit(train)
 
     def handle_station_transition(self, train):
         if train.station_position is None:

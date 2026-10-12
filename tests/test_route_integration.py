@@ -50,6 +50,15 @@ class RouteTrainIntegrationTest(unittest.TestCase):
         train = self.trains.add_waiting_train("MAIN")
 
         self.assertTrue(self.trains.dispatch_train(train))
+        self.assertIsNone(train.current_track)
+        self.assertEqual(train.movement_phase, "DEPARTING")
+        self.assertEqual(train.route_id, route.route_id)
+        self.assertEqual(train.departure_route_id, route.route_id)
+        self.assertIn(route, self.routes.active_routes())
+
+        train.station_position = self.trains.STATION_EXIT_POSITION
+        self.trains.handle_departure_transition(train)
+
         self.assertEqual(train.current_track, "G01")
         self.assertEqual(train.station_track, "1G")
         self.assertIsNone(train.route_id)
@@ -61,6 +70,8 @@ class RouteTrainIntegrationTest(unittest.TestCase):
         train = self.trains.add_waiting_train("SIDE")
         self.assertTrue(self.trains.dispatch_train(train))
 
+        train.station_position = self.trains.STATION_EXIT_POSITION
+        self.trains.handle_departure_transition(train)
         train.position = self.trains.default_track_length + 5
         self.trains.handle_track_transition(train)
 
@@ -75,6 +86,8 @@ class RouteTrainIntegrationTest(unittest.TestCase):
         train = self.trains.add_waiting_train("SIDE", "SIDE")
         self.assertTrue(self.trains.dispatch_train(train))
 
+        train.station_position = self.trains.STATION_EXIT_POSITION
+        self.trains.handle_departure_transition(train)
         train.position = self.trains.default_track_length + 1
         self.trains.handle_track_transition(train)
         self.assertNotIn(departure, self.routes.active_routes())

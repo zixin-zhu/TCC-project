@@ -87,6 +87,60 @@ class MultiTrainLifecycleTest(unittest.TestCase):
         receive = self.routes.establish_route("B", RouteType.MAIN_RECEIVE)
         return departure, receive
 
+    def test_dispatch_starts_at_station_before_entrance_section(self):
+        departure = self.routes.establish_route("A", RouteType.MAIN_DEPART)
+        selected = self.service.add_waiting_train()
+
+        self.service.dispatch_selected_train(selected.train_id, 120)
+
+        self.assertEqual(selected.status, "RUNNING")
+        self.assertEqual(selected.movement_phase, "DEPARTING")
+        self.assertIsNone(selected.current_track)
+        self.assertEqual(selected.station_position, 0.0)
+        self.assertEqual(departure.state, RouteState.LOCKED)
+        self.assertEqual(departure.train_id, selected.train_id)
+
+    def test_departing_enters_g01_or_g38_only_after_station_boundary(self):
+        cases = (
+            ("A_TO_B", "A", "G01", "B01"),
+            ("B_TO_A", "B", "G38", "B38"),
+        )
+        for direction, station, entrance, balise in cases:
+            with self.subTest(direction=direction):
+                routes = RouteService()
+                simulation = SimulationService("A", route_service=routes)
+                simulation.set_direction(direction)
+                service = TrainService(simulation, route_service=routes)
+                departure = routes.establish_route(
+                    station,
+                    RouteType.MAIN_DEPART,
+                )
+                train = service.add_waiting_train()
+                service.dispatch_selected_train(train.train_id, 120)
+                train.station_position = 2980.0
+                train.position = 2980.0
+                train.speed = 36.0
+                train.target_speed = 36.0
+
+                service.update_train(train, 1.0)
+                service.sync_track_circuits()
+
+                self.assertEqual(train.movement_phase, "DEPARTING")
+                self.assertIsNone(train.current_track)
+                self.assertFalse(simulation.track_circuits[entrance].occupied)
+                self.assertIn(departure, routes.active_routes())
+
+                service.update_train(train, 2.0)
+                service.sync_track_circuits()
+
+                self.assertEqual(train.movement_phase, "INTERVAL_RUNNING")
+                self.assertEqual(train.current_track, entrance)
+                self.assertAlmostEqual(train.position, 10.0)
+                self.assertEqual(train.last_balise, balise)
+                self.assertTrue(simulation.track_circuits[entrance].occupied)
+                self.assertNotIn(departure, routes.active_routes())
+                self.assertIsNone(train.departure_route_id)
+
     def test_dispatch_requires_only_departure_route_and_derives_side_mode(self):
         departure = self.routes.establish_route("A", RouteType.SIDE_DEPART)
         selected = self.service.add_waiting_train()
@@ -98,13 +152,13 @@ class MultiTrainLifecycleTest(unittest.TestCase):
 
         self.assertIs(dispatched, selected)
         self.assertEqual(selected.status, "RUNNING")
-        self.assertEqual(selected.current_track, "G01")
+        self.assertIsNone(selected.current_track)
         self.assertEqual(selected.departure_mode, "SIDE")
         self.assertEqual(selected.station_track, "3G")
         self.assertIsNone(selected.arrival_mode)
-        self.assertEqual(selected.movement_phase, "INTERVAL_RUNNING")
-        self.assertIsNone(selected.departure_route_id)
-        self.assertNotIn(departure, self.routes.active_routes())
+        self.assertEqual(selected.movement_phase, "DEPARTING")
+        self.assertEqual(selected.departure_route_id, departure.route_id)
+        self.assertIn(departure, self.routes.active_routes())
 
     def test_reverse_dispatch_uses_b_station_departure_route(self):
         self.simulation.set_direction("B_TO_A")
@@ -114,15 +168,18 @@ class MultiTrainLifecycleTest(unittest.TestCase):
         self.service.dispatch_selected_train(selected.train_id, 120)
 
         self.assertEqual(selected.direction, "B_TO_A")
-        self.assertEqual(selected.current_track, "G38")
+        self.assertIsNone(selected.current_track)
+        self.assertEqual(selected.movement_phase, "DEPARTING")
         self.assertEqual(selected.departure_mode, "MAIN")
-        self.assertNotIn(departure, self.routes.active_routes())
+        self.assertIn(departure, self.routes.active_routes())
 
     def test_next_train_requires_a_rebuilt_departure_route(self):
         self.routes.establish_route("A", RouteType.MAIN_DEPART)
         first = self.service.add_waiting_train()
         second = self.service.add_waiting_train()
         self.service.dispatch_selected_train(first.train_id, 120)
+        first.station_position = self.service.STATION_EXIT_POSITION
+        self.service.handle_departure_transition(first)
         first.current_track = "G03"
         self.service.sync_track_circuits()
 
@@ -173,7 +230,8 @@ class MultiTrainLifecycleTest(unittest.TestCase):
 
         self.assertIs(dispatched, selected)
         self.assertEqual(selected.status, "RUNNING")
-        self.assertEqual(selected.current_track, "G01")
+        self.assertIsNone(selected.current_track)
+        self.assertEqual(selected.movement_phase, "DEPARTING")
         self.assertEqual(selected.max_speed, 200.0)
         self.assertEqual(first.status, "WAITING")
         self.assertIn(first.train_id, self.service.waiting_queue)
@@ -211,6 +269,8 @@ class MultiTrainLifecycleTest(unittest.TestCase):
         front = self.service.add_waiting_train()
         following = self.service.add_waiting_train()
         self.service.dispatch_selected_train(front.train_id, "MAIN", "MAIN", 120)
+        front.station_position = self.service.STATION_EXIT_POSITION
+        self.service.handle_departure_transition(front)
         front.current_track = "G02"
         front.position = 100.0
         departure = self.routes.establish_route("A", RouteType.MAIN_DEPART)
@@ -327,6 +387,15 @@ class MultiTrainMovementTest(unittest.TestCase):
         self.assertGreater(front.position, 200.0)
         self.assertEqual(rear.status, "RUNNING")
         self.assertEqual(front.status, "RUNNING")
+
+    def test_each_running_train_advances_once_per_update_all_tick(self):
+        rear = self.add_running_train("G01", 100.0)
+        front = self.add_running_train("G05", 200.0)
+
+        self.service.update_all(1.0)
+
+        self.assertAlmostEqual(rear.position, 110.5)
+        self.assertAlmostEqual(front.position, 210.5)
 
     def test_adjacent_boundary_crossing_never_overlaps_or_overtakes(self):
         rear = self.add_running_train("G01", 999.0, speed=120.0)
@@ -535,12 +604,16 @@ class RouteLifecycleEndToEndTest(unittest.TestCase):
 
                 routes.establish_route(departure_station, first_departure_type)
                 service.dispatch_selected_train(first.train_id, 160)
+                first.station_position = service.STATION_EXIT_POSITION
+                service.handle_departure_transition(first)
                 first.current_track = "G03" if direction == "A_TO_B" else "G36"
                 first.position = 100.0
                 service.sync_track_circuits()
 
                 routes.establish_route(departure_station, second_departure_type)
                 service.dispatch_selected_train(second.train_id, 120)
+                second.station_position = service.STATION_EXIT_POSITION
+                service.handle_departure_transition(second)
                 self.assertIsNone(routes.departure_route(departure_station))
 
                 self.move_train_to_terminal(service, first)

@@ -928,6 +928,8 @@ class PhaseOneUiContractTest(unittest.TestCase):
         )
         train = window.train_service.add_waiting_train("MAIN", "MAIN")
         self.assertTrue(window.train_service.dispatch_train(train))
+        train.station_position = window.train_service.STATION_EXIT_POSITION
+        window.train_service.handle_departure_transition(train)
         window.train_service.waiting_queue.clear()
         second = window.train_service.create_train("MAIN", "MAIN")
         second.enter_track("G10")
@@ -1217,6 +1219,8 @@ class PhaseOneUiContractTest(unittest.TestCase):
         window.dispatch_selected_train()
         self.assertEqual(first.status, "RUNNING")
 
+        first.station_position = window.train_service.STATION_EXIT_POSITION
+        window.train_service.handle_departure_transition(first)
         first.current_track = "G03"
         first.position = 200.0
         window.route_service.establish_route("A", RouteType.MAIN_DEPART)

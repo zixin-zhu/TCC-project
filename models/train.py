@@ -169,6 +169,18 @@ class Train:
         self.status = "RUNNING"
         self.movement_phase = "INTERVAL_RUNNING"
 
+    def enter_departure(self, route_id, track, initial_position=0.0):
+        """从站内待发点进入发车进路，尚不占用区间轨道。"""
+        self.current_track = None
+        self.departure_route_id = route_id
+        self.route_id = route_id
+        self.station_track = track
+        self.station_position = max(0.0, float(initial_position))
+        self.position = self.station_position
+        self.status = "RUNNING"
+        self.movement_phase = "DEPARTING"
+        self.receive_waiting_reason = None
+
     def wait_for_receive_route(self, message):
         self.position = min(self.position, 999.9)
         self.speed = 0.0
