@@ -13,6 +13,7 @@ from services.route_service import RouteService
 from services.simulation_engine import SimulationEngine
 from services.simulation_service import SimulationService
 from services.train_service import TrainService
+from ui.tcc_overview import TccOverviewWidget
 
 
 APP = QApplication.instance() or QApplication(sys.argv[:1])
@@ -682,6 +683,102 @@ class RouteLifecycleEndToEndTest(unittest.TestCase):
                 service.handle_station_transition(second)
                 self.assertEqual(second.status, "ARRIVED")
                 self.assertIsNone(routes.receive_route(arrival_station))
+
+    def test_all_direction_and_track_combinations_depart_from_station_path_and_arrive(self):
+        cases = (
+            ("A_TO_B", "A", "B", RouteType.MAIN_DEPART, RouteType.MAIN_RECEIVE, "MAIN"),
+            ("A_TO_B", "A", "B", RouteType.SIDE_DEPART, RouteType.SIDE_RECEIVE, "SIDE"),
+            ("B_TO_A", "B", "A", RouteType.MAIN_DEPART, RouteType.MAIN_RECEIVE, "MAIN"),
+            ("B_TO_A", "B", "A", RouteType.SIDE_DEPART, RouteType.SIDE_RECEIVE, "SIDE"),
+        )
+        for direction, departure_station, arrival_station, departure_type, receive_type, mode in cases:
+            with self.subTest(direction=direction, mode=mode):
+                routes, service = self.make_system(direction)
+                train = service.add_waiting_train()
+                waiting = TccOverviewWidget.waiting_marker_contracts(
+                    service.get_all_train_status()
+                )
+                self.assertEqual(len(waiting), 1)
+                self.assertEqual(waiting[0]["label"], "x1")
+
+                routes.establish_route(departure_station, departure_type)
+                service.dispatch_selected_train(train.train_id, 160)
+                self.assertEqual(train.movement_phase, "DEPARTING")
+                self.assertIsNone(train.current_track)
+                self.assertTrue(
+                    all(not track.occupied for track in service.simulation.track_circuits.values())
+                )
+
+                train.station_position = service.STATION_EXIT_POSITION
+                service.handle_departure_transition(train)
+                entrance = "G01" if direction == "A_TO_B" else "G38"
+                terminal = "G38" if direction == "A_TO_B" else "G01"
+                self.assertEqual(train.current_track, entrance)
+
+                train.current_track = terminal
+                train.position = service.default_track_length + 1.0
+                service.sync_track_circuits()
+                service.handle_track_transition(train)
+                self.assertEqual(train.movement_phase, "WAITING_RECEIVE_ROUTE")
+
+                receive = routes.establish_route(arrival_station, receive_type)
+                self.assertIs(service.assign_receive_route(receive), train)
+                train.position = service.default_track_length + 1.0
+                service.handle_track_transition(train)
+                self.assertEqual(train.movement_phase, "RECEIVING")
+                self.assertEqual(train.arrival_mode, mode)
+                marker = TccOverviewWidget.train_marker_contract(train.get_status())
+                self.assertEqual(marker["region"], "STATION")
+                self.assertEqual(marker["track"], "1G" if mode == "MAIN" else "3G")
+
+                train.station_position = service.RECEIVE_RELEASE_POSITION + 0.1
+                service.handle_station_transition(train)
+                self.assertNotIn(receive, routes.active_routes())
+                train.station_position = service.STATION_EXIT_POSITION + 0.1
+                service.handle_station_transition(train)
+                self.assertEqual(train.status, "ARRIVED")
+
+    def test_multiple_trains_update_codes_signals_and_waiting_count_together(self):
+        routes, service = self.make_system("A_TO_B")
+        first = service.create_train()
+        first.enter_track("G05")
+        first.position = 100.0
+        first.speed = first.target_speed = 36.0
+        second = service.create_train()
+        second.enter_track("G20")
+        second.position = 200.0
+        second.speed = second.target_speed = 36.0
+        service.add_waiting_train()
+        service.add_waiting_train()
+        service.sync_track_circuits()
+
+        waiting = TccOverviewWidget.waiting_marker_contracts(
+            service.get_all_train_status()
+        )
+        before = {first.train_id: first.position, second.train_id: second.position}
+        occupied_aspects = service.simulation.get_interval_signal_aspects()
+        service.update_all(1.0)
+
+        self.assertEqual(len(waiting), 1)
+        self.assertEqual(waiting[0]["label"], "x2")
+        self.assertAlmostEqual(first.position - before[first.train_id], 10.5)
+        self.assertAlmostEqual(second.position - before[second.train_id], 10.5)
+        self.assertEqual(occupied_aspects["S02"], "红灯")
+
+        first.current_track = "G10"
+        first.position = 100.0
+        service.sync_track_circuits()
+        cleared_aspects = service.simulation.get_interval_signal_aspects()
+        self.assertNotEqual(cleared_aspects["S02"], "红灯")
+
+        service.reset_dispatched_trains()
+        reset_waiting = TccOverviewWidget.waiting_marker_contracts(
+            service.get_all_train_status()
+        )
+        station_aspects = service.simulation.get_station_signal_aspects()
+        self.assertEqual(len(reset_waiting), 1)
+        self.assertEqual(reset_waiting[0]["label"], "x4")
+        self.assertTrue(all(aspect == "红灯" for aspect in station_aspects.values()))
 
 
 if __name__ == "__main__":
