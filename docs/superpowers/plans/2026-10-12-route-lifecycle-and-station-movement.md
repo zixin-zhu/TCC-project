@@ -179,11 +179,11 @@ Commit: `feat: show route-derived train state and station movement`
 - Consumes: 前三项全部行为。
 - Produces: A→B、B→A、多车等待与重新建立进路的端到端回归，以及可从中断处继续的恢复说明。
 
-- [ ] **Step 1: 添加两方向端到端测试**
+- [x] **Step 1: 添加两方向端到端测试**
 
 验证两车依次发车、发车进路重建、前车独占接车进路、后车在站外等待、前车驶出、后车重新接车的完整流程。
 
-- [ ] **Step 2: 运行全量验证与静态检查**
+- [x] **Step 2: 运行全量验证与静态检查**
 
 Run: `.venv/bin/python -m unittest discover -s tests -v`
 
@@ -197,14 +197,14 @@ Run: `git diff --check`
 
 Expected: 无输出，exit 0。
 
-- [ ] **Step 3: 使用离屏截图检查最小窗口布局**
+- [x] **Step 3: 使用离屏截图检查最小窗口布局**
 
 在1600×760下检查三行状态栏、最大速度、三操作板块和2D站场无文字遮挡、无控件裁切、无明显无效留白。
 
-- [ ] **Step 4: 写恢复文档并更新进度**
+- [x] **Step 4: 写恢复文档并更新进度**
 
 记录新状态机、进路释放时机、接车分配规则、测试数量、截图路径和下一恢复入口。
 
-- [ ] **Step 5: 最终提交并推送**
+- [x] **Step 5: 最终提交并推送**
 
 Commit: `docs: complete route lifecycle and station movement revision`
