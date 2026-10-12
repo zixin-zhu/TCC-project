@@ -7,7 +7,7 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt5.QtCore import QObject, QPointF, pyqtSignal
-from PyQt5.QtGui import QColor, QPalette
+from PyQt5.QtGui import QColor, QImage, QPainter, QPalette
 from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
@@ -118,6 +118,43 @@ class PhaseOneUiContractTest(unittest.TestCase):
                     (contract["start_signal"], contract["end_signal"]),
                     endpoints,
                 )
+
+    def test_all_side_routes_can_render_station_without_missing_signal_positions(self):
+        cases = (
+            ("A", RouteType.SIDE_DEPART, "A_TO_B"),
+            ("B", RouteType.SIDE_RECEIVE, "A_TO_B"),
+            ("B", RouteType.SIDE_DEPART, "B_TO_A"),
+            ("A", RouteType.SIDE_RECEIVE, "B_TO_A"),
+        )
+        for station, route_type, direction in cases:
+            with self.subTest(station=station, route_type=route_type):
+                view = TccOverviewWidget()
+                view.set_state(
+                    tracks=[],
+                    trains=[],
+                    direction=direction,
+                    routes=[
+                        {
+                            "station": station,
+                            "route_type": route_type,
+                            "track": "3G",
+                        }
+                    ],
+                )
+                image = QImage(700, 260, QImage.Format_ARGB32)
+                painter = QPainter(image)
+                try:
+                    view._draw_station(
+                        painter,
+                        0,
+                        view.STATION_WIDTH,
+                        150,
+                        190,
+                        station,
+                    )
+                finally:
+                    painter.end()
+                view.close()
 
     def test_establishing_receive_route_assigns_and_resumes_front_train(self):
         window = MainWindow()

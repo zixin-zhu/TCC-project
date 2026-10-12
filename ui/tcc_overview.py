@@ -213,7 +213,9 @@ class TccOverviewWidget(QWidget):
             signals = {
                 "X": cls.STATION_OUTER_MARGIN,
                 "S1": cls.STATION_OUTER_MARGIN + span,
+                "S3": cls.STATION_OUTER_MARGIN + span,
                 "X1": cls.STATION_OUTER_MARGIN + span * 2,
+                "X3": cls.STATION_OUTER_MARGIN + span * 2,
                 "SN": cls.STATION_WIDTH,
             }
             code_sections = {
@@ -225,7 +227,9 @@ class TccOverviewWidget(QWidget):
             signals = {
                 "X": 0,
                 "S1": span,
+                "S3": span,
                 "X1": span * 2,
+                "X3": span * 2,
                 "S": span * 3,
             }
             code_sections = {
