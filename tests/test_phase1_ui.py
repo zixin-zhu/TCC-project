@@ -2098,8 +2098,45 @@ class PhaseOneUiContractTest(unittest.TestCase):
         )
 
         self.assertEqual(interval["name"], "63")
-        self.assertEqual(interval.get("lower_stem_depth"), 0)
-        self.assertLess(station.get("lower_stem_depth", 99), 5)
+        self.assertFalse(interval["draw_track_marker"])
+        self.assertTrue(station["draw_track_marker"])
+        view.close()
+
+    def test_signal_masts_are_centered_and_interval_masts_do_not_touch_track(self):
+        view = TccOverviewWidget()
+        view.resize(view.minimumWidth(), 360)
+        view.set_state([], [], "A_TO_B", interval_signals={"S01": "绿灯"})
+        view.show()
+        self.app.processEvents()
+        view.grab()
+        symbols = {
+            item["signal_id"]: item
+            for item in view._signal_symbols
+        }
+
+        interval = symbols["INTERVAL:S01"]
+        station_main = symbols["A:SN"]
+        station_side = symbols["A:S3"]
+
+        self.assertFalse(interval.get("draw_track_marker", True))
+        self.assertEqual(interval.get("lamp_center_y"), interval.get("mast_center_y"))
+        self.assertLess(interval.get("mast_bottom", 10**9), interval.get("rail_y", -1))
+
+        for station_signal in (station_main, station_side):
+            self.assertTrue(station_signal.get("draw_track_marker", False))
+            self.assertEqual(
+                station_signal.get("lamp_center_y"),
+                station_signal.get("mast_center_y"),
+            )
+            self.assertEqual(
+                station_signal.get("track_marker_above"),
+                station_signal.get("track_marker_below"),
+            )
+            self.assertEqual(
+                station_signal.get("track_marker_length"),
+                station_signal.get("mast_length"),
+            )
+        self.assertEqual(station_side.get("arm_length"), 0)
         view.close()
 
 

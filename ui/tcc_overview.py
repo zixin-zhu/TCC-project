@@ -597,7 +597,8 @@ class TccOverviewWidget(QWidget):
                 signal_name,
                 signal_status,
                 direction=signal_direction,
-                extend_below_track=(track_y == rail_y),
+                side_signal=(track_y == side_y),
+                draw_track_marker=True,
                 signal_id=f"{station}:{signal_name}",
             )
 
@@ -840,8 +841,8 @@ class TccOverviewWidget(QWidget):
                     self.interval_signals.get(f"S{block_no:02d}", "红灯"),
                     compact=True,
                     direction="RIGHT",
-                    extend_below_track=True,
-                    lower_stem_depth=0,
+                    side_signal=False,
+                    draw_track_marker=False,
                     signal_id=f"INTERVAL:S{block_no:02d}",
                 )
             painter.setPen(QColor("#60798e"))
@@ -982,31 +983,31 @@ class TccOverviewWidget(QWidget):
         status,
         compact=False,
         direction="RIGHT",
-        extend_below_track=True,
-        lower_stem_depth=None,
+        side_signal=False,
+        draw_track_marker=True,
         signal_id=None,
     ):
         stem_height = 26 if compact else 34
         radius = 4 if compact else 5
         direction_sign = 1 if direction == "RIGHT" else -1
-        is_side_signal = not extend_below_track
-        arm_length = 0 if is_side_signal else (9 if compact else 12)
+        arm_length = 0 if side_signal else (9 if compact else 12)
         lamp_center_x = x + direction_sign * (arm_length + radius)
         lamp_center_y = rail_y - stem_height
-        lower_stem_top = lamp_center_y + (8 if compact else 10)
-        upper_stem_bottom = lamp_center_y + (4 if compact else 5)
-        if lower_stem_depth is None:
-            lower_stem_depth = 3 if extend_below_track else 0
-        stem_bottom = rail_y + lower_stem_depth
+        mast_half_length = 8 if compact else 10
+        mast_top = lamp_center_y - mast_half_length
+        mast_bottom = lamp_center_y + mast_half_length
+        track_marker_top = rail_y - mast_half_length
+        track_marker_bottom = rail_y + mast_half_length
 
         painter.setPen(QPen(QColor("#aebdca"), 1))
-        painter.drawLine(int(x), int(stem_bottom), int(x), int(lower_stem_top))
-        painter.drawLine(
-            int(x),
-            int(upper_stem_bottom),
-            int(x),
-            int(lamp_center_y - radius - 2),
-        )
+        painter.drawLine(int(x), int(mast_top), int(x), int(mast_bottom))
+        if draw_track_marker:
+            painter.drawLine(
+                int(x),
+                int(track_marker_top),
+                int(x),
+                int(track_marker_bottom),
+            )
         if arm_length:
             painter.drawLine(
                 int(x),
@@ -1040,7 +1041,25 @@ class TccOverviewWidget(QWidget):
                 "signal_id": signal_id or name,
                 "name": name,
                 "status": status,
-                "lower_stem_depth": lower_stem_depth,
+                "rail_y": rail_y,
+                "lamp_center_y": lamp_center_y,
+                "mast_center_y": (mast_top + mast_bottom) / 2,
+                "mast_top": mast_top,
+                "mast_bottom": mast_bottom,
+                "mast_length": mast_bottom - mast_top,
+                "draw_track_marker": draw_track_marker,
+                "track_marker_above": (
+                    rail_y - track_marker_top if draw_track_marker else 0
+                ),
+                "track_marker_below": (
+                    track_marker_bottom - rail_y if draw_track_marker else 0
+                ),
+                "track_marker_length": (
+                    track_marker_bottom - track_marker_top
+                    if draw_track_marker
+                    else 0
+                ),
+                "arm_length": arm_length,
             }
         )
 
