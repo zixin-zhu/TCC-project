@@ -1758,7 +1758,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
         ):
             self.assertEqual(
                 combo.sizePolicy().horizontalPolicy(),
-                QSizePolicy.Expanding,
+                QSizePolicy.Fixed,
             )
         self.assertEqual(window.route_station_label.text(), "车站：")
         self.assertEqual(window.route_type_label.text(), "进路类型：")
@@ -1840,6 +1840,30 @@ class PhaseOneUiContractTest(unittest.TestCase):
 
         window.close()
 
+    def test_route_and_speed_combo_widths_stay_fixed_when_window_expands(self):
+        window = MainWindow()
+        combos = (
+            window.route_station_combo,
+            window.route_type_combo,
+            window.active_route_combo,
+            window.tsr_start_combo,
+            window.tsr_end_combo,
+            window.tsr_speed_combo,
+            window.active_tsr_combo,
+        )
+
+        window.resize(1600, 900)
+        window.show()
+        self.app.processEvents()
+        compact_widths = tuple(combo.width() for combo in combos)
+
+        window.resize(2048, 900)
+        self.app.processEvents()
+        expanded_widths = tuple(combo.width() for combo in combos)
+
+        self.assertEqual(expanded_widths, compact_widths)
+        window.close()
+
     def test_operation_rows_use_grid_layout_and_give_space_to_combos(self):
         window = MainWindow()
 
@@ -1854,13 +1878,10 @@ class PhaseOneUiContractTest(unittest.TestCase):
             self.assertIsInstance(row, QGridLayout)
             self.assertEqual(row.horizontalSpacing(), 0)
 
-        self.assertGreater(route_primary.columnStretch(1), 0)
-        self.assertGreater(route_primary.columnStretch(3), 0)
-        self.assertGreater(route_active.columnStretch(1), 0)
-        self.assertGreater(speed_primary.columnStretch(1), 0)
-        self.assertGreater(speed_primary.columnStretch(3), 0)
-        self.assertGreater(speed_primary.columnStretch(5), 0)
-        self.assertGreater(speed_active.columnStretch(1), 0)
+        self.assertGreater(route_primary.columnStretch(4), 0)
+        self.assertGreater(route_active.columnStretch(2), 0)
+        self.assertGreater(speed_primary.columnStretch(6), 0)
+        self.assertGreater(speed_active.columnStretch(2), 0)
         window.close()
 
     def test_route_and_speed_controls_inherit_application_font(self):

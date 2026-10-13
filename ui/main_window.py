@@ -302,9 +302,9 @@ class MainWindow(QMainWindow):
         self.route_station_combo.setObjectName("route_station")
         self.route_station_combo.addItems(["A站", "B站"])
         self.route_station_combo.setToolTip("选择需要办理进路的车站")
-        self.route_station_combo.setMinimumWidth(54)
+        self.route_station_combo.setFixedWidth(89)
         self.route_station_combo.setSizePolicy(
-            QSizePolicy.Expanding,
+            QSizePolicy.Fixed,
             QSizePolicy.Fixed,
         )
         self.route_station_combo.setStyleSheet(
@@ -322,9 +322,9 @@ class MainWindow(QMainWindow):
             ["正线接车", "侧线接车", "正线发车", "侧线发车"]
         )
         self.route_type_combo.setToolTip("选择接车或发车进路类型")
-        self.route_type_combo.setMinimumWidth(94)
+        self.route_type_combo.setFixedWidth(179)
         self.route_type_combo.setSizePolicy(
-            QSizePolicy.Expanding,
+            QSizePolicy.Fixed,
             QSizePolicy.Fixed,
         )
         self.route_type_combo.setStyleSheet(
@@ -337,9 +337,8 @@ class MainWindow(QMainWindow):
         self.route_establish_button.setToolTip("建立所选车站进路")
         self.route_establish_button.setFixedWidth(82)
         self.route_establish_button.setStyleSheet("padding: 0 5px;")
-        route_primary_layout.addWidget(self.route_establish_button, 0, 4)
-        route_primary_layout.setColumnStretch(1, 1)
-        route_primary_layout.setColumnStretch(3, 2)
+        route_primary_layout.addWidget(self.route_establish_button, 0, 5)
+        route_primary_layout.setColumnStretch(4, 1)
         route_layout.addLayout(route_primary_layout)
 
         active_route_layout = QGridLayout()
@@ -355,9 +354,9 @@ class MainWindow(QMainWindow):
         self.active_route_combo.setStyleSheet(
             "padding-left: 4px; padding-right: 3px;"
         )
-        self.active_route_combo.setMinimumWidth(130)
+        self.active_route_combo.setFixedWidth(268)
         self.active_route_combo.setSizePolicy(
-            QSizePolicy.Expanding,
+            QSizePolicy.Fixed,
             QSizePolicy.Fixed,
         )
         self.active_route_combo.setSizeAdjustPolicy(
@@ -371,8 +370,8 @@ class MainWindow(QMainWindow):
         self.route_cancel_button.setToolTip("取消列车尚未进入的所选进路")
         self.route_cancel_button.setFixedWidth(116)
         self.route_cancel_button.setStyleSheet("padding: 0 5px;")
-        active_route_layout.addWidget(self.route_cancel_button, 0, 2)
-        active_route_layout.setColumnStretch(1, 1)
+        active_route_layout.addWidget(self.route_cancel_button, 0, 3)
+        active_route_layout.setColumnStretch(2, 1)
         route_layout.addLayout(active_route_layout)
 
         equipment_group = QGroupBox(
@@ -393,9 +392,9 @@ class MainWindow(QMainWindow):
         self.tsr_start_combo.setObjectName("tsr_start_section")
         for display_name, start_section, _end_section in section_selection_rows():
             self.tsr_start_combo.addItem(display_name, start_section)
-        self.tsr_start_combo.setMinimumWidth(80)
+        self.tsr_start_combo.setFixedWidth(80)
         self.tsr_start_combo.setSizePolicy(
-            QSizePolicy.Expanding,
+            QSizePolicy.Fixed,
             QSizePolicy.Fixed,
         )
         self.tsr_start_combo.setStyleSheet(
@@ -411,9 +410,9 @@ class MainWindow(QMainWindow):
         self.tsr_end_combo.setObjectName("tsr_end_section")
         for display_name, _start_section, end_section in section_selection_rows():
             self.tsr_end_combo.addItem(display_name, end_section)
-        self.tsr_end_combo.setMinimumWidth(80)
+        self.tsr_end_combo.setFixedWidth(80)
         self.tsr_end_combo.setSizePolicy(
-            QSizePolicy.Expanding,
+            QSizePolicy.Fixed,
             QSizePolicy.Fixed,
         )
         self.tsr_end_combo.setStyleSheet(
@@ -428,9 +427,9 @@ class MainWindow(QMainWindow):
         self.tsr_speed_combo = QComboBox()
         self.tsr_speed_combo.setObjectName("tsr_speed")
         self.tsr_speed_combo.addItems(["45 km/h", "80 km/h", "120 km/h", "160 km/h", "200 km/h", "250 km/h"])
-        self.tsr_speed_combo.setMinimumWidth(98)
+        self.tsr_speed_combo.setFixedWidth(148)
         self.tsr_speed_combo.setSizePolicy(
-            QSizePolicy.Expanding,
+            QSizePolicy.Fixed,
             QSizePolicy.Fixed,
         )
         self.tsr_speed_combo.setStyleSheet(
@@ -444,10 +443,8 @@ class MainWindow(QMainWindow):
         self.tsr_apply_button.setToolTip("设置所选区段范围的临时限速")
         self.tsr_apply_button.setFixedWidth(82)
         self.tsr_apply_button.setStyleSheet("padding: 0 5px;")
-        tsr_primary_layout.addWidget(self.tsr_apply_button, 0, 6)
-        tsr_primary_layout.setColumnStretch(1, 1)
-        tsr_primary_layout.setColumnStretch(3, 1)
-        tsr_primary_layout.setColumnStretch(5, 2)
+        tsr_primary_layout.addWidget(self.tsr_apply_button, 0, 7)
+        tsr_primary_layout.setColumnStretch(6, 1)
         equipment_layout.addLayout(tsr_primary_layout)
 
         active_tsr_layout = QGridLayout()
@@ -458,9 +455,9 @@ class MainWindow(QMainWindow):
         active_tsr_layout.addWidget(self.active_tsr_label, 0, 0)
         self.active_tsr_combo = QComboBox()
         self.active_tsr_combo.setObjectName("active_tsr")
-        self.active_tsr_combo.setMinimumWidth(150)
+        self.active_tsr_combo.setFixedWidth(394)
         self.active_tsr_combo.setSizePolicy(
-            QSizePolicy.Expanding,
+            QSizePolicy.Fixed,
             QSizePolicy.Fixed,
         )
         self.active_tsr_combo.setSizeAdjustPolicy(
@@ -477,8 +474,8 @@ class MainWindow(QMainWindow):
         self.tsr_cancel_button.setToolTip("取消当前选中的临时限速")
         self.tsr_cancel_button.setFixedWidth(116)
         self.tsr_cancel_button.setStyleSheet("padding: 0 5px;")
-        active_tsr_layout.addWidget(self.tsr_cancel_button, 0, 2)
-        active_tsr_layout.setColumnStretch(1, 1)
+        active_tsr_layout.addWidget(self.tsr_cancel_button, 0, 3)
+        active_tsr_layout.setColumnStretch(2, 1)
         equipment_layout.addLayout(active_tsr_layout)
 
         self.operation_top_layout.addWidget(direction_group, 1)
