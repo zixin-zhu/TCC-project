@@ -2136,6 +2136,11 @@ class PhaseOneUiContractTest(unittest.TestCase):
                 station_signal.get("track_marker_length"),
                 station_signal.get("mast_length"),
             )
+            track_marker_top = (
+                station_signal["rail_y"]
+                - station_signal["track_marker_above"]
+            )
+            self.assertEqual(track_marker_top - station_signal["mast_bottom"], 6)
         self.assertEqual(station_side.get("arm_length"), 0)
         view.close()
 

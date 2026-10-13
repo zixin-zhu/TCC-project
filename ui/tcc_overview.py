@@ -987,7 +987,7 @@ class TccOverviewWidget(QWidget):
         draw_track_marker=True,
         signal_id=None,
     ):
-        stem_height = 26 if compact else 34
+        stem_height = 26
         radius = 4 if compact else 5
         direction_sign = 1 if direction == "RIGHT" else -1
         arm_length = 0 if side_signal else (9 if compact else 12)
