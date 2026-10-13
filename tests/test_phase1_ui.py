@@ -1486,6 +1486,22 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertFalse(window.max_speed_combo.isEnabled())
         window.close()
 
+    def test_signal_waiting_train_status_names_the_controlling_signal(self):
+        window = MainWindow()
+        self.mark_communication_ready(window)
+        train = window.train_service.create_train("MAIN", "MAIN")
+        train.enter_track("G36")
+        train.status = "STOPPED"
+        train.movement_phase = "WAITING_SIGNAL"
+        train.stop_signal_id = "S18"
+        window.refresh_view()
+
+        window.train_selector.setCurrentText(train.train_id)
+        window.sync_selected_train_controls()
+
+        self.assertEqual(window.train_state_value.text(), "S18信号机前停车")
+        window.close()
+
     def test_waiting_train_arrival_label_follows_live_receive_route(self):
         window = MainWindow()
         self.mark_communication_ready(window)

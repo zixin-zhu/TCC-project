@@ -1626,6 +1626,11 @@ class MainWindow(QMainWindow):
                 "WAITING": "待发",
                 "DEPARTING": "发车进路运行",
                 "INTERVAL_RUNNING": "区间运行",
+                "WAITING_SIGNAL": (
+                    f"{train.stop_signal_id}信号机前停车"
+                    if train.stop_signal_id else "信号机前停车"
+                ),
+                "WAITING_AHEAD_TRACK": "前方区段占用停车",
                 "WAITING_RECEIVE_ROUTE": "等待接车进路",
                 "RECEIVING": "接车进路运行",
                 "STATION_RUNNING": "站内运行",

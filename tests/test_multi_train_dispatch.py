@@ -489,6 +489,96 @@ class MultiTrainMovementTest(unittest.TestCase):
         self.assertEqual(self.simulation.track_circuits["G06"].signal_code, "HU")
         self.assertEqual(self.simulation.signal_states["S01"], "红灯")
 
+    def test_train_cannot_cross_red_block_exit_signal(self):
+        cases = (
+            ("G34", "G36", "S17"),
+            ("G36", "G38", "S18"),
+        )
+        for current_track, occupied_track, signal_id in cases:
+            with self.subTest(signal_id=signal_id):
+                routes = RouteService()
+                simulation = SimulationService("A", route_service=routes)
+                service = TrainService(simulation, route_service=routes)
+                train = service.create_train("MAIN", "MAIN")
+                train.enter_track(current_track)
+                train.position = service.default_track_length + 25.0
+                train.speed = 45.0
+                train.target_speed = 45.0
+                blocker = service.create_train("MAIN", "MAIN")
+                blocker.enter_track(occupied_track)
+                blocker.position = 100.0
+                blocker.speed = 0.0
+                blocker.target_speed = 0.0
+                blocker.status = "STOPPED"
+                service.sync_track_circuits()
+
+                self.assertEqual(
+                    simulation.get_interval_signal_aspects()[signal_id],
+                    "红灯",
+                )
+                service.handle_track_transition(train)
+
+                self.assertEqual(train.current_track, current_track)
+                self.assertLess(train.position, service.default_track_length)
+                self.assertEqual(train.status, "STOPPED")
+                self.assertEqual(train.movement_phase, "WAITING_SIGNAL")
+                self.assertEqual(train.stop_signal_id, signal_id)
+
+    def test_zero_speed_before_red_signal_uses_signal_waiting_state(self):
+        train = self.add_running_train("G36", 900.0, speed=0.0)
+        train.block_code = "HU"
+        blocker = self.add_running_train("G38", 100.0, speed=0.0)
+        blocker.status = "STOPPED"
+        self.service.sync_track_circuits()
+
+        self.service.update_train(train, 0.0)
+
+        self.assertEqual(train.status, "STOPPED")
+        self.assertEqual(train.movement_phase, "WAITING_SIGNAL")
+        self.assertEqual(train.stop_signal_id, "S18")
+
+    def test_receive_route_reserved_for_front_train_keeps_rear_at_x(self):
+        front = self.add_running_train("G38", 100.0, speed=0.0)
+        rear = self.add_running_train("G37", 900.0, speed=0.0)
+        rear.block_code = "HU"
+        receive = self.routes.establish_route("B", RouteType.MAIN_RECEIVE)
+        receive.train_id = front.train_id
+        self.service.sync_track_circuits()
+
+        self.service.update_train(rear, 0.0)
+
+        self.assertEqual(rear.status, "STOPPED")
+        self.assertEqual(rear.movement_phase, "WAITING_SIGNAL")
+        self.assertEqual(rear.stop_signal_id, "X")
+
+    def test_signal_waiting_train_resumes_only_after_signal_clears(self):
+        train = self.add_running_train("G36", 999.9, speed=0.0)
+        blocker = self.add_running_train("G38", 100.0, speed=0.0)
+        blocker.status = "STOPPED"
+        train.wait_at_signal("S18")
+        self.service.sync_track_circuits()
+
+        self.service.try_resume_stopped_trains()
+        self.assertEqual(train.status, "STOPPED")
+
+        blocker.leave_section()
+        self.service.sync_track_circuits()
+        self.service.try_resume_stopped_trains()
+
+        self.assertEqual(train.status, "RUNNING")
+        self.assertEqual(train.movement_phase, "INTERVAL_RUNNING")
+        self.assertIsNone(train.stop_signal_id)
+
+    def test_global_resume_does_not_override_a_red_signal_stop(self):
+        train = self.add_running_train("G36", 999.9, speed=0.0)
+        train.wait_at_signal("S18")
+
+        resumed = self.service.resume_all()
+
+        self.assertNotIn(train, resumed)
+        self.assertEqual(train.status, "STOPPED")
+        self.assertEqual(train.movement_phase, "WAITING_SIGNAL")
+
 
 class MultiTrainStationMovementTest(unittest.TestCase):
     def setUp(self):

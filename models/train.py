@@ -20,6 +20,7 @@ class Train:
         self.departure_route_id = None
         self.receive_route_id = None
         self.receive_waiting_reason = None
+        self.stop_signal_id = None
         self.movement_phase = "WAITING"
         self.station_position = None
         self.receive_throat_cleared = False
@@ -131,6 +132,7 @@ class Train:
         self.departure_route_id = None
         self.receive_route_id = None
         self.receive_waiting_reason = None
+        self.stop_signal_id = None
         self.movement_phase = "WAITING"
         self.station_position = None
         self.receive_throat_cleared = False
@@ -170,6 +172,7 @@ class Train:
 
         self.status = "RUNNING"
         self.movement_phase = "INTERVAL_RUNNING"
+        self.stop_signal_id = None
 
     def enter_departure(self, route_id, track, initial_position=0.0):
         """从站内待发点进入发车进路，尚不占用区间轨道。"""
@@ -182,6 +185,7 @@ class Train:
         self.status = "RUNNING"
         self.movement_phase = "DEPARTING"
         self.receive_waiting_reason = None
+        self.stop_signal_id = None
 
     def wait_for_receive_route(self, message):
         self.position = min(self.position, 999.9)
@@ -190,6 +194,25 @@ class Train:
         self.status = "STOPPED"
         self.movement_phase = "WAITING_RECEIVE_ROUTE"
         self.receive_waiting_reason = message
+        self.stop_signal_id = None
+
+    def wait_at_signal(self, signal_id):
+        """在当前运行方向的防护信号机前停车。"""
+        self.speed = 0.0
+        self.target_speed = 0.0
+        self.status = "STOPPED"
+        self.movement_phase = "WAITING_SIGNAL"
+        self.stop_signal_id = signal_id
+        self.receive_waiting_reason = None
+
+    def wait_for_ahead_track(self):
+        """在同一闭塞分区内因前方轨道区段占用停车。"""
+        self.speed = 0.0
+        self.target_speed = 0.0
+        self.status = "STOPPED"
+        self.movement_phase = "WAITING_AHEAD_TRACK"
+        self.stop_signal_id = None
+        self.receive_waiting_reason = None
 
     def enter_station(self, initial_position=0.0):
         self.current_track = None
@@ -199,6 +222,7 @@ class Train:
         self.movement_phase = "RECEIVING"
         self.receive_throat_cleared = False
         self.receive_waiting_reason = None
+        self.stop_signal_id = None
 
     def leave_section(self):
 
@@ -233,6 +257,7 @@ class Train:
             "departure_route_id": self.departure_route_id,
             "receive_route_id": self.receive_route_id,
             "receive_waiting_reason": self.receive_waiting_reason,
+            "stop_signal_id": self.stop_signal_id,
             "movement_phase": self.movement_phase,
             "station_position": (
                 round(self.station_position, 2)

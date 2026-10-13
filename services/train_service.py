@@ -240,7 +240,14 @@ class TrainService:
         self.globally_paused = False
         resumed = []
         for train in self.trains.values():
-            if train.status == "STOPPED":
+            if (
+                train.status == "STOPPED"
+                and train.movement_phase not in (
+                    "WAITING_SIGNAL",
+                    "WAITING_AHEAD_TRACK",
+                    "WAITING_RECEIVE_ROUTE",
+                )
+            ):
                 train.status = "RUNNING"
                 self.update_train_speed_limit(train)
                 resumed.append(train)
@@ -350,6 +357,61 @@ class TrainService:
 
         return order[index + 1]
 
+    @staticmethod
+    def _track_number(track_code):
+        if not track_code or not track_code.startswith("G"):
+            return None
+        try:
+            return int(track_code[1:])
+        except ValueError:
+            return None
+
+    def get_governing_signal(self, train):
+        """返回列车当前闭塞分区出口的防护信号机。"""
+        track_number = self._track_number(train.current_track)
+        if track_number is None:
+            return None
+        block_number = (track_number + 1) // 2
+        if train.direction == "A_TO_B":
+            return "X" if block_number == 19 else f"S{block_number:02d}"
+        return "SN" if block_number == 1 else f"S{block_number - 1:02d}"
+
+    def is_block_exit_track(self, train):
+        """判断当前轨道区段末端是否也是闭塞分区出口。"""
+        track_number = self._track_number(train.current_track)
+        if track_number is None:
+            return False
+        if train.direction == "A_TO_B":
+            return track_number % 2 == 0
+        return track_number % 2 == 1
+
+    def is_governing_signal_red(self, train):
+        """按列车本身可用的进路和当前码序判断防护信号。"""
+        signal_id = self.get_governing_signal(train)
+        if signal_id is None:
+            return False
+        if signal_id in ("X", "SN"):
+            route = self.live_receive_route(train)
+            if route is None:
+                return True
+            if route.state not in (RouteState.ESTABLISHED, RouteState.LOCKED):
+                return True
+            return route.train_id not in (None, train.train_id)
+
+        track_number = self._track_number(train.current_track)
+        if track_number is None:
+            return True
+        pair_start = track_number if track_number % 2 == 1 else track_number - 1
+        pair_codes = []
+        for number in (pair_start, pair_start + 1):
+            track = self.simulation.track_circuits.get(f"G{number:02d}")
+            if track is not None:
+                pair_codes.append(track.signal_code)
+        return bool(pair_codes) and all(
+            self.simulation.aspect_for_code(code) == "红灯"
+            for code in pair_codes
+        )
+
     # ==================================================
     # 单列车跨区判断
     # ==================================================
@@ -384,6 +446,13 @@ class TrainService:
             self.update_receive_throat_clearance(train)
             return
 
+        # 两个轨道区段组成一个闭塞分区。只有在跨越闭塞分区
+        # 出口时检查对应信号机，红灯时车头必须留在信号机前。
+        if self.is_block_exit_track(train) and self.is_governing_signal_red(train):
+            train.position = self.default_track_length - 0.1
+            train.wait_at_signal(self.get_governing_signal(train))
+            return
+
         # 下一分区被其他列车占用
         if self.is_track_occupied_by_train(
             next_track
@@ -393,10 +462,7 @@ class TrainService:
                 self.default_track_length - 0.1
             )
 
-            train.speed = 0.0
-            train.target_speed = 0.0
-
-            train.status = "STOPPED"
+            train.wait_for_ahead_track()
 
             return
 
@@ -448,6 +514,12 @@ class TrainService:
         train.update(
             delta_time
         )
+
+        # 码序已要求列车停稳且防护信号仍为红灯时，显式进入
+        # “信号机前停车”阶段，避免状态栏误显示为“区间运行”。
+        if train.speed <= 0.0 and self.is_governing_signal_red(train):
+            train.wait_at_signal(self.get_governing_signal(train))
+            return
 
         # 跨区判断
         self.handle_track_transition(
@@ -896,6 +968,21 @@ class TrainService:
                 self.update_train_speed_limit(train)
                 continue
 
+            if train.movement_phase == "WAITING_SIGNAL":
+                if self.is_governing_signal_red(train):
+                    continue
+                next_track = self.get_next_track(train)
+                if (
+                    next_track is not None
+                    and self.is_track_occupied_by_train(next_track)
+                ):
+                    continue
+                train.status = "RUNNING"
+                train.movement_phase = "INTERVAL_RUNNING"
+                train.stop_signal_id = None
+                self.update_train_speed_limit(train)
+                continue
+
             next_track = self.get_next_track(
                 train
             )
@@ -907,6 +994,8 @@ class TrainService:
                     next_track
             ):
                 train.status = "RUNNING"
+                train.movement_phase = "INTERVAL_RUNNING"
+                train.stop_signal_id = None
 
                 # 暂时恢复到120km/h目标速度
                 # 后面会由自动闭塞码序和应答器
