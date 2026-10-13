@@ -295,7 +295,10 @@ class MainWindow(QMainWindow):
         route_primary_layout.setHorizontalSpacing(0)
 
         self.route_station_label = QLabel("车站：")
-        self.route_station_label.setFixedWidth(52)
+        self.route_station_label.setSizePolicy(
+            QSizePolicy.Fixed,
+            QSizePolicy.Preferred,
+        )
         route_primary_layout.addWidget(self.route_station_label, 0, 0)
 
         self.route_station_combo = QComboBox()
@@ -313,7 +316,10 @@ class MainWindow(QMainWindow):
         route_primary_layout.addWidget(self.route_station_combo, 0, 1)
 
         self.route_type_label = QLabel("进路类型：")
-        self.route_type_label.setFixedWidth(86)
+        self.route_type_label.setSizePolicy(
+            QSizePolicy.Fixed,
+            QSizePolicy.Preferred,
+        )
         route_primary_layout.addWidget(self.route_type_label, 0, 2)
 
         self.route_type_combo = QComboBox()
@@ -337,15 +343,19 @@ class MainWindow(QMainWindow):
         self.route_establish_button.setToolTip("建立所选车站进路")
         self.route_establish_button.setFixedWidth(82)
         self.route_establish_button.setStyleSheet("padding: 0 5px;")
+        route_primary_layout.setColumnMinimumWidth(4, 4)
         route_primary_layout.addWidget(self.route_establish_button, 0, 5)
-        route_primary_layout.setColumnStretch(4, 1)
+        route_primary_layout.setColumnStretch(6, 1)
         route_layout.addLayout(route_primary_layout)
 
         active_route_layout = QGridLayout()
         active_route_layout.setHorizontalSpacing(0)
 
         self.active_route_label = QLabel("已建立进路：")
-        self.active_route_label.setFixedWidth(104)
+        self.active_route_label.setSizePolicy(
+            QSizePolicy.Fixed,
+            QSizePolicy.Preferred,
+        )
         active_route_layout.addWidget(self.active_route_label, 0, 0)
 
         self.active_route_combo = QComboBox()
@@ -370,8 +380,9 @@ class MainWindow(QMainWindow):
         self.route_cancel_button.setToolTip("取消列车尚未进入的所选进路")
         self.route_cancel_button.setFixedWidth(116)
         self.route_cancel_button.setStyleSheet("padding: 0 5px;")
+        active_route_layout.setColumnMinimumWidth(2, 4)
         active_route_layout.addWidget(self.route_cancel_button, 0, 3)
-        active_route_layout.setColumnStretch(2, 1)
+        active_route_layout.setColumnStretch(4, 1)
         route_layout.addLayout(active_route_layout)
 
         equipment_group = QGroupBox(
@@ -386,7 +397,10 @@ class MainWindow(QMainWindow):
         tsr_primary_layout.setHorizontalSpacing(0)
 
         self.tsr_start_label = QLabel("起始区段：")
-        self.tsr_start_label.setFixedWidth(86)
+        self.tsr_start_label.setSizePolicy(
+            QSizePolicy.Fixed,
+            QSizePolicy.Preferred,
+        )
         tsr_primary_layout.addWidget(self.tsr_start_label, 0, 0)
         self.tsr_start_combo = QComboBox()
         self.tsr_start_combo.setObjectName("tsr_start_section")
@@ -404,7 +418,10 @@ class MainWindow(QMainWindow):
         tsr_primary_layout.addWidget(self.tsr_start_combo, 0, 1)
 
         self.tsr_end_label = QLabel("终止区段：")
-        self.tsr_end_label.setFixedWidth(86)
+        self.tsr_end_label.setSizePolicy(
+            QSizePolicy.Fixed,
+            QSizePolicy.Preferred,
+        )
         tsr_primary_layout.addWidget(self.tsr_end_label, 0, 2)
         self.tsr_end_combo = QComboBox()
         self.tsr_end_combo.setObjectName("tsr_end_section")
@@ -422,7 +439,10 @@ class MainWindow(QMainWindow):
         tsr_primary_layout.addWidget(self.tsr_end_combo, 0, 3)
 
         self.tsr_speed_label = QLabel("限速：")
-        self.tsr_speed_label.setFixedWidth(52)
+        self.tsr_speed_label.setSizePolicy(
+            QSizePolicy.Fixed,
+            QSizePolicy.Preferred,
+        )
         tsr_primary_layout.addWidget(self.tsr_speed_label, 0, 4)
         self.tsr_speed_combo = QComboBox()
         self.tsr_speed_combo.setObjectName("tsr_speed")
@@ -443,15 +463,19 @@ class MainWindow(QMainWindow):
         self.tsr_apply_button.setToolTip("设置所选区段范围的临时限速")
         self.tsr_apply_button.setFixedWidth(82)
         self.tsr_apply_button.setStyleSheet("padding: 0 5px;")
+        tsr_primary_layout.setColumnMinimumWidth(6, 4)
         tsr_primary_layout.addWidget(self.tsr_apply_button, 0, 7)
-        tsr_primary_layout.setColumnStretch(6, 1)
+        tsr_primary_layout.setColumnStretch(8, 1)
         equipment_layout.addLayout(tsr_primary_layout)
 
         active_tsr_layout = QGridLayout()
         active_tsr_layout.setHorizontalSpacing(0)
 
         self.active_tsr_label = QLabel("已生效限速：")
-        self.active_tsr_label.setFixedWidth(104)
+        self.active_tsr_label.setSizePolicy(
+            QSizePolicy.Fixed,
+            QSizePolicy.Preferred,
+        )
         active_tsr_layout.addWidget(self.active_tsr_label, 0, 0)
         self.active_tsr_combo = QComboBox()
         self.active_tsr_combo.setObjectName("active_tsr")
@@ -474,8 +498,9 @@ class MainWindow(QMainWindow):
         self.tsr_cancel_button.setToolTip("取消当前选中的临时限速")
         self.tsr_cancel_button.setFixedWidth(116)
         self.tsr_cancel_button.setStyleSheet("padding: 0 5px;")
+        active_tsr_layout.setColumnMinimumWidth(2, 4)
         active_tsr_layout.addWidget(self.tsr_cancel_button, 0, 3)
-        active_tsr_layout.setColumnStretch(2, 1)
+        active_tsr_layout.setColumnStretch(4, 1)
         equipment_layout.addLayout(active_tsr_layout)
 
         self.operation_top_layout.addWidget(direction_group, 1)

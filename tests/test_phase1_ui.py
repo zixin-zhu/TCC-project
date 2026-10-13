@@ -1864,6 +1864,54 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertEqual(expanded_widths, compact_widths)
         window.close()
 
+    def test_wide_operation_rows_do_not_leave_gaps_before_action_buttons(self):
+        window = MainWindow()
+        window.resize(2048, 900)
+        window.show()
+        self.app.processEvents()
+
+        pairs = (
+            (window.route_type_combo, window.route_establish_button),
+            (window.active_route_combo, window.route_cancel_button),
+            (window.tsr_speed_combo, window.tsr_apply_button),
+            (window.active_tsr_combo, window.tsr_cancel_button),
+        )
+        for combo, button in pairs:
+            gap = button.x() - (combo.x() + combo.width())
+            self.assertGreaterEqual(gap, 4)
+            self.assertLessEqual(gap, 4)
+        window.close()
+
+    def test_operation_labels_follow_font_metrics_without_gap_before_combos(self):
+        window = MainWindow()
+        pairs = (
+            (window.route_station_label, window.route_station_combo),
+            (window.route_type_label, window.route_type_combo),
+            (window.active_route_label, window.active_route_combo),
+            (window.tsr_start_label, window.tsr_start_combo),
+            (window.tsr_end_label, window.tsr_end_combo),
+            (window.tsr_speed_label, window.tsr_speed_combo),
+            (window.active_tsr_label, window.active_tsr_combo),
+        )
+        for label, _combo in pairs:
+            font = label.font()
+            font.setPointSize(max(7, font.pointSize() - 2))
+            label.setFont(font)
+            label.updateGeometry()
+
+        window.resize(2048, 900)
+        window.show()
+        self.app.processEvents()
+
+        for label, combo in pairs:
+            text_right = label.x() + label.fontMetrics().horizontalAdvance(
+                label.text()
+            )
+            gap = combo.x() - text_right
+            self.assertGreaterEqual(gap, 0)
+            self.assertLessEqual(gap, 2)
+        window.close()
+
     def test_operation_rows_use_grid_layout_and_give_space_to_combos(self):
         window = MainWindow()
 
@@ -1878,10 +1926,10 @@ class PhaseOneUiContractTest(unittest.TestCase):
             self.assertIsInstance(row, QGridLayout)
             self.assertEqual(row.horizontalSpacing(), 0)
 
-        self.assertGreater(route_primary.columnStretch(4), 0)
-        self.assertGreater(route_active.columnStretch(2), 0)
-        self.assertGreater(speed_primary.columnStretch(6), 0)
-        self.assertGreater(speed_active.columnStretch(2), 0)
+        self.assertGreater(route_primary.columnStretch(6), 0)
+        self.assertGreater(route_active.columnStretch(4), 0)
+        self.assertGreater(speed_primary.columnStretch(8), 0)
+        self.assertGreater(speed_active.columnStretch(4), 0)
         window.close()
 
     def test_route_and_speed_controls_inherit_application_font(self):
