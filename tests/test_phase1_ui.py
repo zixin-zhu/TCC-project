@@ -600,8 +600,8 @@ class PhaseOneUiContractTest(unittest.TestCase):
         first = window.temporary_speed_service.set_restriction(
             "G05", "G10", 120
         )
-        window.tsr_start_combo.setCurrentText("G08")
-        window.tsr_end_combo.setCurrentText("G12")
+        window.tsr_start_combo.setCurrentText("103AG")
+        window.tsr_end_combo.setCurrentText("143AG")
         window.tsr_speed_combo.setCurrentText("80 km/h")
 
         with patch("ui.main_window.QMessageBox.warning") as warning:
@@ -609,9 +609,9 @@ class PhaseOneUiContractTest(unittest.TestCase):
 
         message = self.assert_complete_warning(warning, "限速设置失败")
         self.assertIn(first["id"], message)
-        self.assertIn("G05～G10", message)
+        self.assertIn("83BG～123AG", message)
         self.assertIn("120 km/h", message)
-        self.assertIn("G08～G12", message)
+        self.assertIn("103AG～143AG", message)
         self.assertIn("80 km/h", message)
         window.close()
 
@@ -701,17 +701,14 @@ class PhaseOneUiContractTest(unittest.TestCase):
         contract = view.layout_contract()
 
         self.assertEqual(view.SECTION_WIDTH, view.APPROACH_SECTION_WIDTH)
-        self.assertEqual(
-            contract["section_equipment_aliases"],
-            {
-                "G01": "X1LQ",
-                "G02": "X2LQ",
-                "G03": "X3LQ",
-                "G36": "X1JG",
-                "G37": "X2JG",
-                "G38": "X3JG",
-            },
-        )
+        aliases = contract["section_equipment_aliases"]
+        self.assertEqual(len(aliases), 38)
+        self.assertEqual(aliases["G01"], "SFLQG")
+        self.assertEqual(aliases["G02"], "SFLQG")
+        self.assertEqual(aliases["G03"], "63BG")
+        self.assertEqual(aliases["G36"], "383AG")
+        self.assertEqual(aliases["G37"], "XJG")
+        self.assertEqual(aliases["G38"], "XJG")
 
     def test_station_main_sections_use_equal_reference_span(self):
         view = TccOverviewWidget()
@@ -1061,12 +1058,14 @@ class PhaseOneUiContractTest(unittest.TestCase):
         window = MainWindow()
         self.mark_communication_ready(window)
 
-        window.tsr_start_combo.setCurrentText("G05")
-        window.tsr_end_combo.setCurrentText("G08")
+        window.tsr_start_combo.setCurrentText("83BG")
+        window.tsr_end_combo.setCurrentText("103AG")
         window.tsr_speed_combo.setCurrentText("80 km/h")
         window.apply_temporary_speed_restriction()
         self.assertEqual(window.temporary_speed_service.speed_for("G06"), 80)
         self.assertEqual(window.active_tsr_combo.count(), 1)
+        self.assertIn("83BG～103AG", window.active_tsr_combo.currentText())
+        self.assertNotIn("G05", window.active_tsr_combo.currentText())
 
         restriction_id = window.active_tsr_combo.currentData()
         window.cancel_temporary_speed_restriction()
@@ -1078,6 +1077,62 @@ class PhaseOneUiContractTest(unittest.TestCase):
         balise_info = window.get_balise_information("A站SN口_JZ")
         self.assertIn("ETCS-254", balise_info["packets"])
         self.assertGreater(window.simulation_view.receivers(window.simulation_view.balise_clicked), 0)
+        window.close()
+
+    def test_downline_section_names_replace_internal_g_codes_in_controls(self):
+        window = MainWindow()
+
+        self.assertEqual(window.tsr_start_combo.itemText(0), "SFLQG")
+        self.assertEqual(window.tsr_start_combo.itemData(0), "G01")
+        self.assertEqual(window.tsr_end_combo.itemText(0), "SFLQG")
+        self.assertEqual(window.tsr_end_combo.itemData(0), "G02")
+        self.assertEqual(
+            window.tsr_start_combo.itemData(
+                window.tsr_start_combo.findText("63BG")
+            ),
+            "G03",
+        )
+        self.assertEqual(
+            window.tsr_end_combo.itemData(
+                window.tsr_end_combo.findText("63AG")
+            ),
+            "G04",
+        )
+        self.assertEqual(
+            window.tsr_start_combo.itemData(
+                window.tsr_start_combo.findText("XJG")
+            ),
+            "G37",
+        )
+        self.assertEqual(
+            window.tsr_end_combo.itemData(
+                window.tsr_end_combo.findText("XJG")
+            ),
+            "G38",
+        )
+        self.assertTrue(
+            all(
+                not window.tsr_start_combo.itemText(index).startswith("G")
+                for index in range(window.tsr_start_combo.count())
+            )
+        )
+        window.close()
+
+    def test_train_status_uses_downline_section_and_signal_names(self):
+        window = MainWindow()
+        train = window.train_service.create_train()
+        train.enter_track("G03")
+        train.status = "STOPPED"
+        train.movement_phase = "WAITING_SIGNAL"
+        train.stop_signal_id = "S18"
+        window.refresh_view()
+        window.train_selector.setCurrentText(train.train_id)
+
+        window.refresh_train_info(window.train_service.get_all_train_status())
+        window.sync_selected_train_controls()
+
+        self.assertEqual(window.info_track.text(), "当前分区：63BG")
+        self.assertEqual(window.train_state_value.text(), "403信号机前停车")
         window.close()
 
     def test_first_started_station_becomes_server_and_second_becomes_client(self):
@@ -1368,7 +1423,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
         window.engine.start()
 
         window.add_waiting_train()
-        later = window.train_service.trains["T002"]
+        later = window.train_service.trains["T003"]
         self.assertEqual(window.train_selector.currentText(), running.train_id)
         window.pause_simulation()
 
@@ -1499,7 +1554,7 @@ class PhaseOneUiContractTest(unittest.TestCase):
         window.train_selector.setCurrentText(train.train_id)
         window.sync_selected_train_controls()
 
-        self.assertEqual(window.train_state_value.text(), "S18信号机前停车")
+        self.assertEqual(window.train_state_value.text(), "403信号机前停车")
         window.close()
 
     def test_waiting_train_arrival_label_follows_live_receive_route(self):
@@ -2015,6 +2070,36 @@ class PhaseOneUiContractTest(unittest.TestCase):
         self.assertEqual(symbols["INTERVAL:S01"], "黄绿灯")
         self.assertEqual(symbols["A:S1"], "红灯")
         self.assertEqual(symbols["INTERVAL:S02"], "红灯")
+        view.close()
+
+    def test_overview_uses_downline_section_and_signal_labels(self):
+        view = TccOverviewWidget()
+        self.assertEqual(view.SECTION_EQUIPMENT_ALIASES.get("G01"), "SFLQG")
+        self.assertEqual(view.SECTION_EQUIPMENT_ALIASES.get("G02"), "SFLQG")
+        self.assertEqual(view.SECTION_EQUIPMENT_ALIASES.get("G03"), "63BG")
+        self.assertEqual(view.SECTION_EQUIPMENT_ALIASES.get("G04"), "63AG")
+        self.assertEqual(view.SECTION_EQUIPMENT_ALIASES.get("G35"), "383BG")
+        self.assertEqual(view.SECTION_EQUIPMENT_ALIASES.get("G36"), "383AG")
+        self.assertEqual(view.SECTION_EQUIPMENT_ALIASES.get("G37"), "XJG")
+        self.assertEqual(view.SECTION_EQUIPMENT_ALIASES.get("G38"), "XJG")
+
+        view.resize(view.minimumWidth(), 360)
+        view.set_state([], [], "A_TO_B", interval_signals={"S01": "绿灯"})
+        view.show()
+        self.app.processEvents()
+        view.grab()
+        interval = next(
+            item for item in view._signal_symbols
+            if item["signal_id"] == "INTERVAL:S01"
+        )
+        station = next(
+            item for item in view._signal_symbols
+            if item["signal_id"] == "A:SN"
+        )
+
+        self.assertEqual(interval["name"], "63")
+        self.assertEqual(interval.get("lower_stem_depth"), 0)
+        self.assertLess(station.get("lower_stem_depth", 99), 5)
         view.close()
 
 

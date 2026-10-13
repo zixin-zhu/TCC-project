@@ -18,6 +18,13 @@ from PyQt5.QtGui import QColor, QPalette
 
 from services.simulation_service import SimulationService
 from services.train_service import TrainService
+from services.display_naming import (
+    display_section_range,
+    replace_internal_names,
+    section_selection_rows,
+    signal_display_name,
+    track_display_name,
+)
 from services.simulation_engine import SimulationEngine
 from services.direction_manager import DirectionManager
 from services.temporary_speed_service import TemporarySpeedService
@@ -384,8 +391,9 @@ class MainWindow(QMainWindow):
         tsr_primary_layout.addWidget(self.tsr_start_label, 0, 0)
         self.tsr_start_combo = QComboBox()
         self.tsr_start_combo.setObjectName("tsr_start_section")
-        self.tsr_start_combo.addItems([f"G{i:02d}" for i in range(1, 39)])
-        self.tsr_start_combo.setMinimumWidth(59)
+        for display_name, start_section, _end_section in section_selection_rows():
+            self.tsr_start_combo.addItem(display_name, start_section)
+        self.tsr_start_combo.setMinimumWidth(80)
         self.tsr_start_combo.setSizePolicy(
             QSizePolicy.Expanding,
             QSizePolicy.Fixed,
@@ -401,8 +409,9 @@ class MainWindow(QMainWindow):
         tsr_primary_layout.addWidget(self.tsr_end_label, 0, 2)
         self.tsr_end_combo = QComboBox()
         self.tsr_end_combo.setObjectName("tsr_end_section")
-        self.tsr_end_combo.addItems([f"G{i:02d}" for i in range(1, 39)])
-        self.tsr_end_combo.setMinimumWidth(59)
+        for display_name, _start_section, end_section in section_selection_rows():
+            self.tsr_end_combo.addItem(display_name, end_section)
+        self.tsr_end_combo.setMinimumWidth(80)
         self.tsr_end_combo.setSizePolicy(
             QSizePolicy.Expanding,
             QSizePolicy.Fixed,
@@ -970,8 +979,8 @@ class MainWindow(QMainWindow):
         try:
             speed = int(self.tsr_speed_combo.currentText().split()[0])
             self.temporary_speed_service.set_restriction(
-                self.tsr_start_combo.currentText(),
-                self.tsr_end_combo.currentText(),
+                self.tsr_start_combo.currentData(),
+                self.tsr_end_combo.currentData(),
                 speed,
             )
         except ValueError as error:
@@ -996,7 +1005,7 @@ class MainWindow(QMainWindow):
         for restriction in self.temporary_speed_service.active_restrictions():
             text = (
                 f"{restriction['id']}  "
-                f"{restriction['start_section']}～{restriction['end_section']}  "
+                f"{display_section_range(restriction['start_section'], restriction['end_section'])}  "
                 f"{restriction['speed_kmh']} km/h"
             )
             self.active_tsr_combo.addItem(text, restriction["id"])
@@ -1455,6 +1464,8 @@ class MainWindow(QMainWindow):
         ):
             station = "B站" if selected_train.get("direction") == "A_TO_B" else "A站"
             current_section = f"{station}{selected_train.get('arrival_track') or ''}"
+        if selected_train.get("current_track") is not None:
+            current_section = track_display_name(current_section)
         self.info_track.setText(f"当前分区：{current_section or '--'}")
 
         self.info_speed.setText(
@@ -1627,7 +1638,7 @@ class MainWindow(QMainWindow):
                 "DEPARTING": "发车进路运行",
                 "INTERVAL_RUNNING": "区间运行",
                 "WAITING_SIGNAL": (
-                    f"{train.stop_signal_id}信号机前停车"
+                    f"{signal_display_name(train.stop_signal_id)}信号机前停车"
                     if train.stop_signal_id else "信号机前停车"
                 ),
                 "WAITING_AHEAD_TRACK": "前方区段占用停车",
@@ -1833,7 +1844,7 @@ class MainWindow(QMainWindow):
                 str(error),
                 "请根据当前状态调整操作条件后重试。",
             ).format_message()
-        QMessageBox.warning(self, title, message)
+        QMessageBox.warning(self, title, replace_internal_names(message))
 
     def refresh_control_states(self):
         ready = self.communication_ready()

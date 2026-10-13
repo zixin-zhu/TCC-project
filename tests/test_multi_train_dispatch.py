@@ -20,6 +20,18 @@ APP = QApplication.instance() or QApplication(sys.argv[:1])
 
 
 class MultiTrainModelTest(unittest.TestCase):
+    def test_downline_train_ids_use_odd_numbers_only(self):
+        routes = RouteService()
+        simulation = SimulationService("A", route_service=routes)
+        service = TrainService(simulation, route_service=routes)
+
+        trains = [service.create_train() for _ in range(3)]
+
+        self.assertEqual(
+            [train.train_id for train in trains],
+            ["T001", "T003", "T005"],
+        )
+
     def test_train_max_speed_options_and_status_snapshot(self):
         train = Train("T001")
 

@@ -58,7 +58,7 @@ class TrainService:
 
         train_id = f"T{self.next_train_number:03d}"
 
-        self.next_train_number += 1
+        self.next_train_number += 2
 
         direction = self.simulation.get_direction()
 

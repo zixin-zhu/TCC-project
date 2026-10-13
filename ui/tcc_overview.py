@@ -5,6 +5,11 @@ from PyQt5.QtGui import QColor, QFont, QPainter, QPen, QPolygon
 from PyQt5.QtWidgets import QScrollArea, QSizePolicy, QWidget
 
 from models.route import RouteType
+from services.display_naming import (
+    block_display_name,
+    signal_display_name,
+    track_display_name,
+)
 
 
 class HorizontalWheelScrollArea(QScrollArea):
@@ -37,12 +42,8 @@ class TccOverviewWidget(QWidget):
     BALISE_GROUP_SPACING = 6
     TRAIN_HALF_LENGTH = 13
     SECTION_EQUIPMENT_ALIASES = {
-        "G01": "X1LQ",
-        "G02": "X2LQ",
-        "G03": "X3LQ",
-        "G36": "X1JG",
-        "G37": "X2JG",
-        "G38": "X3JG",
+        f"G{number:02d}": track_display_name(f"G{number:02d}")
+        for number in range(1, 39)
     }
 
     background_color = QColor("#05070a")
@@ -794,13 +795,21 @@ class TccOverviewWidget(QWidget):
             painter.setPen(QPen(self.occupied_rail_color if occupied else self.rail_color, 4 if occupied else 2))
             painter.drawLine(int(x1), rail_y, int(x2), rail_y)
             painter.setPen(self.muted_color)
-            painter.setFont(QFont("PingFang SC", 7))
-            painter.drawText(int(x1 + 4), rail_y - 10, track_id)
-            equipment_name = self.SECTION_EQUIPMENT_ALIASES.get(track_id)
-            if equipment_name:
-                painter.setPen(QColor("#8fa2b4"))
-                painter.setFont(QFont("PingFang SC", 6, QFont.Bold))
-                painter.drawText(int(x1 + 2), rail_y + 17, equipment_name)
+            painter.setFont(QFont("PingFang SC", 6, QFont.Bold))
+            display_name = self.SECTION_EQUIPMENT_ALIASES[track_id]
+            if track_id in ("G01", "G37"):
+                combined_width = self.SECTION_WIDTH * 2
+                painter.drawText(
+                    QRectF(x1, rail_y - 23, combined_width, 14),
+                    Qt.AlignCenter,
+                    display_name,
+                )
+            elif track_id not in ("G02", "G38"):
+                painter.drawText(
+                    QRectF(x1, rail_y - 23, self.SECTION_WIDTH, 14),
+                    Qt.AlignCenter,
+                    display_name,
+                )
 
             if index < self.SECTION_COUNT - 1:
                 self._draw_interval_boundary(painter, x2, rail_y)
@@ -827,16 +836,26 @@ class TccOverviewWidget(QWidget):
                     painter,
                     block_right,
                     rail_y,
-                    f"S{block_no:02d}",
+                    signal_display_name(f"S{block_no:02d}"),
                     self.interval_signals.get(f"S{block_no:02d}", "红灯"),
                     compact=True,
                     direction="RIGHT",
                     extend_below_track=True,
+                    lower_stem_depth=0,
                     signal_id=f"INTERVAL:S{block_no:02d}",
                 )
             painter.setPen(QColor("#60798e"))
             painter.setFont(QFont("PingFang SC", 6))
-            painter.drawText(int(block_left + 4), code_y + 38, f"闭塞{block_no:02d}")
+            painter.drawText(
+                QRectF(
+                    block_left,
+                    code_y + 25,
+                    self.SECTIONS_PER_BLOCK * self.SECTION_WIDTH,
+                    14,
+                ),
+                Qt.AlignCenter,
+                block_display_name(block_no),
+            )
 
     def _draw_interval_boundary(self, painter, x, rail_y):
         painter.setPen(Qt.NoPen)
@@ -964,6 +983,7 @@ class TccOverviewWidget(QWidget):
         compact=False,
         direction="RIGHT",
         extend_below_track=True,
+        lower_stem_depth=None,
         signal_id=None,
     ):
         stem_height = 26 if compact else 34
@@ -975,7 +995,9 @@ class TccOverviewWidget(QWidget):
         lamp_center_y = rail_y - stem_height
         lower_stem_top = lamp_center_y + (8 if compact else 10)
         upper_stem_bottom = lamp_center_y + (4 if compact else 5)
-        stem_bottom = rail_y + (5 if extend_below_track else 0)
+        if lower_stem_depth is None:
+            lower_stem_depth = 3 if extend_below_track else 0
+        stem_bottom = rail_y + lower_stem_depth
 
         painter.setPen(QPen(QColor("#aebdca"), 1))
         painter.drawLine(int(x), int(stem_bottom), int(x), int(lower_stem_top))
@@ -1018,6 +1040,7 @@ class TccOverviewWidget(QWidget):
                 "signal_id": signal_id or name,
                 "name": name,
                 "status": status,
+                "lower_stem_depth": lower_stem_depth,
             }
         )
 
